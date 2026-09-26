@@ -39,7 +39,7 @@ pub struct LauncherUpdateProgress {
 #[derive(Clone, Deserialize)]
 struct GitHubAsset {
     name: String,
-    browser_download_url: String,
+    url: String,
     size: u64,
     digest: Option<String>,
 }
@@ -71,6 +71,13 @@ fn github_client() -> Result<Client, String> {
         .timeout(Duration::from_secs(45))
         .build()
         .map_err(|error| format!("Unable to initialize the launcher update client: {error}"))
+}
+
+fn github_asset_request(client: &Client, asset: &GitHubAsset) -> reqwest::RequestBuilder {
+    client
+        .get(&asset.url)
+        .header("Accept", "application/octet-stream")
+        .header("X-GitHub-Api-Version", GITHUB_API_VERSION)
 }
 
 fn current_version(app: &AppHandle) -> Result<Version, String> {
@@ -203,8 +210,8 @@ async fn download_launcher(app: &AppHandle, asset: &GitHubAsset) -> Result<Vec<u
         ));
     }
 
-    let response = github_client()?
-        .get(&asset.browser_download_url)
+    let client = github_client()?;
+    let response = github_asset_request(&client, asset)
         .send()
         .await
         .map_err(|error| format!("Unable to download the launcher update: {error}"))?
@@ -238,8 +245,8 @@ async fn download_launcher(app: &AppHandle, asset: &GitHubAsset) -> Result<Vec<u
 }
 
 async fn download_signature(asset: &GitHubAsset) -> Result<String, String> {
-    let bytes = github_client()?
-        .get(&asset.browser_download_url)
+    let client = github_client()?;
+    let bytes = github_asset_request(&client, asset)
         .send()
         .await
         .map_err(|error| format!("Unable to download the launcher signature: {error}"))?

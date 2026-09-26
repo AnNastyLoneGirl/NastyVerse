@@ -6,7 +6,11 @@ mod launcher_updater;
 mod protocol;
 
 use serde::Serialize;
+use std::process::Command;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+const LAUNCHER_HOME_CONTENT_URL: &str =
+    "https://raw.githubusercontent.com/AnNastyLoneGirl/NastyVerse/main/launcher-content/home.json";
 
 #[tauri::command]
 fn window_minimize(window: tauri::WebviewWindow) -> Result<(), String> {
@@ -36,6 +40,58 @@ fn window_close(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Result<(
     } else {
         window.close().map_err(|error| error.to_string())
     }
+}
+
+#[tauri::command]
+async fn get_launcher_home_content() -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("NastyVerse-Launcher")
+        .build()
+        .map_err(|error| format!("Unable to create the Home content client: {error}"))?;
+    let response = client
+        .get(LAUNCHER_HOME_CONTENT_URL)
+        .send()
+        .await
+        .map_err(|error| format!("Unable to download launcher-content/home.json: {error}"))?
+        .error_for_status()
+        .map_err(|error| format!("GitHub returned an error for launcher-content/home.json: {error}"))?;
+    response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| format!("launcher-content/home.json is not valid JSON: {error}"))
+}
+
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("Only http:// and https:// URLs can be opened from launcher content.".into());
+    }
+
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = Command::new("rundll32");
+        command.args(["url.dll,FileProtocolHandler", &url]);
+        command
+    };
+
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = Command::new("open");
+        command.arg(&url);
+        command
+    };
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut command = Command::new("xdg-open");
+        command.arg(&url);
+        command
+    };
+
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Unable to open the external URL: {error}"))
 }
 
 #[tauri::command]
@@ -120,6 +176,8 @@ fn main() {
             window_close,
             launcher_updater::check_launcher_update,
             launcher_updater::install_launcher_update,
+            get_launcher_home_content,
+            open_external_url,
             check_installation,
             sync_installation,
             launch_app,

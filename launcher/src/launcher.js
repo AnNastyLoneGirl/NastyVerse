@@ -158,6 +158,109 @@ let currentLang = 'en';
 try { currentLang = localStorage.getItem('nv_lang') || 'en'; } catch (e) {}
 
 /* ===================================================================
+   Remote Home carousel content
+   `launcher-content/home.json` on GitHub main is the source of truth.
+   Priority: remote JSON -> last successful cache -> built-in fallback.
+=================================================================== */
+const HOME_CONTENT_CACHE_KEY = 'nv_launcher_home_content_v1';
+const HOME_ASSET_BASE_URL = 'https://raw.githubusercontent.com/AnNastyLoneGirl/NastyVerse/main/launcher-content/';
+const HOME_SLIDE_INTERVAL_MS = 8000;
+const DEFAULT_HOME_CONTENT = {
+  slogan_fr: 'Votre univers. Vos règles.',
+  slogan_en: 'Your world. Your rules.',
+  slides: [
+    {
+      key: 'welcome',
+      description_en: 'NastyVerse is a universe of AI characters you can create, customize, and grow. Choose their world, shape their mind, and start your own story.',
+      description_fr: 'NastyVerse est un univers de personnages IA que vous pouvez créer, personnaliser et faire évoluer. Choisissez leur monde, façonnez leur esprit, commencez votre histoire.',
+      image: '',
+      button: true,
+      button_text_fr: 'Découvrir',
+      button_text_en: 'Discover',
+      action: 'tab:catalog'
+    }
+  ]
+};
+
+function normalizeHomeContent(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const slides = Array.isArray(raw.slides) ? raw.slides : [];
+  const normalizedSlides = slides
+    .filter(slide => slide && typeof slide === 'object' && typeof slide.key === 'string' && slide.key.trim())
+    .map(slide => ({
+      key: slide.key.trim(),
+      description_en: typeof slide.description_en === 'string' ? slide.description_en : '',
+      description_fr: typeof slide.description_fr === 'string' ? slide.description_fr : '',
+      image: typeof slide.image === 'string' ? slide.image.trim() : '',
+      button: slide.button === true,
+      button_text_fr: typeof slide.button_text_fr === 'string' ? slide.button_text_fr : '',
+      button_text_en: typeof slide.button_text_en === 'string' ? slide.button_text_en : '',
+      action: typeof slide.action === 'string' ? slide.action.trim() : ''
+    }));
+
+  if (!normalizedSlides.length) return null;
+  return {
+    slogan_fr: typeof raw.slogan_fr === 'string' ? raw.slogan_fr : DEFAULT_HOME_CONTENT.slogan_fr,
+    slogan_en: typeof raw.slogan_en === 'string' ? raw.slogan_en : DEFAULT_HOME_CONTENT.slogan_en,
+    slides: normalizedSlides
+  };
+}
+
+function readCachedHomeContent() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(HOME_CONTENT_CACHE_KEY) || 'null');
+    return normalizeHomeContent(cached);
+  } catch (error) {
+    return null;
+  }
+}
+
+let homeContent = readCachedHomeContent() || DEFAULT_HOME_CONTENT;
+let homeSlideIndex = 0;
+let homeCarouselTimer = null;
+
+function localizedHomeValue(source, field) {
+  const preferred = source?.[`${field}_${currentLang}`];
+  if (typeof preferred === 'string' && preferred) return preferred;
+  const english = source?.[`${field}_en`];
+  if (typeof english === 'string' && english) return english;
+  const french = source?.[`${field}_fr`];
+  return typeof french === 'string' ? french : '';
+}
+
+function resolveHomeImage(image) {
+  if (!image) return '';
+  if (/^https?:\/\//i.test(image)) return image;
+  return `${HOME_ASSET_BASE_URL}${image.replace(/^\/+/, '')}`;
+}
+
+async function refreshRemoteHomeContent() {
+  try {
+    const remote = normalizeHomeContent(await invoke('get_launcher_home_content'));
+    if (!remote) throw new Error('Remote Home content has no valid slides.');
+    homeContent = remote;
+    try { localStorage.setItem(HOME_CONTENT_CACHE_KEY, JSON.stringify(remote)); } catch (error) {}
+    if (document.querySelector('.tabs button.active')?.dataset.nav === 'home') renderHome();
+  } catch (error) {
+    console.warn('[home content] using cached/fallback content:', error);
+  }
+}
+
+function stopHomeCarousel() {
+  if (homeCarouselTimer) clearInterval(homeCarouselTimer);
+  homeCarouselTimer = null;
+}
+
+function startHomeCarousel() {
+  stopHomeCarousel();
+  if (homeContent.slides.length <= 1) return;
+  homeCarouselTimer = setInterval(() => {
+    const next = (homeSlideIndex + 1) % homeContent.slides.length;
+    applyHomeSlide(next);
+  }, HOME_SLIDE_INTERVAL_MS);
+}
+
+/* ===================================================================
    Launcher theme audio — bundled with the native launcher. The selected
    volume is launcher-only and persists independently from app settings.
 =================================================================== */
@@ -223,6 +326,7 @@ function renderNav() {
 
 function goTo(id) {
   const target = RENDERERS[id] ? id : 'home';
+  if (target !== 'home') stopHomeCarousel();
   navbar.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.nav === target));
   pageRoot.classList.toggle('is-home', target === 'home');
   RENDERERS[target]();
@@ -250,7 +354,7 @@ const CATALOG_FULL = CATALOG_HOME.concat([
   { tag: "character", title: "Vex, Arena Champion", desc: "Competitive, sharp-tongued, loyal once earned.", init: "V" },
 ]);
 const CHANGELOG = [
-  { v: "v0.1.0", date: "Sep 26, 2026", items: ["Initial portable NastyVerse launcher", "Launcher theme with persistent volume control", "Home screen fitted to the launcher window without scrolling", "Silent managed copy with no Desktop or Start Menu shortcut", "Signed launcher self-update and file-by-file application updates from GitHub"] },
+  { v: "v0.1.4", date: "Sep 26, 2026", items: ["Home carousel content loaded remotely from GitHub main", "Dynamic slide count, remote backgrounds and configurable slide actions", "Launcher theme with persistent volume control", "Home screen fitted to the launcher window without scrolling", "Signed portable launcher self-update and file-by-file application updates from GitHub"] },
 ];
 function tagLabel(tag) { return { update: "Update", content: "Content", character: "Character", lorebook: "Lorebook", persona: "Persona" }[tag] || tag; }
 
@@ -258,14 +362,18 @@ function tagLabel(tag) { return { update: "Update", content: "Content", characte
    Page renderers
 =================================================================== */
 function renderHome() {
+  const slides = homeContent.slides;
+  homeSlideIndex = Math.min(homeSlideIndex, Math.max(0, slides.length - 1));
   pageRoot.innerHTML = `
     <div class="page home-page active">
-      <div class="hero">
-        <div class="hero-eyebrow">${t('hero.eyebrow', currentLang)}</div>
+      <div class="hero" id="home-hero">
+        <div class="hero-eyebrow" id="home-slogan"></div>
         <h1>NASTYVERSE</h1>
-        <p>${t('hero.body', currentLang)}</p>
-        <button class="cta" id="discover-btn">${t('hero.cta', currentLang)} →</button>
-        <div class="dots"><span class="on"></span><span></span><span></span><span></span></div>
+        <p id="home-slide-description"></p>
+        <button class="cta" id="home-slide-button" hidden></button>
+        <div class="dots" id="home-slide-dots" aria-label="Home carousel">
+          ${slides.map((slide, index) => `<button type="button" data-slide-index="${index}" data-slide-key="${slide.key.replace(/[^a-zA-Z0-9_-]/g, '')}" aria-label="Slide ${index + 1}"></button>`).join('')}
+        </div>
       </div>
       <div class="grid2">
         <div>
@@ -286,8 +394,79 @@ function renderHome() {
         </div>
       </div>
     </div>`;
-  pageRoot.querySelectorAll('[data-nav]').forEach(el => el.addEventListener('click', () => goTo(el.dataset.nav)));
-  document.getElementById('discover-btn').addEventListener('click', () => goTo('catalog'));
+
+  pageRoot.querySelectorAll('[data-nav]').forEach(el => el.addEventListener('click', event => {
+    event.preventDefault();
+    goTo(el.dataset.nav);
+  }));
+  pageRoot.querySelectorAll('[data-slide-index]').forEach(dot => dot.addEventListener('click', () => {
+    applyHomeSlide(Number(dot.dataset.slideIndex));
+    startHomeCarousel();
+  }));
+  applyHomeSlide(homeSlideIndex);
+  startHomeCarousel();
+}
+
+function applyHomeSlide(index) {
+  const slides = homeContent.slides;
+  if (!slides.length) return;
+  homeSlideIndex = ((Number(index) || 0) % slides.length + slides.length) % slides.length;
+  const slide = slides[homeSlideIndex];
+  const hero = document.getElementById('home-hero');
+  const slogan = document.getElementById('home-slogan');
+  const description = document.getElementById('home-slide-description');
+  const button = document.getElementById('home-slide-button');
+  if (!hero || !slogan || !description || !button) return;
+
+  slogan.textContent = localizedHomeValue(homeContent, 'slogan');
+  description.textContent = localizedHomeValue(slide, 'description');
+  hero.dataset.slideKey = slide.key;
+
+  const image = resolveHomeImage(slide.image);
+  if (image) {
+    const safeImage = image.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    hero.style.setProperty('--hero-image', `url("${safeImage}")`);
+    hero.classList.add('has-image');
+  } else {
+    hero.style.removeProperty('--hero-image');
+    hero.classList.remove('has-image');
+  }
+
+  button.hidden = !slide.button;
+  if (slide.button) {
+    button.textContent = localizedHomeValue(slide, 'button_text');
+    button.onclick = () => executeHomeAction(slide.action);
+  } else {
+    button.textContent = '';
+    button.onclick = null;
+  }
+
+  document.querySelectorAll('#home-slide-dots [data-slide-index]').forEach(dot => {
+    const active = Number(dot.dataset.slideIndex) === homeSlideIndex;
+    dot.classList.toggle('on', active);
+    dot.setAttribute('aria-current', active ? 'true' : 'false');
+  });
+}
+
+async function executeHomeAction(action) {
+  if (!action) return;
+  const value = String(action).trim();
+  if (value.startsWith('tab:')) {
+    goTo(value.slice(4));
+    return;
+  }
+  if (RENDERERS[value]) {
+    goTo(value);
+    return;
+  }
+  const url = value.startsWith('url:') ? value.slice(4) : value;
+  if (/^https?:\/\//i.test(url)) {
+    try {
+      await invoke('open_external_url', { url });
+    } catch (error) {
+      console.warn('[home carousel] unable to open URL', error);
+    }
+  }
 }
 
 function renderCatalog() {
@@ -627,4 +806,5 @@ listen('installation-progress', event => {
 renderNav();
 goTo('home');
 startLauncherMusic();
+refreshRemoteHomeContent();
 verifyAll();

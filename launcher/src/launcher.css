@@ -46,13 +46,30 @@
 
 /* ===== Home: hero ===== */
 .hero{
-  position:relative; overflow:hidden; border-radius:16px; border:1px solid var(--line);
+  position:relative; overflow:hidden; isolation:isolate; border-radius:16px; border:1px solid var(--line);
   min-height:300px; padding:40px 36px;
   background:
     radial-gradient(ellipse 60% 90% at 82% 30%, rgba(230,110,255,.30), transparent 60%),
     radial-gradient(ellipse 50% 70% at 100% 90%, rgba(120,40,220,.35), transparent 60%),
     linear-gradient(120deg,#0d0817 0%,#1a0e2e 55%,#170a28 100%);
 }
+
+.hero::before{
+  content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background-image:var(--hero-image,none); background-size:cover; background-position:center;
+  opacity:0; transform:scale(1.015); transition:opacity .35s ease,transform 8s ease;
+}
+.hero::after{
+  content:""; position:absolute; inset:0; z-index:1; pointer-events:none;
+  background:linear-gradient(90deg,
+    color-mix(in srgb,var(--void) 93%,transparent) 0%,
+    color-mix(in srgb,var(--void) 76%,transparent) 42%,
+    color-mix(in srgb,var(--void) 28%,transparent) 100%);
+  opacity:0; transition:opacity .35s ease;
+}
+.hero.has-image::before{opacity:.72; transform:scale(1.045);}
+.hero.has-image::after{opacity:1;}
+.hero > *{position:relative; z-index:2;}
 .hero-eyebrow{color:var(--magenta); font-size:12.5px; letter-spacing:.14em; font-weight:600; margin-bottom:14px;}
 .hero h1{
   font-family:'Cinzel Decorative',serif; font-weight:900; font-size:clamp(36px,5vw,58px); line-height:.95; margin:0 0 16px;
@@ -67,9 +84,11 @@
   box-shadow:0 10px 30px rgba(190,60,255,.4);
 }
 .hero .cta:hover{filter:brightness(1.07);}
+.hero .cta[hidden]{display:none;}
 .dots{display:flex; gap:7px; position:absolute; bottom:18px; left:50%; transform:translateX(-50%);}
-.dots span{width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.25);}
-.dots span.on{background:var(--magenta); width:16px; border-radius:4px;}
+.dots button{width:6px; height:6px; padding:0; border:0; border-radius:50%; background:rgba(255,255,255,.25); cursor:pointer; transition:width .18s ease,background .18s ease;}
+.dots button:hover{background:rgba(255,255,255,.55);}
+.dots button.on{background:var(--magenta); width:16px; border-radius:4px;}
 
 /* ===== Home: news + catalog lists ===== */
 .grid2{display:grid; grid-template-columns:1fr 1fr; gap:22px; margin-top:24px;}

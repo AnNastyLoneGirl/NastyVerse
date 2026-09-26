@@ -1,0 +1,16 @@
+{
+  "slogan_fr": "Votre univers. Vos règles.",
+  "slogan_en": "Your world. Your rules.",
+  "slides": [
+    {
+      "key": "welcome",
+      "description_en": "NastyVerse is a universe of AI characters you can create, customize, and grow. Choose their world, shape their mind, and start your own story.",
+      "description_fr": "NastyVerse est un univers de personnages IA que vous pouvez créer, personnaliser et faire évoluer. Choisissez leur monde, façonnez leur esprit, commencez votre histoire.",
+      "image": "",
+      "button": true,
+      "button_text_fr": "Découvrir",
+      "button_text_en": "Discover",
+      "action": "tab:catalog"
+    }
+  ]
+}

@@ -84,4 +84,9 @@ No installer is generated.
 
 For an official public release, push a matching `launcher-vX.Y.Z` tag. GitHub Actions builds the raw executable, signs it using the repository secrets, and publishes the EXE plus `.sig` to GitHub Releases.
 
-See `START_HERE.md` for the full from-zero Git/GitHub/build/release procedure.
+
+## Remote Home carousel
+
+The Home hero/carousel is driven by `launcher-content/home.json` on GitHub `main`. Updating that JSON (or images referenced by it) does **not** require rebuilding the launcher. The launcher uses the last successful JSON as a local cache and falls back to a bundled default when GitHub is unavailable.
+
+Each slide supports `key`, `description_en`, `description_fr`, `image`, `button`, `button_text_fr`, `button_text_en`, and `action`. Relative image paths resolve under `launcher-content/`; absolute `http(s)` image URLs are also accepted. Actions support `tab:catalog`, `tab:changelog`, `tab:options`, or `url:https://...`. The slide array order is the carousel order.

@@ -90,3 +90,17 @@ For an official public release, push a matching `launcher-vX.Y.Z` tag. GitHub Ac
 The Home hero/carousel is driven by `launcher-content/home.json` on GitHub `main`. Updating that JSON (or images referenced by it) does **not** require rebuilding the launcher. The launcher uses the last successful JSON as a local cache and falls back to a bundled default when GitHub is unavailable.
 
 Each slide supports `key`, `description_en`, `description_fr`, `image`, `button`, `button_text_fr`, `button_text_en`, and `action`. Relative image paths resolve under `launcher-content/`; absolute `http(s)` image URLs are also accepted. Actions support `tab:catalog`, `tab:changelog`, `tab:options`, or `url:https://...`. The slide array order is the carousel order.
+
+## Remote News / Changelog feed
+
+`launcher-content/news.json` on GitHub `main` is the single source for the Home **Latest news** panel, the **Changelog** tab and the **News / Actualités** tab. Updating the JSON or its referenced images does not require rebuilding the launcher.
+
+Each entry supports `title`, `category`, `image`, `date`, `summary_fr`, `summary_en`, `description_fr`, and `description_en`. Use ISO dates (`YYYY-MM-DD`) so sorting is deterministic.
+
+- Home shows the 4 newest entries across all categories.
+- Changelog shows every entry whose category is `Update` (case-insensitive).
+- News shows every non-`Update` entry.
+- All three views sort newest to oldest.
+- Home cards open Changelog for `Update` entries and News for every other category.
+
+Relative image paths resolve under `launcher-content/`, e.g. `"image": "news/example.webp"` maps to `launcher-content/news/example.webp`.

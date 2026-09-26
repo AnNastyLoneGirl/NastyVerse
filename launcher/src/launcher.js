@@ -43,7 +43,7 @@ chrome.addEventListener('mousedown', event => {
 const TRANSLATIONS = {
   en: {
     "launcher": "Launcher", "launch.cta": "Launch",
-    "nav.home": "Home", "nav.catalog": "Catalog", "nav.changelog": "Changelog", "nav.options": "Options",
+    "nav.home": "Home", "nav.news": "News", "nav.catalog": "Catalog", "nav.changelog": "Changelog", "nav.options": "Options",
     "hero.eyebrow": "Your world. Your rules.",
     "hero.body": "NastyVerse is a universe of AI characters you can create, customize, and grow. Choose their world, shape their mind, and start your own story.",
     "hero.cta": "Discover",
@@ -59,7 +59,7 @@ const TRANSLATIONS = {
     "launcher.update.downloading.unknown": "Downloading launcher update…",
     "launcher.update.installing": "Applying launcher update…",
     "launcher.update.installing.detail": "The launcher will replace itself in the background, then reopen automatically.",
-    "catalog.title": "Catalog", "changelog.title": "Changelog",
+    "news.title": "News", "news.empty": "No news available yet.", "catalog.title": "Catalog", "changelog.title": "Changelog", "changelog.empty": "No updates available yet.",
     "options.title": "Options",
     "options.lang.title": "Language", "options.lang.hint": "Interface language. More translations can be added at any time.",
     "options.accent.title": "Accent color", "options.accent.hint": "Used for primary actions and other important interface elements.",
@@ -95,11 +95,11 @@ const TRANSLATIONS = {
   },
   fr: {
     "launcher": "Launcher", "launch.cta": "Lancer",
-    "nav.home": "Accueil", "nav.catalog": "Catalogue", "nav.changelog": "Changelog", "nav.options": "Options",
+    "nav.home": "Accueil", "nav.news": "Actualités", "nav.catalog": "Catalogue", "nav.changelog": "Changelog", "nav.options": "Options",
     "hero.eyebrow": "Votre univers. Vos règles.",
     "hero.body": "NastyVerse est un univers de personnages IA que vous pouvez créer, personnaliser et faire évoluer. Choisissez leur monde, façonnez leur esprit, commencez votre histoire.",
     "hero.cta": "Découvrir",
-    "home.news": "Dernières actualités", "home.catalog": "Derniers contenus du catalogue",
+    "home.news": "Dernières actualités", "home.seeall": "Voir tout →", "home.catalog": "Derniers contenus du catalogue",
     "update.title": "Mise à jour disponible", "update.cta": "Mettre à jour",
     "launcher.update.checking.title": "Vérification du launcher…",
     "launcher.update.checking.detail": "Recherche d’une version portable plus récente et signée sur GitHub Releases.",
@@ -110,7 +110,7 @@ const TRANSLATIONS = {
     "launcher.update.downloading.unknown": "Téléchargement de la mise à jour du launcher…",
     "launcher.update.installing": "Application de la mise à jour du launcher…",
     "launcher.update.installing.detail": "Le launcher va se remplacer en arrière-plan puis se rouvrir automatiquement.",
-    "catalog.title": "Catalogue", "changelog.title": "Changelog", "options.title": "Options",
+    "news.title": "Actualités", "news.empty": "Aucune actualité disponible pour le moment.", "catalog.title": "Catalogue", "changelog.title": "Changelog", "changelog.empty": "Aucune mise à jour disponible pour le moment.", "options.title": "Options",
     "options.lang.title": "Langue", "options.lang.hint": "Langue de l’interface. D’autres traductions pourront être ajoutées à tout moment.",
     "options.accent.title": "Couleur d’accent", "options.accent.hint": "Utilisée pour les actions principales et les éléments importants de l’interface.",
     "options.music.title": "Musique du launcher", "options.music.hint": "Volume du thème du launcher. Réglez-le à 0 % pour couper le son.",
@@ -163,7 +163,7 @@ try { currentLang = localStorage.getItem('nv_lang') || 'en'; } catch (e) {}
    Priority: remote JSON -> last successful cache -> built-in fallback.
 =================================================================== */
 const HOME_CONTENT_CACHE_KEY = 'nv_launcher_home_content_v1';
-const HOME_ASSET_BASE_URL = 'https://raw.githubusercontent.com/AnNastyLoneGirl/NastyVerse/main/launcher-content/';
+const LAUNCHER_CONTENT_BASE_URL = 'https://raw.githubusercontent.com/AnNastyLoneGirl/NastyVerse/main/launcher-content/';
 const HOME_SLIDE_INTERVAL_MS = 8000;
 const DEFAULT_HOME_CONTENT = {
   slogan_fr: 'Votre univers. Vos règles.',
@@ -231,7 +231,7 @@ function localizedHomeValue(source, field) {
 function resolveHomeImage(image) {
   if (!image) return '';
   if (/^https?:\/\//i.test(image)) return image;
-  return `${HOME_ASSET_BASE_URL}${image.replace(/^\/+/, '')}`;
+  return `${LAUNCHER_CONTENT_BASE_URL}${image.replace(/^\/+/, '')}`;
 }
 
 async function refreshRemoteHomeContent() {
@@ -258,6 +258,124 @@ function startHomeCarousel() {
     const next = (homeSlideIndex + 1) % homeContent.slides.length;
     applyHomeSlide(next);
   }, HOME_SLIDE_INTERVAL_MS);
+}
+
+/* ===================================================================
+   Remote launcher news / changelog content
+   `launcher-content/news.json` on GitHub main is the source of truth.
+   One feed powers Home Latest News, Changelog and the News tab.
+   Priority: remote JSON -> last successful cache -> built-in fallback.
+=================================================================== */
+const NEWS_CONTENT_CACHE_KEY = 'nv_launcher_news_content_v1';
+const DEFAULT_NEWS_CONTENT = {
+  entries: [
+    {
+      title: 'NastyVerse Launcher 0.1.5',
+      category: 'Update',
+      image: 'news/launcher-015.webp',
+      date: '2026-09-26',
+      summary_fr: 'Le launcher centralise désormais ses actualités et son changelog dans un fichier JSON externe.',
+      summary_en: 'The launcher now manages its news and changelog from a single external JSON file.',
+      description_fr: 'Le panneau Dernières actualités, le Changelog et le nouvel onglet Actualités utilisent la même source distante.',
+      description_en: 'Latest News, Changelog, and the News tab use the same remote source.'
+    }
+  ]
+};
+
+function normalizeNewsContent(raw) {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.entries)) return null;
+  const entries = raw.entries
+    .filter(entry => entry && typeof entry === 'object' && typeof entry.title === 'string' && entry.title.trim())
+    .map(entry => ({
+      title: entry.title.trim(),
+      category: typeof entry.category === 'string' && entry.category.trim() ? entry.category.trim() : 'News',
+      image: typeof entry.image === 'string' ? entry.image.trim() : '',
+      date: typeof entry.date === 'string' ? entry.date.trim() : '',
+      summary_fr: typeof entry.summary_fr === 'string' ? entry.summary_fr : '',
+      summary_en: typeof entry.summary_en === 'string' ? entry.summary_en : '',
+      description_fr: typeof entry.description_fr === 'string' ? entry.description_fr : '',
+      description_en: typeof entry.description_en === 'string' ? entry.description_en : ''
+    }));
+  return entries.length ? { entries } : null;
+}
+
+function readCachedNewsContent() {
+  try {
+    return normalizeNewsContent(JSON.parse(localStorage.getItem(NEWS_CONTENT_CACHE_KEY) || 'null'));
+  } catch (error) {
+    return null;
+  }
+}
+
+let newsContent = readCachedNewsContent() || DEFAULT_NEWS_CONTENT;
+
+function localizedNewsValue(entry, field) {
+  const preferred = entry?.[`${field}_${currentLang}`];
+  if (typeof preferred === 'string' && preferred) return preferred;
+  const english = entry?.[`${field}_en`];
+  if (typeof english === 'string' && english) return english;
+  const french = entry?.[`${field}_fr`];
+  return typeof french === 'string' ? french : '';
+}
+
+function parseNewsDate(value) {
+  if (!value) return 0;
+  const timestamp = Date.parse(`${value}T00:00:00Z`);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function sortedNewsEntries() {
+  return [...newsContent.entries].sort((a, b) => parseNewsDate(b.date) - parseNewsDate(a.date));
+}
+
+function isUpdateEntry(entry) {
+  return String(entry?.category || '').trim().toLowerCase() === 'update';
+}
+
+function formatNewsDate(value) {
+  const timestamp = parseNewsDate(value);
+  if (!timestamp) return value || '';
+  return new Intl.DateTimeFormat(currentLang === 'fr' ? 'fr-FR' : 'en-US', {
+    year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'
+  }).format(new Date(timestamp));
+}
+
+function resolveLauncherContentImage(image) {
+  if (!image) return '';
+  if (/^https?:\/\//i.test(image)) return image;
+  return `${LAUNCHER_CONTENT_BASE_URL}${image.replace(/^\/+/, '')}`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function newsThumb(entry) {
+  const image = resolveLauncherContentImage(entry.image);
+  if (image) return `<div class="thumb news-thumb"><img src="${escapeHtml(image)}" alt="" loading="lazy"></div>`;
+  return `<div class="thumb">${escapeHtml(entry.title.slice(0, 1).toUpperCase())}</div>`;
+}
+
+function categoryClass(category) {
+  return String(category || 'news').toLowerCase().replace(/[^a-z0-9_-]/g, '-') || 'news';
+}
+
+async function refreshRemoteNewsContent() {
+  try {
+    const remote = normalizeNewsContent(await invoke('get_launcher_news_content'));
+    if (!remote) throw new Error('Remote news content has no valid entries.');
+    newsContent = remote;
+    try { localStorage.setItem(NEWS_CONTENT_CACHE_KEY, JSON.stringify(remote)); } catch (error) {}
+    const active = document.querySelector('.tabs button.active')?.dataset.nav;
+    if (active && ['home', 'news', 'changelog'].includes(active)) RENDERERS[active]();
+  } catch (error) {
+    console.warn('[news content] using cached/fallback content:', error);
+  }
 }
 
 /* ===================================================================
@@ -307,6 +425,7 @@ function pauseLauncherMusic() {
 =================================================================== */
 const NAV_ITEMS = [
   { id: 'home', label: () => t('nav.home', currentLang), icon: '<path d="M3 11l9-8 9 8M5 10v10h14V10"/>' },
+  { id: 'news', label: () => t('nav.news', currentLang), icon: '<path d="M4 5h16v14H4z"/><path d="M7 8h6M7 11h10M7 14h10M15 8h2"/>' },
   { id: 'catalog', label: () => t('nav.catalog', currentLang), icon: '<path d="M4 6h16M4 12h16M4 18h10"/>' },
   { id: 'changelog', label: () => t('nav.changelog', currentLang), icon: '<path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9l-6-6z"/><path d="M13 3v6h6"/>' },
   { id: 'options', label: () => t('nav.options', currentLang), icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.36.36.68.65.94"/>' },
@@ -337,12 +456,6 @@ function goTo(id) {
    HTML-only prototype. Replace with real data sources later
    (see knowledge/14-roadmap.md, priority 6, in the agent briefing).
 =================================================================== */
-const NEWS = [
-  { date: "Sep 24, 2026", tag: "update", title: "Stability improvements", desc: "General fixes and performance optimizations.", init: "S" },
-  { date: "Sep 20, 2026", tag: "update", title: "Second test entry", desc: "Second test build for the news feed.", init: "T" },
-  { date: "Sep 15, 2026", tag: "content", title: "New characters", desc: "Discover new stories and characters in the catalog.", init: "N" },
-  { date: "Sep 10, 2026", tag: "update", title: "Launcher polish", desc: "Minor UI refinements across all screens.", init: "L" },
-];
 const CATALOG_HOME = [
   { tag: "character", title: "Jade, Your New Roommate", desc: "A complice slice-of-life with conversations that evolve.", init: "J" },
   { tag: "character", title: "Astra, Night Operative", desc: "A calm, sharp cyberpunk guide for late-night talks.", init: "A" },
@@ -353,9 +466,6 @@ const CATALOG_FULL = CATALOG_HOME.concat([
   { tag: "character", title: "Rook, Old Friend", desc: "Warm, dry humor, a decade of shared history.", init: "R" },
   { tag: "character", title: "Vex, Arena Champion", desc: "Competitive, sharp-tongued, loyal once earned.", init: "V" },
 ]);
-const CHANGELOG = [
-  { v: "v0.1.4", date: "Sep 26, 2026", items: ["Home carousel content loaded remotely from GitHub main", "Dynamic slide count, remote backgrounds and configurable slide actions", "Launcher theme with persistent volume control", "Home screen fitted to the launcher window without scrolling", "Signed portable launcher self-update and file-by-file application updates from GitHub"] },
-];
 function tagLabel(tag) { return { update: "Update", content: "Content", character: "Character", lorebook: "Lorebook", persona: "Persona" }[tag] || tag; }
 
 /* ===================================================================
@@ -363,6 +473,7 @@ function tagLabel(tag) { return { update: "Update", content: "Content", characte
 =================================================================== */
 function renderHome() {
   const slides = homeContent.slides;
+  const latestEntries = sortedNewsEntries().slice(0, 4);
   homeSlideIndex = Math.min(homeSlideIndex, Math.max(0, slides.length - 1));
   pageRoot.innerHTML = `
     <div class="page home-page active">
@@ -377,12 +488,14 @@ function renderHome() {
       </div>
       <div class="grid2">
         <div>
-          <div class="section-head"><h2>📋 ${t('home.news', currentLang)}</h2><a href="#" data-nav="changelog">${t('home.seeall', currentLang)}</a></div>
-          <div>${NEWS.map(n => `
-            <div class="list-item"><div class="thumb">${n.init}</div><div>
-              <div class="item-top"><span class="date">${n.date}</span><span class="tag ${n.tag}">${tagLabel(n.tag)}</span></div>
-              <div class="item-title">${n.title}</div><div class="item-desc">${n.desc}</div>
-            </div></div>`).join('')}</div>
+          <div class="section-head"><h2>📋 ${t('home.news', currentLang)}</h2><a href="#" data-nav="news">${t('home.seeall', currentLang)}</a></div>
+          <div>${latestEntries.map(entry => `
+            <button class="list-item news-list-item" type="button" data-news-target="${isUpdateEntry(entry) ? 'changelog' : 'news'}">
+              ${newsThumb(entry)}<div class="list-item-copy">
+                <div class="item-top"><span class="date">${escapeHtml(formatNewsDate(entry.date))}</span><span class="tag ${categoryClass(entry.category)}">${escapeHtml(entry.category)}</span></div>
+                <div class="item-title">${escapeHtml(entry.title)}</div><div class="item-desc">${escapeHtml(localizedNewsValue(entry, 'summary'))}</div>
+              </div>
+            </button>`).join('')}</div>
         </div>
         <div>
           <div class="section-head"><h2>📖 ${t('home.catalog', currentLang)}</h2><a href="#" data-nav="catalog">${t('home.opencatalog', currentLang)}</a></div>
@@ -399,6 +512,7 @@ function renderHome() {
     event.preventDefault();
     goTo(el.dataset.nav);
   }));
+  pageRoot.querySelectorAll('[data-news-target]').forEach(el => el.addEventListener('click', () => goTo(el.dataset.newsTarget)));
   pageRoot.querySelectorAll('[data-slide-index]').forEach(dot => dot.addEventListener('click', () => {
     applyHomeSlide(Number(dot.dataset.slideIndex));
     startHomeCarousel();
@@ -469,6 +583,25 @@ async function executeHomeAction(action) {
   }
 }
 
+function renderNews() {
+  const entries = sortedNewsEntries().filter(entry => !isUpdateEntry(entry));
+  pageRoot.innerHTML = `
+    <div class="page active">
+      <div class="section-head"><h2>${t('news.title', currentLang)}</h2></div>
+      <div class="remote-feed">
+        ${entries.length ? entries.map(entry => `
+          <article class="remote-entry">
+            ${newsThumb(entry)}
+            <div class="remote-entry-copy">
+              <div class="item-top"><span class="date">${escapeHtml(formatNewsDate(entry.date))}</span><span class="tag ${categoryClass(entry.category)}">${escapeHtml(entry.category)}</span></div>
+              <h3>${escapeHtml(entry.title)}</h3>
+              <p>${escapeHtml(localizedNewsValue(entry, 'description'))}</p>
+            </div>
+          </article>`).join('') : `<p class="remote-empty">${t('news.empty', currentLang)}</p>`}
+      </div>
+    </div>`;
+}
+
 function renderCatalog() {
   pageRoot.innerHTML = `
     <div class="page active">
@@ -481,12 +614,21 @@ function renderCatalog() {
 }
 
 function renderChangelog() {
+  const entries = sortedNewsEntries().filter(isUpdateEntry);
   pageRoot.innerHTML = `
     <div class="page active">
       <div class="section-head"><h2>${t('changelog.title', currentLang)}</h2></div>
-      <div class="timeline">${CHANGELOG.map(c => `
-        <div class="tl-entry"><h3>${c.v}</h3><span class="date">${c.date}</span>
-          <ul>${c.items.map(i => `<li>${i}</li>`).join('')}</ul></div>`).join('')}</div>
+      <div class="remote-feed update-feed">
+        ${entries.length ? entries.map(entry => `
+          <article class="remote-entry update-entry">
+            ${newsThumb(entry)}
+            <div class="remote-entry-copy">
+              <div class="item-top"><span class="date">${escapeHtml(formatNewsDate(entry.date))}</span><span class="tag update">${escapeHtml(entry.category)}</span></div>
+              <h3>${escapeHtml(entry.title)}</h3>
+              <p>${escapeHtml(localizedNewsValue(entry, 'description'))}</p>
+            </div>
+          </article>`).join('') : `<p class="remote-empty">${t('changelog.empty', currentLang)}</p>`}
+      </div>
     </div>`;
 }
 
@@ -533,7 +675,7 @@ function renderOptions() {
   });
 }
 
-const RENDERERS = { home: renderHome, catalog: renderCatalog, changelog: renderChangelog, options: renderOptions };
+const RENDERERS = { home: renderHome, news: renderNews, catalog: renderCatalog, changelog: renderChangelog, options: renderOptions };
 
 /* ===================================================================
    Two-layer updater controller
@@ -807,4 +949,5 @@ renderNav();
 goTo('home');
 startLauncherMusic();
 refreshRemoteHomeContent();
+refreshRemoteNewsContent();
 verifyAll();

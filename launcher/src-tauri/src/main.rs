@@ -11,6 +11,8 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 const LAUNCHER_HOME_CONTENT_URL: &str =
     "https://raw.githubusercontent.com/AnNastyLoneGirl/NastyVerse/main/launcher-content/home.json";
+const LAUNCHER_NEWS_CONTENT_URL: &str =
+    "https://raw.githubusercontent.com/AnNastyLoneGirl/NastyVerse/main/launcher-content/news.json";
 
 #[tauri::command]
 fn window_minimize(window: tauri::WebviewWindow) -> Result<(), String> {
@@ -59,6 +61,25 @@ async fn get_launcher_home_content() -> Result<serde_json::Value, String> {
         .json::<serde_json::Value>()
         .await
         .map_err(|error| format!("launcher-content/home.json is not valid JSON: {error}"))
+}
+
+#[tauri::command]
+async fn get_launcher_news_content() -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("NastyVerse-Launcher")
+        .build()
+        .map_err(|error| format!("Unable to create the news content client: {error}"))?;
+    let response = client
+        .get(LAUNCHER_NEWS_CONTENT_URL)
+        .send()
+        .await
+        .map_err(|error| format!("Unable to download launcher-content/news.json: {error}"))?
+        .error_for_status()
+        .map_err(|error| format!("GitHub returned an error for launcher-content/news.json: {error}"))?;
+    response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| format!("launcher-content/news.json is not valid JSON: {error}"))
 }
 
 #[tauri::command]
@@ -177,6 +198,7 @@ fn main() {
             launcher_updater::check_launcher_update,
             launcher_updater::install_launcher_update,
             get_launcher_home_content,
+            get_launcher_news_content,
             open_external_url,
             check_installation,
             sync_installation,

@@ -1,0 +1,24 @@
+{
+  "entries": [
+    {
+      "title": "NastyVerse Launcher 0.1.5",
+      "category": "Update",
+      "image": "",
+      "date": "2026-09-26",
+      "summary_fr": "Les actualités et le changelog du launcher sont maintenant pilotés par un fichier JSON externe.",
+      "summary_en": "Launcher news and changelog are now driven by an external JSON file.",
+      "description_fr": "Le panneau Dernières actualités, le Changelog et l’onglet Actualités utilisent désormais launcher-content/news.json comme source de vérité.",
+      "description_en": "Latest News, Changelog, and the News tab now use launcher-content/news.json as their source of truth."
+    },
+    {
+      "title": "Bienvenue dans NastyVerse",
+      "category": "News",
+      "image": "",
+      "date": "2026-09-25",
+      "summary_fr": "Découvrez comment NastyVerse organise votre univers de personnages IA.",
+      "summary_en": "Discover how NastyVerse organizes your AI character universe.",
+      "description_fr": "NastyVerse rassemble personnages, Personas, Lorebooks, modèles et conversations dans une expérience desktop dédiée.",
+      "description_en": "NastyVerse brings characters, Personas, Lorebooks, models, and conversations together in a dedicated desktop experience."
+    }
+  ]
+}

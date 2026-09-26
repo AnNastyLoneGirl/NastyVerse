@@ -1,0 +1,20 @@
+/* NastyVerse — shared design tokens.
+   Imported by both the launcher and the main app so the two never drift apart. */
+:root{
+  --void:#0a0713; --panel:#120b1f; --panel-2:#160f26; --line:#2a1c42;
+  --violet:#8b2fe0; --violet-2:#b24bff; --magenta:#e86eff;
+  --text:#f2ecfb; --text-dim:#a996c9; --text-faint:#6f5c94;
+  --danger:#e14b6b; --ok:#3fbf9e;
+  --radius:10px;
+  --titlebar-h:38px; --navbar-h:44px;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;}
+body{
+  background:var(--void); color:var(--text);
+  font-family:'Inter',system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden; /* the app is a fixed-chrome desktop window, not a scrolling page */
+}
+.font-display{font-family:'Cinzel Decorative',serif;}
+button{font-family:inherit;}

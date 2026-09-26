@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Core permissions for the launcher and hosted NastyVerse app window.",
+  "windows": ["main", "app"],
+  "permissions": ["core:default"]
+}

@@ -1,0 +1,96 @@
+name: Publish portable NastyVerse launcher
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "launcher-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-launcher:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build output
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Install Tauri CLI
+        shell: pwsh
+        run: cargo install tauri-cli --version "^2.11.5" --locked
+
+      - name: Validate release configuration
+        shell: pwsh
+        env:
+          NASTYVERSE_UPDATER_PUBLIC_KEY: ${{ vars.NASTYVERSE_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NASTYVERSE_UPDATER_PUBLIC_KEY)) {
+            throw "Missing repository variable NASTYVERSE_UPDATER_PUBLIC_KEY."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw "Missing repository secret TAURI_SIGNING_PRIVATE_KEY."
+          }
+
+          $cargo = Get-Content "launcher/src-tauri/Cargo.toml" -Raw
+          if ($cargo -notmatch '(?m)^version\s*=\s*"([^"]+)"') {
+            throw "Unable to read launcher version from Cargo.toml."
+          }
+          $version = $Matches[1]
+          $expectedTag = "launcher-v$version"
+          if ($env:GITHUB_REF -like "refs/tags/*" -and $env:GITHUB_REF_NAME -ne $expectedTag) {
+            throw "Tag $env:GITHUB_REF_NAME does not match launcher version $version. Expected $expectedTag."
+          }
+          "LAUNCHER_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build portable launcher
+        shell: pwsh
+        env:
+          NASTYVERSE_UPDATER_PUBLIC_KEY: ${{ vars.NASTYVERSE_UPDATER_PUBLIC_KEY }}
+        run: |
+          cargo build --release -p nastyverse-launcher
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "target/release/NastyVerse-Launcher.exe" "dist/NastyVerse-Launcher.exe" -Force
+
+      - name: Sign portable launcher update
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          cargo tauri signer sign --app-version "$env:LAUNCHER_VERSION" "dist/NastyVerse-Launcher.exe"
+          if (!(Test-Path "dist/NastyVerse-Launcher.exe.sig")) {
+            throw "The Tauri signer did not produce dist/NastyVerse-Launcher.exe.sig."
+          }
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/launcher-v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$env:GITHUB_REF_NAME" `
+            "dist/NastyVerse-Launcher.exe" `
+            "dist/NastyVerse-Launcher.exe.sig" `
+            --repo "$env:GITHUB_REPOSITORY" `
+            --title "NastyVerse Launcher v$env:LAUNCHER_VERSION" `
+            --generate-notes `
+            --latest
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NastyVerse-Launcher-${{ env.LAUNCHER_VERSION }}-windows-x64
+          path: |
+            dist/NastyVerse-Launcher.exe
+            dist/NastyVerse-Launcher.exe.sig

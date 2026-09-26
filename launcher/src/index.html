@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NastyVerse Launcher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Synced from ../../shared/tokens.css by build.rs on every dev/build run -->
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="launcher.css">
+</head>
+<body>
+  <!-- Launcher chrome is ONE row: brand + nav tabs + window controls. This is
+       deliberately different from app/ (titlebar row + separate navbar row) —
+       the launcher is a branding-forward landing screen, the app is a dense
+       working UI. Both still use decorations:false + real Tauri commands. -->
+  <header class="chrome" data-tauri-drag-region>
+    <div class="brand" data-tauri-drag-region>
+      <img src="data:image/webp;base64,UklGRgwGAABXRUJQVlA4WAoAAAAQAAAAJwAAJwAAQUxQSMwBAAANoGNb2xoqO8/7Jbi7u3feucso6NzdSncotWIAdLRUTudU7g7Xb758L/BrMoKImACAUPLfw7wDTx6Pu3/3foRQ8lepyGdN6uztTWptyHqam1KngV+KhpUfFg3pefPajRZLgDyt2gKoQ1c6dQcEBjAT0vARs5f3OX1ZuPDzGe2JvxUIMCFLIrgnm7KrdXVwledoDp0yILl5yv7ytwZIRio2jd0a0uJJrd2dwgOZgfE/Wta+9/Z1NrtMhXIX/7tg47m+Iz14tE5Uasx8MrA5hXbrTLWiZ44cy6jaTY6EV4b5oDKaUbVit67diEYNQ14GUUf3pwP7JavMs88/WvJMVK8yUkuXVI+/Wi2E6Fqg6khd8uDUUlhy1UIlgTqm1NCxo6s6a4rRjDp6GtiUQg1Sty6jiFaD2KtXzKihIJWhDijFIjNclZEKkSSql1yiepd7Q8eONUDt8VWvnq7q7Fvju3dT3Sors9twYkcpVeTiBOHa4+1tHkz/4Agc9A+eSnU9SEhhw5gdpMIhITwLKSpTWeJgoDznaEMo3LXx+bZpvQEDVDSFnjR49xzxtz/uHccKcOzqyab+SmFkiM3Zsx/a8faKeo2KXax8VVr5CSwCVlA4IBoEAACQEwCdASooACgAPm0qkEWkIqGXHf5kQAbEtgBOmUI9BkCWNpiBa69nqp2wHmA/V31jtM659n9gPhS8ma54eDvj39O+zHJY5V7XYbk9duwHJ/6N/tOMD6x62+Yq/2vLR9F+wF/Lf6z/yvWg9ffotfrsIiD701T/BcH4YBEF4/PeMfANSglnLEBiK9x7IAdGtGMvqhU7RCNg/L5tAnc6eksTxOF06rgA/viVuucdTco4SNm45LZicRX09awvvwLGCjy5mYqBKXaocmD3Uc/Z6qUwKX5I6MqjJDTYjnTP6GP7yyq/zATmeEc/voMn6oMtwZUMRj8i+ePcZULo3OHVzw+o9K1IUB+FY1Xe9mnfygJBPm7lFBa/7EXnuHv3IXbNDHSWgHhP6VJEY+deBREhGucNXkMsJgMM6FYD6X9lGzwCUVwrF883kT2Zm3HmUKg+xEu3EOKMUUK0bli2NITdT5kjNZ6/tZK8wV//1B4gsSgTuCbsaSQ61gR8y4SMQdt0VmMR8IfIgy/UXEJW83wtPvclQw2xn5HsWV4kIfxIH9Q+W1mddyfuVd9m7ZtaShBQhoSv37t8y4N6kwjET8dm/tj7FetlxQiudRC2wnhHko/Po7i0RMPWU+hFLc/k+EYu6eddYlLUkdHkLFIf4HAfWnFxeMgct7A6AO9g8UvANrtpi8WaXdVkzfF4c30rKSgGPEy8xvlCSlagYm2JDkkDXq/iQCLqMdBH1ahVDvAVmN/ckdYurFcFd5G5QI0UHQ1Hey+pe6LZ5JHOpUogtvu9EuqJg5KURwHlKCBpsYjMKkWRtY9Z1IyV2m7wsYhQ4beTYMs0oE6jDvos6Qa+WrEU+fB7rRBTmuLjcy/b8Go/5orFXeZK9uzFtb2bIyYwoboUhwa5S7xwyqJsebvydTbqiPswnwrwHUDDStbBJ7d/p/jtyeb5+zbhgVPTUn6Q1MLufYZfZn6zqxzf768ZIzSQ7/rrzhlBu1857c/PVyDP1PlBnYOTT/H/4sh3r/0fl7hxeCFMvkJ9bg/sj/EpA4vwmd3CO4toH8pH/qC/siDjFn9g0QOEtY9rwwfwCbPjNgZknDCYIZ+Vp3uGo/Erq3ZDUyF81821bKuZtOXpwS2AaCzyusyiVAWYNNfgzpE2M0FN9V1Cz9Hu/+jzAhSxC29TInLgIg3l/eyRRbDpOsp1z66X8tdItCDLZISNxXdnrPxye8VwGwAf/jwzPwVU8KHDvtBuX958Q6ms9C5OEdFz4sHt4LDSCSb+S0XhEHKoRGhkWVHIz9ZWOp3+riDhXwRvpX//eSphBtC7HzLh9/f+cRwbaJHUMoHphf7kI/hKXEFa3PCVK/igHt2EWKIebl35nOP+p2PRMg2V9De/udIiX8bFZdDVlf9DdugAAAA=" alt="NastyVerse">
+      <div><div class="name">NastyVerse</div><div class="sub" data-i18n="launcher">Launcher</div></div>
+    </div>
+    <nav class="tabs" id="navbar"></nav>
+    <div class="winbtns">
+      <button class="winbtn" id="btn-min" title="Minimize"><svg viewBox="0 0 10 10"><path d="M1 5h8"/></svg></button>
+      <button class="winbtn" id="btn-max" title="Maximize"><svg viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7"/></svg></button>
+      <button class="winbtn winbtn-close" id="btn-close" title="Close"><svg viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8"/></svg></button>
+    </div>
+  </header>
+
+  <main class="page-root" id="page-root"></main>
+
+  <footer class="install-dock" id="install-dock">
+    <div class="install-status">
+      <div class="install-status-line">
+        <span class="install-status-dot is-checking" id="install-status-dot"></span>
+        <strong id="install-status-title">Checking NastyVerse…</strong>
+      </div>
+      <p id="install-status-detail">Comparing the files on this computer with the current main branch.</p>
+      <div class="install-progress" id="install-progress" hidden><i id="install-progress-bar"></i></div>
+    </div>
+    <button class="primary-action" id="primary-action" disabled>Checking…</button>
+  </footer>
+
+  <script src="launcher.js"></script>
+</body>
+</html>

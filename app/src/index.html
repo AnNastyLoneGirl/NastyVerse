@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NastyVerse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Installed by the launcher from shared/tokens.css on the GitHub main branch. -->
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+  <!-- Titlebar: decorations are OFF in tauri.conf.json, so this bar (and its
+       buttons) IS the window frame. #titlebar-left is intentionally a plain
+       flex container — new sections just push another element into it. -->
+  <header class="titlebar" data-tauri-drag-region>
+    <div class="titlebar-left" id="titlebar-left" data-tauri-drag-region>
+      <span class="titlebar-label" id="section-label">Chat</span>
+    </div>
+    <div class="titlebar-right">
+      <button class="model-status" id="model-status">
+        <span class="dot" id="model-status-dot"></span>
+        <span id="model-status-text">No model loaded</span>
+      </button>
+      <div class="winbtns">
+        <button class="winbtn" id="btn-min" title="Minimize" aria-label="Minimize">
+          <svg viewBox="0 0 10 10"><path d="M1 5h8"/></svg>
+        </button>
+        <button class="winbtn" id="btn-max" title="Maximize" aria-label="Maximize">
+          <svg viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7"/></svg>
+        </button>
+        <button class="winbtn winbtn-close" id="btn-close" title="Close" aria-label="Close">
+          <svg viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Navbar: built entirely from NAV_ITEMS in app.js. Add an entry there
+       (id / label / icon) and a matching render function — no HTML edits. -->
+  <nav class="navbar" id="navbar"></nav>
+
+  <main class="page-root" id="page-root"></main>
+
+  <script src="app.js"></script>
+</body>
+</html>

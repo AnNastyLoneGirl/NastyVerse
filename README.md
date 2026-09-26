@@ -10,6 +10,8 @@ The launcher is simultaneously:
 - the signed self-updater for the launcher itself;
 - the installer/updater for the HTML/CSS/JS application payload.
 
+The launcher UI also bundles its own looping theme (`launcher/src/assets/launcher-theme.mp3`). It starts with the launcher, stores the selected volume locally from **Options**, and stops when the main NastyVerse application is launched. The Home page is intentionally fitted to the launcher viewport with no vertical scrolling; other tabs retain independent scrolling.
+
 There is no second NastyVerse application executable and no NSIS/MSI setup in the normal user flow.
 
 ## First launch

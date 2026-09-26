@@ -63,6 +63,7 @@ const TRANSLATIONS = {
     "options.title": "Options",
     "options.lang.title": "Language", "options.lang.hint": "Interface language. More translations can be added at any time.",
     "options.accent.title": "Accent color", "options.accent.hint": "Used for primary actions and other important interface elements.",
+    "options.music.title": "Launcher music", "options.music.hint": "Volume of the launcher theme. Set it to 0% to mute it.",
     "options.models.note": "Connecting local backends (KoboldCpp, llama.cpp server, text-generation-webui, Ollama…) happens in the main app, under Configuration ▸ Models — not here.",
     "install.checking.title": "Checking NastyVerse…",
     "install.checking.detail": "Comparing local files with the current GitHub main branch.",
@@ -110,6 +111,10 @@ const TRANSLATIONS = {
     "launcher.update.installing": "Application de la mise à jour du launcher…",
     "launcher.update.installing.detail": "Le launcher va se remplacer en arrière-plan puis se rouvrir automatiquement.",
     "catalog.title": "Catalogue", "changelog.title": "Changelog", "options.title": "Options",
+    "options.lang.title": "Langue", "options.lang.hint": "Langue de l’interface. D’autres traductions pourront être ajoutées à tout moment.",
+    "options.accent.title": "Couleur d’accent", "options.accent.hint": "Utilisée pour les actions principales et les éléments importants de l’interface.",
+    "options.music.title": "Musique du launcher", "options.music.hint": "Volume du thème du launcher. Réglez-le à 0 % pour couper le son.",
+    "options.models.note": "La connexion aux backends locaux (KoboldCpp, llama.cpp server, text-generation-webui, Ollama…) se fait dans l’application principale, Configuration ▸ Models — pas ici.",
     "install.checking.title": "Vérification de NastyVerse…",
     "install.checking.detail": "Comparaison des fichiers locaux avec la branche GitHub main actuelle.",
     "install.checking.button": "Vérification…",
@@ -153,6 +158,47 @@ let currentLang = 'en';
 try { currentLang = localStorage.getItem('nv_lang') || 'en'; } catch (e) {}
 
 /* ===================================================================
+   Launcher theme audio — bundled with the native launcher. The selected
+   volume is launcher-only and persists independently from app settings.
+=================================================================== */
+const launcherTheme = document.getElementById('launcher-theme');
+const DEFAULT_LAUNCHER_VOLUME = 40;
+let launcherVolume = DEFAULT_LAUNCHER_VOLUME;
+try {
+  const savedVolume = Number(localStorage.getItem('nv_launcher_volume'));
+  if (Number.isFinite(savedVolume)) launcherVolume = Math.min(100, Math.max(0, savedVolume));
+} catch (e) {}
+
+function applyLauncherVolume(value, persist = true) {
+  launcherVolume = Math.min(100, Math.max(0, Number(value) || 0));
+  launcherTheme.volume = launcherVolume / 100;
+  if (persist) {
+    try { localStorage.setItem('nv_launcher_volume', String(launcherVolume)); } catch (e) {}
+  }
+}
+
+async function startLauncherMusic() {
+  applyLauncherVolume(launcherVolume, false);
+  try {
+    await launcherTheme.play();
+  } catch (error) {
+    // WebView autoplay policies can vary by platform. If automatic playback is
+    // refused, start on the first user interaction without showing extra UI.
+    const resume = () => {
+      launcherTheme.play().catch(() => {});
+      document.removeEventListener('pointerdown', resume);
+      document.removeEventListener('keydown', resume);
+    };
+    document.addEventListener('pointerdown', resume, { once: true });
+    document.addEventListener('keydown', resume, { once: true });
+  }
+}
+
+function pauseLauncherMusic() {
+  launcherTheme.pause();
+}
+
+/* ===================================================================
    Nav — same NAV_ITEMS/goTo convention as app/src/app.js, for consistency
    across the two frontends. Add a tab here, add a renderer below.
 =================================================================== */
@@ -176,8 +222,10 @@ function renderNav() {
 }
 
 function goTo(id) {
-  navbar.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.nav === id));
-  (RENDERERS[id] || RENDERERS.home)();
+  const target = RENDERERS[id] ? id : 'home';
+  navbar.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.nav === target));
+  pageRoot.classList.toggle('is-home', target === 'home');
+  RENDERERS[target]();
 }
 
 /* ===================================================================
@@ -202,7 +250,7 @@ const CATALOG_FULL = CATALOG_HOME.concat([
   { tag: "character", title: "Vex, Arena Champion", desc: "Competitive, sharp-tongued, loyal once earned.", init: "V" },
 ]);
 const CHANGELOG = [
-  { v: "v0.1.0", date: "Sep 26, 2026", items: ["Initial portable NastyVerse launcher", "Silent managed copy with no Desktop or Start Menu shortcut", "Signed launcher self-update and file-by-file application updates from GitHub"] },
+  { v: "v0.1.0", date: "Sep 26, 2026", items: ["Initial portable NastyVerse launcher", "Launcher theme with persistent volume control", "Home screen fitted to the launcher window without scrolling", "Silent managed copy with no Desktop or Start Menu shortcut", "Signed launcher self-update and file-by-file application updates from GitHub"] },
 ];
 function tagLabel(tag) { return { update: "Update", content: "Content", character: "Character", lorebook: "Lorebook", persona: "Persona" }[tag] || tag; }
 
@@ -211,7 +259,7 @@ function tagLabel(tag) { return { update: "Update", content: "Content", characte
 =================================================================== */
 function renderHome() {
   pageRoot.innerHTML = `
-    <div class="page active">
+    <div class="page home-page active">
       <div class="hero">
         <div class="hero-eyebrow">${t('hero.eyebrow', currentLang)}</div>
         <h1>NASTYVERSE</h1>
@@ -276,9 +324,24 @@ function renderOptions() {
           <div class="info"><h3>${t('options.accent.title', currentLang)}</h3><p>${t('options.accent.hint', currentLang)}</p></div>
           <div class="control"><div class="swatch" style="background:var(--violet-2)"></div><input class="hexinput" value="#B24BFF"></div>
         </div>
+        <div class="field-card">
+          <div class="info"><h3>${t('options.music.title', currentLang)}</h3><p>${t('options.music.hint', currentLang)}</p></div>
+          <div class="control volume-control">
+            <input id="music-volume" class="volume-slider" type="range" min="0" max="100" step="1" value="${Math.round(launcherVolume)}" aria-label="${t('options.music.title', currentLang)}">
+            <output id="music-volume-value" class="volume-value">${Math.round(launcherVolume)}%</output>
+          </div>
+        </div>
         <p class="note">${t('options.models.note', currentLang)}</p>
       </div>
     </div>`;
+  const volumeSlider = document.getElementById('music-volume');
+  const volumeValue = document.getElementById('music-volume-value');
+  volumeSlider.addEventListener('input', event => {
+    applyLauncherVolume(event.target.value);
+    volumeValue.textContent = `${Math.round(launcherVolume)}%`;
+    if (launcherTheme.paused) startLauncherMusic();
+  });
+
   const sel = document.getElementById('lang-select');
   sel.value = currentLang;
   sel.addEventListener('change', e => {
@@ -489,9 +552,12 @@ async function launchInstalledApp() {
   actionBusy = true;
   actionButton.disabled = true;
   actionButton.textContent = t('install.launching', currentLang);
+  const shouldResumeMusic = !launcherTheme.paused;
+  pauseLauncherMusic();
   try {
     await invoke('launch_app');
   } catch (error) {
+    if (shouldResumeMusic) startLauncherMusic();
     actionBusy = false;
     renderCheckError(error);
   }
@@ -560,4 +626,5 @@ listen('installation-progress', event => {
 =================================================================== */
 renderNav();
 goTo('home');
+startLauncherMusic();
 verifyAll();

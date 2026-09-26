@@ -34,8 +34,8 @@
     },
     {
       "key": "portal",
-      "description_fr": "Votre personnage est prêt, son univers est défini et votre modèle est connecté. Il ne reste plus qu'à ouvrir le portail : commencez la conversation et laissez votre histoire évoluer.",
-      "description_en": "Your character is ready, their universe is defined, and your model is connected. All that remains is to open the portal: start the conversation and let your story unfold.",
+      "description_fr": "Votre personnage est prêt, son univers est défini et votre modèle est connecté. Il ne reste plus qu'à ouvrir le portail, commencez la conversation et laissez votre histoire évoluer.",
+      "description_en": "Your character is ready, their universe is defined, and your model is connected. All that remains is to open the portal, start the conversation and let your story unfold.",
       "image": "images/portal.png",
       "button": false,
       "button_text_fr": "",

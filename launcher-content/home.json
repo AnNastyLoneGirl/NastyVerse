@@ -1,16 +1,46 @@
 {
   "slogan_fr": "Votre univers. Vos règles.",
-  "slogan_en": "Your world. Your rules.",
+  "slogan_en": "Your universe. Your rules.",
   "slides": [
     {
-      "key": "welcome",
-      "description_en": "NastyVerse is a universe of AI characters you can create, customize, and grow. Choose their world, shape their mind, and start your own story.",
-      "description_fr": "NastyVerse est un univers de personnages IA que vous pouvez créer, personnaliser et faire évoluer. Choisissez leur monde, façonnez leur esprit, commencez votre histoire.",
-      "image": "",
-      "button": true,
-      "button_text_fr": "Découvrir",
-      "button_text_en": "Discover",
-      "action": "tab:catalog"
+      "key": "overview",
+      "description_fr": "Bienvenue dans NastyVerse. Créez votre univers, donnez vie à vos personnages et construisez des expériences de discussion entièrement personnalisées. Tout commence ici.",
+      "description_en": "Welcome to NastyVerse. Create your universe, bring your characters to life, and build fully personalized chat experiences. Everything starts here.",
+      "image": "images/overview.png",
+      "button": false,
+      "button_text_fr": "",
+      "button_text_en": "",
+      "action": ""
+    },
+    {
+      "key": "creator",
+      "description_fr": "Créez vos personnages, définissez votre Persona et enrichissez leur monde avec des Lorebooks. Chaque élément façonne la personnalité, le contexte et l'histoire de vos conversations.",
+      "description_en": "Create your characters, define your Persona, and expand their world with Lorebooks. Every element shapes the personality, context, and story of your conversations.",
+      "image": "images/creator.png",
+      "button": false,
+      "button_text_fr": "",
+      "button_text_en": "",
+      "action": ""
+    },
+    {
+      "key": "models",
+      "description_fr": "Choisissez l'intelligence qui animera votre univers. Connectez NastyVerse à un modèle exécuté localement ou utilisez un service distant via une API compatible.",
+      "description_en": "Choose the intelligence behind your universe. Connect NastyVerse to a locally hosted model or use a remote service through a compatible API.",
+      "image": "images/models.png",
+      "button": false,
+      "button_text_fr": "",
+      "button_text_en": "",
+      "action": ""
+    },
+    {
+      "key": "portal",
+      "description_fr": "Votre personnage est prêt, son univers est défini et votre modèle est connecté. Il ne reste plus qu'à ouvrir le portail : commencez la conversation et laissez votre histoire évoluer.",
+      "description_en": "Your character is ready, their universe is defined, and your model is connected. All that remains is to open the portal: start the conversation and let your story unfold.",
+      "image": "images/portal.png",
+      "button": false,
+      "button_text_fr": "",
+      "button_text_en": "",
+      "action": ""
     }
   ]
 }

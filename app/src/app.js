@@ -26,6 +26,10 @@ const STORAGE = {
   activeCharacter: 'nv_app_active_character',
   ui: 'nv_app_ui_settings',
   contextTemplate: 'nv_app_context_template',
+  instructionTemplate: 'nv_app_instruction_template_v1',
+  globalSystemPrompt: 'nv_app_global_system_prompt',
+  globalPostHistory: 'nv_app_global_post_history',
+  globalPromptTab: 'nv_app_global_prompt_tab',
 };
 
 const I18N_FALLBACK_MANIFEST = {
@@ -174,7 +178,27 @@ const BACKENDS = [
 
 const DEFAULT_PARAMS = { temperature: 0.8, topP: 0.95, maxTokens: 512 };
 const DEFAULT_UI = { scale: 100, compactMessages: false };
-const DEFAULT_CONTEXT_TEMPLATE = `You are {{char}}. Stay in character and respond naturally.
+const DEFAULT_CONTEXT_TEMPLATE = `{{#if system}}{{system}}
+
+{{/if}}{{#if description}}Description:
+{{description}}
+
+{{/if}}{{#if personality}}Personality:
+{{personality}}
+
+{{/if}}{{#if scenario}}Scenario:
+{{scenario}}
+{{/if}}{{#if persona}}
+User persona:
+{{persona}}
+{{/if}}{{#if loreBefore}}
+World information:
+{{loreBefore}}
+{{/if}}{{#if loreAfter}}
+{{loreAfter}}
+{{/if}}`;
+
+const LEGACY_CONTEXT_TEMPLATE_015 = `You are {{char}}. Stay in character and respond naturally.
 
 {{#if system}}{{system}}
 
@@ -195,6 +219,22 @@ World information:
 {{/if}}{{#if loreAfter}}
 {{loreAfter}}
 {{/if}}`;
+
+const DEFAULT_GLOBAL_SYSTEM_PROMPT = `You are {{char}}. Stay in character and respond naturally.`;
+const DEFAULT_GLOBAL_POST_HISTORY = ``;
+const DEFAULT_INSTRUCTION_TEMPLATE = {
+  wrapWithNewline: true,
+  includeNames: 'never',
+  storyPrefix: '',
+  storySuffix: '\n',
+  userPrefix: '{{user}}: ',
+  userSuffix: '\n',
+  assistantPrefix: '{{char}}: ',
+  assistantSuffix: '\n',
+  systemPrefix: '',
+  systemSuffix: '\n',
+  stopSequence: '',
+};
 
 const state = {
   locale: normalizeLocaleCode(localStorage.getItem(STORAGE.locale) || 'en-en'),
@@ -370,10 +410,29 @@ function getGenerationParams() {
 
 function getContextTemplate() {
   const saved = localStorage.getItem(STORAGE.contextTemplate);
-  return saved === null ? DEFAULT_CONTEXT_TEMPLATE : saved;
+  if (saved === null) return DEFAULT_CONTEXT_TEMPLATE;
+  if (saved === LEGACY_CONTEXT_TEMPLATE_015) {
+    localStorage.setItem(STORAGE.contextTemplate, DEFAULT_CONTEXT_TEMPLATE);
+    return DEFAULT_CONTEXT_TEMPLATE;
+  }
+  return saved;
 }
 
-function contextTemplateValues(character) {
+function getGlobalSystemPrompt() {
+  const saved = localStorage.getItem(STORAGE.globalSystemPrompt);
+  return saved === null ? DEFAULT_GLOBAL_SYSTEM_PROMPT : saved;
+}
+
+function getGlobalPostHistoryInstructions() {
+  const saved = localStorage.getItem(STORAGE.globalPostHistory);
+  return saved === null ? DEFAULT_GLOBAL_POST_HISTORY : saved;
+}
+
+function getInstructionTemplate() {
+  return { ...DEFAULT_INSTRUCTION_TEMPLATE, ...readJson(STORAGE.instructionTemplate, {}) };
+}
+
+function baseContextTemplateValues(character) {
   const loreBefore = '';
   const loreAfter = '';
   return {
@@ -382,7 +441,6 @@ function contextTemplateValues(character) {
     description: character.description || '',
     scenario: character.scenario || '',
     personality: character.personality || '',
-    system: character.systemPrompt || '',
     persona: '',
     char: character.name || '',
     user: 'User',
@@ -392,6 +450,30 @@ function contextTemplateValues(character) {
     loreAfter,
     mesExamples: character.exampleMessages || '',
     mesExamplesRaw: character.exampleMessages || '',
+  };
+}
+
+function renderPromptOverrideText(source, character) {
+  const values = { ...baseContextTemplateValues(character), system: '' };
+  return renderContextTemplate(String(source || ''), values);
+}
+
+function effectiveSystemPrompt(character) {
+  const cardOverride = String(character.systemPrompt || '').trim();
+  const source = cardOverride || getGlobalSystemPrompt();
+  return renderPromptOverrideText(source, character);
+}
+
+function effectivePostHistoryInstructions(character) {
+  const cardOverride = String(character.postHistoryInstructions || '').trim();
+  const source = cardOverride || getGlobalPostHistoryInstructions();
+  return renderPromptOverrideText(source, character);
+}
+
+function contextTemplateValues(character) {
+  return {
+    ...baseContextTemplateValues(character),
+    system: effectiveSystemPrompt(character),
   };
 }
 
@@ -409,8 +491,13 @@ function renderContextTemplate(template, values) {
   return output.replace(/\n{3,}/g, '\n\n').trim();
 }
 
+function effectiveContextTemplate(character) {
+  const cardOverride = String(character.contextTemplate || '').trim();
+  return cardOverride || getContextTemplate();
+}
+
 function renderCharacterContext(character) {
-  return renderContextTemplate(getContextTemplate(), contextTemplateValues(character));
+  return renderContextTemplate(effectiveContextTemplate(character), contextTemplateValues(character));
 }
 
 function estimateTokens(text) {
@@ -420,7 +507,7 @@ function estimateTokens(text) {
 
 function characterTokenCounts(character) {
   const context = renderCharacterContext(character);
-  const postHistory = String(character.postHistoryInstructions || '').trim();
+  const postHistory = effectivePostHistoryInstructions(character);
   const permanentText = [context, postHistory].filter(Boolean).join('\n\n');
   const nonPermanentText = [
     character.firstMessage,
@@ -927,7 +1014,7 @@ function ensureConversation(character) {
 
 function chatSystemPrompt(character) {
   const context = renderCharacterContext(character);
-  const postHistory = String(character.postHistoryInstructions || '').trim();
+  const postHistory = effectivePostHistoryInstructions(character);
   return [context, postHistory].filter(Boolean).join('\n\n');
 }
 
@@ -1074,6 +1161,7 @@ function normalizeCharacter(record = {}) {
       ? record.alternateGreetings
       : Array.isArray(record.alternate_greetings) ? record.alternate_greetings : [],
     exampleMessages: record.exampleMessages || record.mes_example || '',
+    contextTemplate: record.contextTemplate || record.context_template || record.extensions?.nastyverse?.context_template || '',
     systemPrompt: record.systemPrompt || record.system_prompt || '',
     postHistoryInstructions: record.postHistoryInstructions || record.post_history_instructions || '',
     creator: record.creator || '',
@@ -1379,8 +1467,10 @@ function openCharacterEditor(characterId = null) {
               </section>
 
               <section class="character-editor-panel" data-editor-panel="prompting">
-                <label class="form-field"><span>${escapeHtml(t('character.systemPrompt'))}</span><textarea name="systemPrompt" rows="8">${escapeHtml(character.systemPrompt)}</textarea></label>
-                <label class="form-field"><span>${escapeHtml(t('character.postHistory'))}</span><textarea name="postHistoryInstructions" rows="7">${escapeHtml(character.postHistoryInstructions)}</textarea></label>
+                <label class="form-field"><span>${escapeHtml(t('character.contextTemplate'))}</span><textarea id="character-context-template" name="contextTemplate" class="context-template-editor prompt-editor-compact" rows="10" spellcheck="false">${escapeHtml(character.contextTemplate)}</textarea><small class="field-hint">${escapeHtml(t('character.contextTemplate.overrideHelp'))}</small></label>
+                ${promptPlaceholderButtons(CONTEXT_TEMPLATE_PLACEHOLDERS, 'character-context-template')}
+                <label class="form-field"><span>${escapeHtml(t('character.systemPrompt'))}</span><textarea name="systemPrompt" rows="8">${escapeHtml(character.systemPrompt)}</textarea><small class="field-hint">${escapeHtml(t('character.systemPrompt.overrideHelp'))}</small></label>
+                <label class="form-field"><span>${escapeHtml(t('character.postHistory'))}</span><textarea name="postHistoryInstructions" rows="7">${escapeHtml(character.postHistoryInstructions)}</textarea><small class="field-hint">${escapeHtml(t('character.postHistory.overrideHelp'))}</small></label>
               </section>
 
               <section class="character-editor-panel" data-editor-panel="metadata">
@@ -1414,6 +1504,7 @@ function openCharacterEditor(characterId = null) {
     editorTabs.forEach(tab => tab.classList.toggle('active', tab === button));
     editorPanels.forEach(panel => panel.classList.toggle('active', panel.dataset.editorPanel === target));
   }));
+  bindPromptPlaceholderButtons(pageRoot);
 
   const characterForm = document.getElementById('character-form');
   const permanentTokenValue = document.getElementById('character-permanent-tokens');
@@ -1428,6 +1519,7 @@ function openCharacterEditor(characterId = null) {
       scenario: String(data.get('scenario') || ''),
       firstMessage: String(data.get('firstMessage') || ''),
       alternateGreetings: data.getAll('alternateGreeting').map(value => String(value).trim()).filter(Boolean),
+      contextTemplate: String(data.get('contextTemplate') || ''),
       systemPrompt: String(data.get('systemPrompt') || ''),
       postHistoryInstructions: String(data.get('postHistoryInstructions') || ''),
       exampleMessages: character.exampleMessages || '',
@@ -1654,6 +1746,7 @@ function openCharacterEditor(characterId = null) {
       firstMessage: String(data.get('firstMessage') || '').trim(),
       alternateGreetings: data.getAll('alternateGreeting').map(value => String(value).trim()).filter(Boolean),
       exampleMessages: existing?.exampleMessages || character.exampleMessages || '',
+      contextTemplate: String(data.get('contextTemplate') || '').trim(),
       systemPrompt: String(data.get('systemPrompt') || '').trim(),
       postHistoryInstructions: String(data.get('postHistoryInstructions') || '').trim(),
       creator: String(data.get('creator') || '').trim(),
@@ -1757,6 +1850,7 @@ function characterFromCardPayload(payload) {
     firstMessage: data.first_mes ?? data.firstMessage,
     alternateGreetings: data.alternate_greetings ?? data.alternateGreetings,
     exampleMessages: data.mes_example ?? data.exampleMessages,
+    contextTemplate: data.context_template ?? data.contextTemplate ?? data.extensions?.nastyverse?.context_template,
     systemPrompt: data.system_prompt ?? data.systemPrompt,
     postHistoryInstructions: data.post_history_instructions ?? data.postHistoryInstructions,
     creator: data.creator,
@@ -2053,7 +2147,11 @@ function exportCharacterJson(id) {
       creator: character.creator,
       character_version: character.characterVersion,
       creator_notes: character.creatorNotes,
-      extensions: {},
+      extensions: {
+        nastyverse: {
+          context_template: character.contextTemplate || ''
+        }
+      },
       group_only_greetings: [],
       creation_date: Math.floor((character.createdAt || Date.now()) / 1000),
       modification_date: Math.floor(Date.now() / 1000),
@@ -2253,36 +2351,176 @@ async function saveBackendConfiguration() {
   }
 }
 
-function renderGlobalPromptConfig() {
-  const body = document.getElementById('config-body');
+
+const CONTEXT_TEMPLATE_PLACEHOLDERS = [
+  { key: 'char', snippet: '{{char}}', descriptionKey: 'globalPrompt.placeholder.char' },
+  { key: 'user', snippet: '{{user}}', descriptionKey: 'globalPrompt.placeholder.user' },
+  { key: 'description', snippet: '{{#if description}}{{description}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.description' },
+  { key: 'personality', snippet: '{{#if personality}}{{personality}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.personality' },
+  { key: 'scenario', snippet: '{{#if scenario}}{{scenario}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.scenario' },
+  { key: 'system', snippet: '{{#if system}}{{system}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.system' },
+  { key: 'persona', snippet: '{{#if persona}}{{persona}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.persona' },
+  { key: 'loreBefore', snippet: '{{#if loreBefore}}{{loreBefore}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.loreBefore' },
+  { key: 'loreAfter', snippet: '{{#if loreAfter}}{{loreAfter}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.loreAfter' },
+  { key: 'anchorBefore', snippet: '{{#if anchorBefore}}{{anchorBefore}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.anchorBefore' },
+  { key: 'anchorAfter', snippet: '{{#if anchorAfter}}{{anchorAfter}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.anchorAfter' },
+  { key: 'mesExamples', snippet: '{{#if mesExamples}}{{mesExamples}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.mesExamples' },
+];
+
+const SYSTEM_PROMPT_PLACEHOLDERS = CONTEXT_TEMPLATE_PLACEHOLDERS.filter(item => ['char', 'user', 'description', 'personality', 'scenario', 'persona'].includes(item.key));
+const GLOBAL_PROMPT_TABS = ['context', 'instruction', 'system'];
+
+function insertContextTemplateSnippet(editor, snippet) {
+  const start = Number.isInteger(editor.selectionStart) ? editor.selectionStart : editor.value.length;
+  const end = Number.isInteger(editor.selectionEnd) ? editor.selectionEnd : start;
+  const before = editor.value.slice(0, start);
+  const after = editor.value.slice(end);
+  editor.value = `${before}${snippet}${after}`;
+  const cursor = start + snippet.length;
+  editor.focus();
+  editor.setSelectionRange(cursor, cursor);
+  editor.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function globalPromptTabs(active) {
+  return `<div class="global-prompt-tabs" role="tablist">
+    ${GLOBAL_PROMPT_TABS.map(tab => `<button type="button" class="global-prompt-tab ${tab === active ? 'active' : ''}" data-global-prompt-tab="${tab}">${escapeHtml(t(`globalPrompt.tab.${tab}`))}</button>`).join('')}
+  </div>`;
+}
+
+function promptPlaceholderButtons(items, targetId) {
+  return `<div class="context-template-help">
+    <strong>${escapeHtml(t('globalPrompt.available'))}</strong>
+    <div class="context-template-macros">${items.map(item => `
+      <button type="button" class="context-template-macro" data-prompt-placeholder="${escapeHtml(item.key)}" data-target-editor="${escapeHtml(targetId)}" data-tooltip="${escapeHtml(t(item.descriptionKey))}" aria-label="${escapeHtml(t(item.descriptionKey))}">{{${escapeHtml(item.key)}}}</button>`).join('')}</div>
+    <span class="context-template-click-hint">${escapeHtml(t('globalPrompt.placeholder.clickHint'))}</span>
+  </div>`;
+}
+
+function bindPromptPlaceholderButtons(root) {
+  root.querySelectorAll('[data-prompt-placeholder]').forEach(button => {
+    button.addEventListener('click', () => {
+      const definition = CONTEXT_TEMPLATE_PLACEHOLDERS.find(item => item.key === button.dataset.promptPlaceholder);
+      const editor = document.getElementById(button.dataset.targetEditor);
+      if (definition && editor) insertContextTemplateSnippet(editor, definition.snippet);
+    });
+  });
+}
+
+function renderContextPromptTab(body) {
   const template = getContextTemplate();
-  body.innerHTML = `
+  body.innerHTML = `${globalPromptTabs('context')}
     <div class="field-card field-card-stack global-prompt-card">
       <div class="info">
         <h4>${escapeHtml(t('globalPrompt.contextTemplate'))}</h4>
         <p>${escapeHtml(t('globalPrompt.contextTemplate.desc'))}</p>
       </div>
       <textarea id="context-template-editor" class="context-template-editor" spellcheck="false">${escapeHtml(template)}</textarea>
-      <div class="context-template-help">
-        <strong>${escapeHtml(t('globalPrompt.available'))}</strong>
-        <div class="context-template-macros"><code>{{char}}</code><code>{{user}}</code><code>{{description}}</code><code>{{personality}}</code><code>{{scenario}}</code><code>{{system}}</code><code>{{persona}}</code><code>{{loreBefore}}</code><code>{{loreAfter}}</code><code>{{anchorBefore}}</code><code>{{anchorAfter}}</code><code>{{mesExamples}}</code></div>
-      </div>
+      ${promptPlaceholderButtons(CONTEXT_TEMPLATE_PLACEHOLDERS, 'context-template-editor')}
       <div class="global-prompt-actions">
         <button type="button" class="btn btn-ghost" id="reset-context-template">${escapeHtml(t('globalPrompt.reset'))}</button>
         <button type="button" class="btn btn-primary" id="save-context-template">${escapeHtml(t('config.save'))}</button>
       </div>
     </div>`;
-
+  bindPromptPlaceholderButtons(body);
   const editor = document.getElementById('context-template-editor');
   document.getElementById('save-context-template').addEventListener('click', () => {
     localStorage.setItem(STORAGE.contextTemplate, editor.value);
-    toast(t('globalPrompt.saved'), 'success');
+    toast(t('globalPrompt.context.saved'), 'success');
   });
   document.getElementById('reset-context-template').addEventListener('click', () => {
     editor.value = DEFAULT_CONTEXT_TEMPLATE;
     localStorage.setItem(STORAGE.contextTemplate, DEFAULT_CONTEXT_TEMPLATE);
-    toast(t('globalPrompt.resetDone'), 'success');
+    toast(t('globalPrompt.context.resetDone'), 'success');
   });
+}
+
+function instructionField(id, labelKey, value, rows = 2) {
+  return `<label class="form-field instruction-sequence-field"><span>${escapeHtml(t(labelKey))}</span><textarea id="${id}" rows="${rows}" spellcheck="false">${escapeHtml(value)}</textarea></label>`;
+}
+
+function renderInstructionPromptTab(body) {
+  const template = getInstructionTemplate();
+  body.innerHTML = `${globalPromptTabs('instruction')}
+    <div class="field-card field-card-stack global-prompt-card">
+      <div class="info"><h4>${escapeHtml(t('globalPrompt.instructionTemplate'))}</h4><p>${escapeHtml(t('globalPrompt.instructionTemplate.desc'))}</p></div>
+      <div class="instruction-options-grid">
+        <label class="toggle-row"><input type="checkbox" id="instruction-wrap-newline" ${template.wrapWithNewline ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.instruction.wrapNewline'))}</span></label>
+        <label class="form-field"><span>${escapeHtml(t('globalPrompt.instruction.includeNames'))}</span><select id="instruction-include-names"><option value="never" ${template.includeNames === 'never' ? 'selected' : ''}>${escapeHtml(t('globalPrompt.instruction.names.never'))}</option><option value="always" ${template.includeNames === 'always' ? 'selected' : ''}>${escapeHtml(t('globalPrompt.instruction.names.always'))}</option></select></label>
+      </div>
+      <div class="instruction-sequence-grid">
+        ${instructionField('instruction-story-prefix', 'globalPrompt.instruction.storyPrefix', template.storyPrefix)}
+        ${instructionField('instruction-story-suffix', 'globalPrompt.instruction.storySuffix', template.storySuffix)}
+        ${instructionField('instruction-user-prefix', 'globalPrompt.instruction.userPrefix', template.userPrefix)}
+        ${instructionField('instruction-user-suffix', 'globalPrompt.instruction.userSuffix', template.userSuffix)}
+        ${instructionField('instruction-assistant-prefix', 'globalPrompt.instruction.assistantPrefix', template.assistantPrefix)}
+        ${instructionField('instruction-assistant-suffix', 'globalPrompt.instruction.assistantSuffix', template.assistantSuffix)}
+        ${instructionField('instruction-system-prefix', 'globalPrompt.instruction.systemPrefix', template.systemPrefix)}
+        ${instructionField('instruction-system-suffix', 'globalPrompt.instruction.systemSuffix', template.systemSuffix)}
+      </div>
+      ${instructionField('instruction-stop-sequence', 'globalPrompt.instruction.stopSequence', template.stopSequence, 2)}
+      <div class="global-prompt-note">${escapeHtml(t('globalPrompt.instruction.chatCompletionNote'))}</div>
+      <div class="global-prompt-actions"><button type="button" class="btn btn-ghost" id="reset-instruction-template">${escapeHtml(t('globalPrompt.reset'))}</button><button type="button" class="btn btn-primary" id="save-instruction-template">${escapeHtml(t('config.save'))}</button></div>
+    </div>`;
+
+  document.getElementById('save-instruction-template').addEventListener('click', () => {
+    const next = {
+      wrapWithNewline: document.getElementById('instruction-wrap-newline').checked,
+      includeNames: document.getElementById('instruction-include-names').value,
+      storyPrefix: document.getElementById('instruction-story-prefix').value,
+      storySuffix: document.getElementById('instruction-story-suffix').value,
+      userPrefix: document.getElementById('instruction-user-prefix').value,
+      userSuffix: document.getElementById('instruction-user-suffix').value,
+      assistantPrefix: document.getElementById('instruction-assistant-prefix').value,
+      assistantSuffix: document.getElementById('instruction-assistant-suffix').value,
+      systemPrefix: document.getElementById('instruction-system-prefix').value,
+      systemSuffix: document.getElementById('instruction-system-suffix').value,
+      stopSequence: document.getElementById('instruction-stop-sequence').value,
+    };
+    writeJson(STORAGE.instructionTemplate, next);
+    toast(t('globalPrompt.instruction.saved'), 'success');
+  });
+  document.getElementById('reset-instruction-template').addEventListener('click', () => {
+    writeJson(STORAGE.instructionTemplate, DEFAULT_INSTRUCTION_TEMPLATE);
+    renderGlobalPromptConfig('instruction');
+    toast(t('globalPrompt.instruction.resetDone'), 'success');
+  });
+}
+
+function renderSystemPromptTab(body) {
+  body.innerHTML = `${globalPromptTabs('system')}
+    <div class="field-card field-card-stack global-prompt-card">
+      <div class="info"><h4>${escapeHtml(t('globalPrompt.systemPrompt'))}</h4><p>${escapeHtml(t('globalPrompt.systemPrompt.desc'))}</p></div>
+      <label class="form-field"><span>${escapeHtml(t('globalPrompt.systemPrompt'))}</span><textarea id="global-system-prompt" class="context-template-editor prompt-editor-compact" rows="9" spellcheck="false">${escapeHtml(getGlobalSystemPrompt())}</textarea></label>
+      ${promptPlaceholderButtons(SYSTEM_PROMPT_PLACEHOLDERS, 'global-system-prompt')}
+      <label class="form-field"><span>${escapeHtml(t('globalPrompt.postHistory'))}</span><textarea id="global-post-history" class="context-template-editor prompt-editor-compact" rows="7" spellcheck="false">${escapeHtml(getGlobalPostHistoryInstructions())}</textarea><small class="field-hint">${escapeHtml(t('globalPrompt.postHistory.desc'))}</small></label>
+      ${promptPlaceholderButtons(SYSTEM_PROMPT_PLACEHOLDERS, 'global-post-history')}
+      <div class="global-prompt-override-note">${escapeHtml(t('globalPrompt.overrideRule'))}</div>
+      <div class="global-prompt-actions"><button type="button" class="btn btn-ghost" id="reset-system-prompt">${escapeHtml(t('globalPrompt.reset'))}</button><button type="button" class="btn btn-primary" id="save-system-prompt">${escapeHtml(t('config.save'))}</button></div>
+    </div>`;
+  bindPromptPlaceholderButtons(body);
+  document.getElementById('save-system-prompt').addEventListener('click', () => {
+    localStorage.setItem(STORAGE.globalSystemPrompt, document.getElementById('global-system-prompt').value);
+    localStorage.setItem(STORAGE.globalPostHistory, document.getElementById('global-post-history').value);
+    toast(t('globalPrompt.system.saved'), 'success');
+  });
+  document.getElementById('reset-system-prompt').addEventListener('click', () => {
+    localStorage.setItem(STORAGE.globalSystemPrompt, DEFAULT_GLOBAL_SYSTEM_PROMPT);
+    localStorage.setItem(STORAGE.globalPostHistory, DEFAULT_GLOBAL_POST_HISTORY);
+    renderGlobalPromptConfig('system');
+    toast(t('globalPrompt.system.resetDone'), 'success');
+  });
+}
+
+function renderGlobalPromptConfig(tab = null) {
+  const body = document.getElementById('config-body');
+  const savedTab = localStorage.getItem(STORAGE.globalPromptTab);
+  const active = GLOBAL_PROMPT_TABS.includes(tab) ? tab : (GLOBAL_PROMPT_TABS.includes(savedTab) ? savedTab : 'context');
+  localStorage.setItem(STORAGE.globalPromptTab, active);
+  if (active === 'instruction') renderInstructionPromptTab(body);
+  else if (active === 'system') renderSystemPromptTab(body);
+  else renderContextPromptTab(body);
+  body.querySelectorAll('[data-global-prompt-tab]').forEach(button => button.addEventListener('click', () => renderGlobalPromptConfig(button.dataset.globalPromptTab)));
 }
 
 function renderParamsConfig() {

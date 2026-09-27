@@ -2398,13 +2398,65 @@ function promptPlaceholderButtons(items, targetId) {
 }
 
 function bindPromptPlaceholderButtons(root) {
+  let tooltip = document.getElementById('context-placeholder-tooltip');
+  if (!tooltip) {
+    tooltip = document.createElement('div');
+    tooltip.id = 'context-placeholder-tooltip';
+    tooltip.className = 'context-placeholder-tooltip';
+    tooltip.setAttribute('role', 'tooltip');
+    document.body.appendChild(tooltip);
+  }
+
+  let activeButton = null;
+
+  const hideTooltip = () => {
+    activeButton = null;
+    tooltip.classList.remove('visible');
+  };
+
+  const positionTooltip = button => {
+    if (activeButton !== button) return;
+    const rect = button.getBoundingClientRect();
+    const margin = 10;
+    const viewportPadding = 12;
+    const tooltipRect = tooltip.getBoundingClientRect();
+
+    let left = rect.left + (rect.width - tooltipRect.width) / 2;
+    left = Math.max(viewportPadding, Math.min(left, window.innerWidth - tooltipRect.width - viewportPadding));
+
+    let top = rect.top - tooltipRect.height - margin;
+    if (top < viewportPadding) top = rect.bottom + margin;
+    if (top + tooltipRect.height > window.innerHeight - viewportPadding) {
+      top = Math.max(viewportPadding, window.innerHeight - tooltipRect.height - viewportPadding);
+    }
+
+    tooltip.style.left = `${Math.round(left)}px`;
+    tooltip.style.top = `${Math.round(top)}px`;
+  };
+
+  const showTooltip = button => {
+    const text = button.dataset.tooltip || '';
+    if (!text) return;
+    activeButton = button;
+    tooltip.textContent = text;
+    tooltip.classList.add('visible');
+    requestAnimationFrame(() => positionTooltip(button));
+  };
+
   root.querySelectorAll('[data-prompt-placeholder]').forEach(button => {
+    button.addEventListener('mouseenter', () => showTooltip(button));
+    button.addEventListener('mouseleave', hideTooltip);
+    button.addEventListener('focus', () => showTooltip(button));
+    button.addEventListener('blur', hideTooltip);
     button.addEventListener('click', () => {
+      hideTooltip();
       const definition = CONTEXT_TEMPLATE_PLACEHOLDERS.find(item => item.key === button.dataset.promptPlaceholder);
       const editor = document.getElementById(button.dataset.targetEditor);
       if (definition && editor) insertContextTemplateSnippet(editor, definition.snippet);
     });
   });
+
+  root.addEventListener('scroll', hideTooltip, { passive: true });
 }
 
 function renderContextPromptTab(body) {

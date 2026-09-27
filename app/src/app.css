@@ -684,20 +684,18 @@ input,textarea,select{font:inherit}input,textarea,select{background:var(--panel-
   transform:translateY(-1px);
   outline:none;
 }
-.context-template-macro::after{
-  content:attr(data-tooltip);
-  position:absolute;
-  left:50%;
-  bottom:calc(100% + 9px);
-  z-index:30;
+.context-template-macro::after{content:none}
+.context-placeholder-tooltip{
+  position:fixed;
+  z-index:1000;
   width:260px;
-  max-width:min(260px,70vw);
+  max-width:calc(100vw - 24px);
   padding:8px 10px;
   border:1px solid var(--line);
   border-radius:8px;
   background:var(--panel);
   color:var(--text-dim);
-  box-shadow:0 12px 34px rgba(0,0,0,.34);
+  box-shadow:0 14px 38px rgba(0,0,0,.45);
   font-family:Inter,sans-serif;
   font-size:10px;
   line-height:1.45;
@@ -705,13 +703,12 @@ input,textarea,select{font:inherit}input,textarea,select{background:var(--panel-
   white-space:normal;
   pointer-events:none;
   opacity:0;
-  transform:translate(-50%,5px);
-  transition:opacity .14s ease,transform .14s ease;
+  transform:translateY(4px);
+  transition:opacity .12s ease,transform .12s ease;
 }
-.context-template-macro:hover::after,
-.context-template-macro:focus-visible::after{
+.context-placeholder-tooltip.visible{
   opacity:1;
-  transform:translate(-50%,0);
+  transform:none;
 }
 .context-template-click-hint{
   color:var(--text-faint);

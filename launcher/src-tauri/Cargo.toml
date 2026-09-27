@@ -1,6 +1,6 @@
 [package]
 name = "nastyverse-launcher"
-version = "0.1.7"
+version = "0.1.8"
 description = "NastyVerse — portable launcher and application host"
 edition = "2021"
 

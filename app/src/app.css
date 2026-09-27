@@ -892,8 +892,130 @@ input,textarea,select{font:inherit}input,textarea,select{background:var(--panel-
   overflow-wrap:anywhere;
 }
 .prompt-preview-empty{min-height:220px}
+.context-story-field{margin:0}
+.context-settings-grid{
+  display:grid;
+  grid-template-columns:minmax(240px,1.4fr) minmax(120px,.5fr) minmax(160px,.7fr);
+  gap:12px;
+  align-items:end;
+}
+.context-settings-grid [hidden]{display:none}
+.context-separator-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+}
+.context-separator-grid textarea{
+  min-height:86px;
+  font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+}
+.context-formatting-panel{
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:var(--panel-2);
+}
+.context-formatting-panel h5{
+  margin:0 0 8px;
+  color:var(--text);
+  font-size:12px;
+}
+.context-formatting-options{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:0 18px;
+}
+.prompt-preview-controls{
+  display:grid;
+  grid-template-columns:minmax(220px,1fr) minmax(220px,.65fr);
+  gap:12px;
+  align-items:end;
+}
+.prompt-preview-mode{margin:0}
+.prompt-preview-breakdown{
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:var(--panel-2);
+  overflow:hidden;
+}
+.prompt-preview-breakdown summary{
+  padding:11px 13px;
+  color:var(--text-dim);
+  font-size:11px;
+  font-weight:800;
+  cursor:pointer;
+}
+.prompt-preview-breakdown-body{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  padding:0 12px 12px;
+}
+.prompt-preview-behavior{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+.prompt-preview-behavior span{
+  padding:7px 10px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:var(--panel);
+  color:var(--text-faint);
+  font-size:10px;
+}
+.prompt-preview-behavior strong{color:var(--text-dim)}
 
 @media (max-width:900px){
-  .context-preset-toolbar{grid-template-columns:1fr}
+  .context-preset-toolbar,
+  .prompt-preview-controls,
+  .context-settings-grid{grid-template-columns:1fr}
   .context-preset-actions{justify-content:flex-start}
+}
+@media (max-width:760px){
+  .context-separator-grid,
+  .context-formatting-options{grid-template-columns:1fr}
+}
+
+/* Backend prompt mode and prompt-budget diagnostics */
+.model-control select{width:300px}
+.global-prompt-note.is-warning{color:var(--danger)}
+@media (max-width:960px){.model-control select{width:220px}}
+
+/* ===== SillyTavern-compatible Instruction Template editor ===== */
+.instruction-runtime-bar{
+  display:flex;
+  flex-wrap:wrap;
+  gap:12px 22px;
+  padding:10px 12px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:var(--panel-2);
+}
+.instruction-runtime-bar .toggle-row{min-height:30px}
+.instruction-options-grid-wide{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  align-items:start;
+}
+.instruction-name-select{grid-column:1 / -1;max-width:360px;margin:0}
+.instruction-sequence-section{
+  padding-top:3px;
+  border-top:1px solid var(--line);
+}
+.instruction-sequence-section summary{
+  margin:0;
+  padding:10px 0 6px;
+  color:var(--text);
+  font-size:12px;
+  font-weight:800;
+  cursor:pointer;
+}
+.instruction-sequence-section[open] summary{margin-bottom:2px}
+.instruction-system-same{
+  align-self:center;
+  margin-top:17px;
+}
+@media (max-width:760px){
+  .instruction-options-grid-wide{grid-template-columns:1fr}
+  .instruction-name-select{grid-column:auto;max-width:none}
 }

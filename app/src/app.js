@@ -14,6 +14,7 @@ const invoke = TAURI?.core?.invoke
       if (cmd === 'test_backend_connection') return { ok: true, message: t('preview.connection'), models: ['preview-model'] };
       if (cmd === 'save_backend_config') return args?.config || null;
       if (cmd === 'chat_completion') return { content: t('preview.reply'), model: 'preview-model' };
+      if (cmd === 'text_completion') return { content: t('preview.reply'), model: 'preview-model' };
       return null;
     };
 
@@ -27,11 +28,14 @@ const STORAGE = {
   ui: 'nv_app_ui_settings',
   contextTemplate: 'nv_app_context_template',
   instructionTemplate: 'nv_app_instruction_template_v1',
+  instructionPresets: 'nv_app_instruction_presets_v2',
   globalSystemPrompt: 'nv_app_global_system_prompt',
   globalPostHistory: 'nv_app_global_post_history',
   globalPromptTab: 'nv_app_global_prompt_tab',
   contextPresets: 'nv_app_context_presets_v1',
   promptPreviewCharacter: 'nv_app_prompt_preview_character',
+  promptPreviewMode: 'nv_app_prompt_preview_mode',
+  contextFormatting: 'nv_app_context_formatting_v1',
 };
 
 const I18N_FALLBACK_MANIFEST = {
@@ -47,6 +51,7 @@ let fallbackTranslations = {};
 let currentTranslations = {};
 
 let contextPresetFactory = { default: 'Default', presets: [] };
+let instructionPresetFactory = { default: 'Alpaca', presets: [] };
 
 function normalizeLocaleCode(value) {
   const raw = String(value || '').trim().toLowerCase().replaceAll('_', '-');
@@ -69,11 +74,51 @@ async function loadContextPresetFactory() {
       default: String(data.default || 'Default'),
       presets: data.presets
         .filter(preset => preset && typeof preset.name === 'string' && typeof preset.story_string === 'string')
-        .map(preset => ({ name: preset.name, storyString: preset.story_string })),
+        .map(preset => normalizeContextPresetRecord(preset, preset.name)),
     };
   } catch (error) {
     console.warn('[prompt] Falling back to the built-in Default context preset.', error);
-    contextPresetFactory = { default: 'Default', presets: [{ name: 'Default', storyString: DEFAULT_CONTEXT_TEMPLATE }] };
+    contextPresetFactory = {
+      default: 'Default',
+      presets: [normalizeContextPresetRecord({
+        name: 'Default',
+        story_string: DEFAULT_CONTEXT_TEMPLATE,
+        example_separator: '***',
+        chat_start: '***',
+      }, 'Default')],
+    };
+  }
+}
+
+async function loadInstructionPresetFactory() {
+  try {
+    const data = await fetchJsonResource('presets/instruct-presets.json');
+    if (!Array.isArray(data?.presets) || !data.presets.length) throw new Error('Invalid instruction preset library');
+    instructionPresetFactory = {
+      default: String(data.default || 'Alpaca'),
+      presets: data.presets
+        .filter(preset => preset && typeof preset.name === 'string')
+        .map(preset => normalizeInstructionPresetRecord(preset, preset.name)),
+    };
+  } catch (error) {
+    console.warn('[prompt] Falling back to the built-in Alpaca instruction preset.', error);
+    instructionPresetFactory = {
+      default: 'Alpaca',
+      presets: [normalizeInstructionPresetRecord({
+        name: 'Alpaca',
+        input_sequence: '### Instruction:',
+        output_sequence: '### Response:',
+        system_sequence: '### Input:',
+        wrap: true,
+        macro: true,
+        names_behavior: 'force',
+        output_suffix: '\n\n',
+        input_suffix: '\n\n',
+        system_suffix: '\n\n',
+        sequences_as_stop_strings: true,
+        story_string_suffix: '\n\n',
+      }, 'Alpaca')],
+    };
   }
 }
 
@@ -201,7 +246,17 @@ const BACKENDS = [
   { id: 'custom', label: 'Custom (OpenAI-compatible)', url: 'https://' },
 ];
 
-const DEFAULT_PARAMS = { temperature: 0.8, topP: 0.95, maxTokens: 512 };
+function defaultBackendApiMode(backendType) {
+  return ['koboldcpp', 'llamacpp', 'textgenwebui'].includes(String(backendType || '').toLowerCase()) ? 'text' : 'chat';
+}
+
+function effectiveBackendApiMode(config = state.backendConfig) {
+  const explicit = String(config?.apiMode || 'auto').toLowerCase();
+  if (explicit === 'chat' || explicit === 'text') return explicit;
+  return defaultBackendApiMode(config?.backendType || 'custom');
+}
+
+const DEFAULT_PARAMS = { temperature: 0.8, topP: 0.95, maxTokens: 512, contextTokens: 8192 };
 const DEFAULT_UI = { scale: 100, compactMessages: false };
 const DEFAULT_CONTEXT_TEMPLATE = `{{#if anchorBefore}}{{anchorBefore}}
 {{/if}}{{#if system}}{{system}}
@@ -213,6 +268,174 @@ const DEFAULT_CONTEXT_TEMPLATE = `{{#if anchorBefore}}{{anchorBefore}}
 {{/if}}{{#if persona}}{{persona}}
 {{/if}}{{#if anchorAfter}}{{anchorAfter}}
 {{/if}}{{trim}}`;
+
+const DEFAULT_CONTEXT_PRESET_SETTINGS = {
+  storyString: DEFAULT_CONTEXT_TEMPLATE,
+  exampleSeparator: '',
+  chatStart: '',
+  useStopStrings: false,
+  namesAsStopStrings: true,
+  storyStringPosition: 0,
+  storyStringDepth: 1,
+  storyStringRole: 0,
+  alwaysForceName2: true,
+  trimSentences: false,
+  singleLine: false,
+};
+const DEFAULT_CONTEXT_FORMATTING = {
+  collapseNewlines: false,
+  trimSpaces: true,
+  exampleMessagesBehavior: 'normal',
+};
+
+function normalizeStoryStringAliases(value) {
+  return String(value ?? DEFAULT_CONTEXT_TEMPLATE)
+    .replaceAll('{{wiBefore}}', '{{loreBefore}}')
+    .replaceAll('{{wiAfter}}', '{{loreAfter}}')
+    .replaceAll('{{#if wiBefore}}', '{{#if loreBefore}}')
+    .replaceAll('{{#if wiAfter}}', '{{#if loreAfter}}');
+}
+
+// Keep the stored/rendered Story String compatible with SillyTavern while showing
+// each Handlebars conditional on one editor line. Newlines emitted inside an
+// {{#if}} block are represented as \n in the textarea and restored before render/save.
+function encodeContextEditorBlock(value) {
+  return String(value || '')
+    .replaceAll('\\', '\\\\')
+    .replaceAll('\r', '\\r')
+    .replaceAll('\n', '\\n')
+    .replaceAll('\t', '\\t');
+}
+
+function decodeContextEditorBlock(value) {
+  const sentinel = '\uE000';
+  return String(value || '')
+    .replaceAll('\\\\', sentinel)
+    .replaceAll('\\r', '\r')
+    .replaceAll('\\n', '\n')
+    .replaceAll('\\t', '\t')
+    .replaceAll(sentinel, '\\');
+}
+
+function contextTemplateToEditor(value) {
+  const source = normalizeStoryStringAliases(value).replaceAll('\r\n', '\n');
+  const compact = source.replace(/\{\{#if\s+([a-zA-Z0-9_]+)\s*\}\}([\s\S]*?)\{\{\/if\}\}/g, (_, key, block) => {
+    return `{{#if ${key}}}${encodeContextEditorBlock(block)}{{/if}}`;
+  });
+  return compact.replace(/\{\{\/if\}\}(?=\{\{#if\b|\{\{trim\}\}|$)/g, '{{/if}}\n').replace(/\n$/, '');
+}
+
+function contextTemplateFromEditor(value) {
+  let source = String(value || '').replaceAll('\r\n', '\n');
+  // Remove only the visual line break that separates two compact conditional rows.
+  source = source.replace(/\{\{\/if\}\}\n(?=\{\{#if\b|\{\{trim\}\}|$)/g, '{{/if}}');
+  source = source.replace(/\{\{#if\s+([a-zA-Z0-9_]+)\s*\}\}([\s\S]*?)\{\{\/if\}\}/g, (_, key, block) => {
+    return `{{#if ${key}}}${decodeContextEditorBlock(block)}{{/if}}`;
+  });
+  return normalizeStoryStringAliases(source);
+}
+
+function normalizeContextPresetRecord(preset = {}, fallbackName = 'Default') {
+  const get = (camel, snake, fallback) => preset[camel] ?? preset[snake] ?? fallback;
+  return {
+    name: String(preset.name || fallbackName),
+    storyString: normalizeStoryStringAliases(get('storyString', 'story_string', DEFAULT_CONTEXT_TEMPLATE)),
+    exampleSeparator: String(get('exampleSeparator', 'example_separator', '')),
+    chatStart: String(get('chatStart', 'chat_start', '')),
+    useStopStrings: Boolean(get('useStopStrings', 'use_stop_strings', false)),
+    namesAsStopStrings: Boolean(get('namesAsStopStrings', 'names_as_stop_strings', true)),
+    storyStringPosition: Number(get('storyStringPosition', 'story_string_position', 0)) === 1 ? 1 : 0,
+    storyStringDepth: Math.max(0, Number(get('storyStringDepth', 'story_string_depth', 1)) || 0),
+    storyStringRole: Math.max(0, Math.min(2, Number(get('storyStringRole', 'story_string_role', 0)) || 0)),
+    alwaysForceName2: Boolean(get('alwaysForceName2', 'always_force_name2', true)),
+    trimSentences: Boolean(get('trimSentences', 'trim_sentences', false)),
+    singleLine: Boolean(get('singleLine', 'single_line', false)),
+  };
+}
+
+function normalizeContextPresetOverride(value) {
+  if (typeof value === 'string') return { storyString: normalizeStoryStringAliases(value) };
+  if (!value || typeof value !== 'object') return {};
+  const aliases = {
+    story_string: 'storyString',
+    example_separator: 'exampleSeparator',
+    chat_start: 'chatStart',
+    use_stop_strings: 'useStopStrings',
+    names_as_stop_strings: 'namesAsStopStrings',
+    story_string_position: 'storyStringPosition',
+    story_string_depth: 'storyStringDepth',
+    story_string_role: 'storyStringRole',
+    always_force_name2: 'alwaysForceName2',
+    trim_sentences: 'trimSentences',
+    single_line: 'singleLine',
+  };
+  const result = {};
+  for (const [key, raw] of Object.entries(value)) {
+    const target = aliases[key] || key;
+    if (!Object.prototype.hasOwnProperty.call(DEFAULT_CONTEXT_PRESET_SETTINGS, target)) continue;
+    if (target === 'storyString') result[target] = normalizeStoryStringAliases(raw);
+    else if (['useStopStrings', 'namesAsStopStrings', 'alwaysForceName2', 'trimSentences', 'singleLine'].includes(target)) result[target] = Boolean(raw);
+    else if (target === 'storyStringDepth') result[target] = Math.max(0, Number(raw) || 0);
+    else if (target === 'storyStringPosition') result[target] = Number(raw) === 1 ? 1 : 0;
+    else if (target === 'storyStringRole') result[target] = Math.max(0, Math.min(2, Number(raw) || 0));
+    else result[target] = String(raw ?? '');
+  }
+  return result;
+}
+
+function normalizeInstructionPresetRecord(preset = {}, fallbackName = 'Alpaca') {
+  const get = (camel, snake, fallback) => preset[camel] ?? preset[snake] ?? fallback;
+  const names = String(get('namesBehavior', 'names_behavior', 'force')).toLowerCase();
+  return {
+    name: String(preset.name || fallbackName),
+    inputSequence: String(get('inputSequence', 'input_sequence', '')),
+    outputSequence: String(get('outputSequence', 'output_sequence', '')),
+    lastOutputSequence: String(get('lastOutputSequence', 'last_output_sequence', '')),
+    systemSequence: String(get('systemSequence', 'system_sequence', '')),
+    stopSequence: String(get('stopSequence', 'stop_sequence', '')),
+    wrap: Boolean(get('wrap', 'wrap', false)),
+    macro: Boolean(get('macro', 'macro', true)),
+    namesBehavior: ['none', 'force', 'always'].includes(names) ? names : 'force',
+    activationRegex: String(get('activationRegex', 'activation_regex', '')),
+    firstOutputSequence: String(get('firstOutputSequence', 'first_output_sequence', '')),
+    skipExamples: Boolean(get('skipExamples', 'skip_examples', false)),
+    outputSuffix: String(get('outputSuffix', 'output_suffix', '')),
+    inputSuffix: String(get('inputSuffix', 'input_suffix', '')),
+    systemSuffix: String(get('systemSuffix', 'system_suffix', '')),
+    userAlignmentMessage: String(get('userAlignmentMessage', 'user_alignment_message', '')),
+    systemSameAsUser: Boolean(get('systemSameAsUser', 'system_same_as_user', false)),
+    lastSystemSequence: String(get('lastSystemSequence', 'last_system_sequence', '')),
+    firstInputSequence: String(get('firstInputSequence', 'first_input_sequence', '')),
+    lastInputSequence: String(get('lastInputSequence', 'last_input_sequence', '')),
+    sequencesAsStopStrings: Boolean(get('sequencesAsStopStrings', 'sequences_as_stop_strings', true)),
+    storyStringPrefix: String(get('storyStringPrefix', 'story_string_prefix', '')),
+    storyStringSuffix: String(get('storyStringSuffix', 'story_string_suffix', '')),
+  };
+}
+
+function normalizeInstructionPresetOverride(value) {
+  if (!value || typeof value !== 'object') return {};
+  const aliases = {
+    input_sequence: 'inputSequence', output_sequence: 'outputSequence', last_output_sequence: 'lastOutputSequence',
+    system_sequence: 'systemSequence', stop_sequence: 'stopSequence', names_behavior: 'namesBehavior',
+    activation_regex: 'activationRegex', first_output_sequence: 'firstOutputSequence', skip_examples: 'skipExamples',
+    output_suffix: 'outputSuffix', input_suffix: 'inputSuffix', system_suffix: 'systemSuffix',
+    user_alignment_message: 'userAlignmentMessage', system_same_as_user: 'systemSameAsUser',
+    last_system_sequence: 'lastSystemSequence', first_input_sequence: 'firstInputSequence', last_input_sequence: 'lastInputSequence',
+    sequences_as_stop_strings: 'sequencesAsStopStrings', story_string_prefix: 'storyStringPrefix', story_string_suffix: 'storyStringSuffix',
+  };
+  const result = {};
+  for (const [key, raw] of Object.entries(value)) {
+    const target = aliases[key] || key;
+    if (!Object.prototype.hasOwnProperty.call(DEFAULT_INSTRUCTION_PRESET_SETTINGS, target)) continue;
+    if (['wrap', 'macro', 'skipExamples', 'systemSameAsUser', 'sequencesAsStopStrings'].includes(target)) result[target] = Boolean(raw);
+    else if (target === 'namesBehavior') {
+      const names = String(raw || 'force').toLowerCase();
+      result[target] = ['none', 'force', 'always'].includes(names) ? names : 'force';
+    } else result[target] = String(raw ?? '');
+  }
+  return result;
+}
 
 const LEGACY_CONTEXT_TEMPLATE_019 = `{{#if system}}{{system}}
 
@@ -258,6 +481,36 @@ World information:
 
 const DEFAULT_GLOBAL_SYSTEM_PROMPT = `You are {{char}}. Stay in character and respond naturally.`;
 const DEFAULT_GLOBAL_POST_HISTORY = ``;
+const DEFAULT_INSTRUCTION_PRESET_SETTINGS = {
+  inputSequence: '### Instruction:',
+  outputSequence: '### Response:',
+  lastOutputSequence: '',
+  systemSequence: '### Input:',
+  stopSequence: '',
+  wrap: true,
+  macro: true,
+  namesBehavior: 'force',
+  activationRegex: '',
+  firstOutputSequence: '',
+  skipExamples: false,
+  outputSuffix: '\n\n',
+  inputSuffix: '\n\n',
+  systemSuffix: '\n\n',
+  userAlignmentMessage: '',
+  systemSameAsUser: false,
+  lastSystemSequence: '',
+  firstInputSequence: '',
+  lastInputSequence: '',
+  sequencesAsStopStrings: true,
+  storyStringPrefix: '',
+  storyStringSuffix: '\n\n',
+};
+const DEFAULT_INSTRUCTION_RUNTIME_SETTINGS = {
+  enabled: false,
+  bindToContext: false,
+  deriveFromModel: false,
+};
+// Legacy shape retained only for one-time migration from app <= 0.1.23.
 const DEFAULT_INSTRUCTION_TEMPLATE = {
   wrapWithNewline: true,
   includeNames: 'never',
@@ -279,6 +532,7 @@ const state = {
   activeCharacterId: localStorage.getItem(STORAGE.activeCharacter) || null,
   sending: false,
   modelStatus: null,
+  backendConfig: null,
 };
 
 const pageRoot = document.getElementById('page-root');
@@ -453,18 +707,26 @@ function defaultContextPresetName() {
 function getContextPresetState() {
   const saved = readJson(STORAGE.contextPresets, null);
   if (saved && typeof saved === 'object' && Array.isArray(saved.custom) && saved.overrides && typeof saved.overrides === 'object') {
+    const normalized = {
+      active: String(saved.active || defaultContextPresetName()),
+      custom: saved.custom
+        .filter(preset => preset && typeof preset.name === 'string')
+        .map(preset => normalizeContextPresetRecord(preset, preset.name)),
+      overrides: Object.fromEntries(Object.entries(saved.overrides).map(([name, value]) => [name, normalizeContextPresetOverride(value)])),
+    };
     const availableNames = new Set([
       ...contextPresetFactory.presets.map(preset => preset.name),
-      ...saved.custom.map(preset => preset.name),
+      ...normalized.custom.map(preset => preset.name),
     ]);
-    if (!availableNames.has(saved.active)) saved.active = defaultContextPresetName();
-    return saved;
+    if (!availableNames.has(normalized.active)) normalized.active = defaultContextPresetName();
+    writeJson(STORAGE.contextPresets, normalized);
+    return normalized;
   }
 
   const legacy = localStorage.getItem(STORAGE.contextTemplate);
   const state = { active: defaultContextPresetName(), custom: [], overrides: {} };
   if (legacy && legacy !== LEGACY_CONTEXT_TEMPLATE_015 && legacy !== LEGACY_CONTEXT_TEMPLATE_019 && legacy !== DEFAULT_CONTEXT_TEMPLATE) {
-    state.overrides[state.active] = legacy;
+    state.overrides[state.active] = { storyString: normalizeStoryStringAliases(legacy) };
   }
   writeJson(STORAGE.contextPresets, state);
   localStorage.setItem(STORAGE.contextTemplate, resolveContextPresetTemplate(state.active, state));
@@ -483,23 +745,26 @@ function contextPresetCustomEntry(name, state = getContextPresetState()) {
   return state.custom.find(preset => preset.name === name) || null;
 }
 
-function resolveContextPresetTemplate(name, state = getContextPresetState()) {
+function resolveContextPreset(name, state = getContextPresetState()) {
   const custom = contextPresetCustomEntry(name, state);
-  if (custom) return String(custom.storyString || '');
+  if (custom) return normalizeContextPresetRecord(custom, custom.name);
   const factory = contextPresetFactoryEntry(name);
-  if (factory) return String(state.overrides?.[name] ?? factory.storyString ?? DEFAULT_CONTEXT_TEMPLATE);
+  if (factory) return { ...factory, ...normalizeContextPresetOverride(state.overrides?.[name]), name: factory.name };
   const fallback = contextPresetFactoryEntry(defaultContextPresetName());
-  return String(fallback?.storyString || DEFAULT_CONTEXT_TEMPLATE);
+  return fallback ? { ...fallback } : normalizeContextPresetRecord({ name: 'Default', storyString: DEFAULT_CONTEXT_TEMPLATE }, 'Default');
+}
+
+function resolveContextPresetTemplate(name, state = getContextPresetState()) {
+  return String(resolveContextPreset(name, state).storyString || DEFAULT_CONTEXT_TEMPLATE);
 }
 
 function allContextPresets(state = getContextPresetState()) {
   const builtIns = contextPresetFactory.presets.map(preset => ({
-    name: preset.name,
-    storyString: resolveContextPresetTemplate(preset.name, state),
+    ...resolveContextPreset(preset.name, state),
     builtIn: true,
     modified: Object.prototype.hasOwnProperty.call(state.overrides || {}, preset.name),
   }));
-  const custom = state.custom.map(preset => ({ ...preset, builtIn: false, modified: true }));
+  const custom = state.custom.map(preset => ({ ...normalizeContextPresetRecord(preset, preset.name), builtIn: false, modified: true }));
   return [...builtIns, ...custom];
 }
 
@@ -510,14 +775,203 @@ function setActiveContextPreset(name) {
   saveContextPresetState(state);
   const template = resolveContextPresetTemplate(state.active, state);
   localStorage.setItem(STORAGE.contextTemplate, template);
-  return template;
+  syncInstructionPresetToContext(state.active);
+  return resolveContextPreset(state.active, state);
+}
+
+function getActiveContextPreset() {
+  const state = getContextPresetState();
+  const preset = resolveContextPreset(state.active, state);
+  localStorage.setItem(STORAGE.contextTemplate, preset.storyString);
+  return preset;
 }
 
 function getContextTemplate() {
-  const state = getContextPresetState();
-  const template = resolveContextPresetTemplate(state.active, state);
-  localStorage.setItem(STORAGE.contextTemplate, template);
-  return template;
+  return getActiveContextPreset().storyString;
+}
+
+function getContextFormatting() {
+  return { ...DEFAULT_CONTEXT_FORMATTING, ...readJson(STORAGE.contextFormatting, {}) };
+}
+
+function saveContextFormatting(value) {
+  writeJson(STORAGE.contextFormatting, { ...DEFAULT_CONTEXT_FORMATTING, ...value });
+}
+
+function defaultInstructionPresetName() {
+  return instructionPresetFactory.presets.some(preset => preset.name === instructionPresetFactory.default)
+    ? instructionPresetFactory.default
+    : (instructionPresetFactory.presets[0]?.name || 'Alpaca');
+}
+
+function migrateLegacyInstructionTemplate(legacy) {
+  if (!legacy || typeof legacy !== 'object') return null;
+  const hasLegacyShape = ['wrapWithNewline', 'includeNames', 'storyPrefix', 'userPrefix', 'assistantPrefix'].some(key => Object.prototype.hasOwnProperty.call(legacy, key));
+  if (!hasLegacyShape) return null;
+  return normalizeInstructionPresetRecord({
+    name: 'NastyVerse Legacy',
+    wrap: legacy.wrapWithNewline ?? true,
+    names_behavior: legacy.includeNames === 'always' ? 'always' : 'none',
+    story_string_prefix: legacy.storyPrefix ?? '',
+    story_string_suffix: legacy.storySuffix ?? '',
+    input_sequence: legacy.userPrefix ?? '',
+    input_suffix: legacy.userSuffix ?? '',
+    output_sequence: legacy.assistantPrefix ?? '',
+    output_suffix: legacy.assistantSuffix ?? '',
+    system_sequence: legacy.systemPrefix ?? '',
+    system_suffix: legacy.systemSuffix ?? '',
+    stop_sequence: legacy.stopSequence ?? '',
+    macro: true,
+    sequences_as_stop_strings: true,
+  }, 'NastyVerse Legacy');
+}
+
+function getInstructionPresetState() {
+  const saved = readJson(STORAGE.instructionPresets, null);
+  if (saved && typeof saved === 'object' && Array.isArray(saved.custom) && saved.overrides && typeof saved.overrides === 'object') {
+    const normalized = {
+      active: String(saved.active || defaultInstructionPresetName()),
+      custom: saved.custom.filter(preset => preset && typeof preset.name === 'string').map(preset => normalizeInstructionPresetRecord(preset, preset.name)),
+      overrides: Object.fromEntries(Object.entries(saved.overrides).map(([name, value]) => [name, normalizeInstructionPresetOverride(value)])),
+      enabled: saved.enabled === undefined ? true : Boolean(saved.enabled),
+      bindToContext: Boolean(saved.bindToContext),
+      deriveFromModel: Boolean(saved.deriveFromModel),
+    };
+    const names = new Set([...instructionPresetFactory.presets.map(preset => preset.name), ...normalized.custom.map(preset => preset.name)]);
+    if (!names.has(normalized.active)) normalized.active = defaultInstructionPresetName();
+    writeJson(STORAGE.instructionPresets, normalized);
+    return normalized;
+  }
+
+  const state = { active: defaultInstructionPresetName(), custom: [], overrides: {}, ...DEFAULT_INSTRUCTION_RUNTIME_SETTINGS };
+  const legacy = migrateLegacyInstructionTemplate(readJson(STORAGE.instructionTemplate, null));
+  if (legacy) {
+    state.custom.push(legacy);
+    state.active = legacy.name;
+  }
+  writeJson(STORAGE.instructionPresets, state);
+  return state;
+}
+
+function saveInstructionPresetState(value) {
+  writeJson(STORAGE.instructionPresets, value);
+}
+
+function instructionPresetFactoryEntry(name) {
+  return instructionPresetFactory.presets.find(preset => preset.name === name) || null;
+}
+
+function instructionPresetCustomEntry(name, presetState = getInstructionPresetState()) {
+  return presetState.custom.find(preset => preset.name === name) || null;
+}
+
+function resolveInstructionPreset(name, presetState = getInstructionPresetState()) {
+  const custom = instructionPresetCustomEntry(name, presetState);
+  if (custom) return normalizeInstructionPresetRecord(custom, custom.name);
+  const factory = instructionPresetFactoryEntry(name);
+  if (factory) return { ...factory, ...normalizeInstructionPresetOverride(presetState.overrides?.[name]), name: factory.name };
+  const fallback = instructionPresetFactoryEntry(defaultInstructionPresetName());
+  return fallback ? { ...fallback } : normalizeInstructionPresetRecord({ name: 'Alpaca', ...DEFAULT_INSTRUCTION_PRESET_SETTINGS }, 'Alpaca');
+}
+
+function allInstructionPresets(presetState = getInstructionPresetState()) {
+  const builtIns = instructionPresetFactory.presets.map(preset => ({
+    ...resolveInstructionPreset(preset.name, presetState),
+    builtIn: true,
+    modified: Object.prototype.hasOwnProperty.call(presetState.overrides || {}, preset.name),
+  }));
+  const custom = presetState.custom.map(preset => ({ ...normalizeInstructionPresetRecord(preset, preset.name), builtIn: false, modified: true }));
+  return [...builtIns, ...custom];
+}
+
+function setActiveInstructionPreset(name) {
+  const presetState = getInstructionPresetState();
+  const exists = allInstructionPresets(presetState).some(preset => preset.name === name);
+  presetState.active = exists ? name : defaultInstructionPresetName();
+  saveInstructionPresetState(presetState);
+  syncContextPresetToInstruction(presetState.active);
+  return resolveInstructionPreset(presetState.active, presetState);
+}
+
+function syncInstructionPresetToContext(contextName = getContextPresetState().active) {
+  const presetState = getInstructionPresetState();
+  if (!presetState.bindToContext) return false;
+  const match = allInstructionPresets(presetState).find(preset => preset.name === contextName);
+  if (!match || presetState.active === match.name) return false;
+  presetState.active = match.name;
+  saveInstructionPresetState(presetState);
+  return true;
+}
+
+function syncContextPresetToInstruction(instructionName = getInstructionPresetState().active) {
+  const presetState = getInstructionPresetState();
+  if (!presetState.bindToContext) return false;
+  const contextState = getContextPresetState();
+  const match = allContextPresets(contextState).find(preset => preset.name === instructionName);
+  if (!match || contextState.active === match.name) return false;
+  contextState.active = match.name;
+  saveContextPresetState(contextState);
+  localStorage.setItem(STORAGE.contextTemplate, resolveContextPresetTemplate(contextState.active, contextState));
+  return true;
+}
+
+function instructionActivationRegex(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const literal = raw.match(/^\/(.*)\/([dgimsuvy]*)$/);
+  if (literal) return new RegExp(literal[1], literal[2]);
+  return new RegExp(raw, 'i');
+}
+
+function instructionPresetNameMatchForModel(modelName, presets) {
+  const normalized = String(modelName || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (!normalized) return null;
+  const aliases = [
+    ['llama 4', 'Llama 4 Instruct'], ['llama4', 'Llama 4 Instruct'],
+    ['llama 3', 'Llama 3 Instruct'], ['llama3', 'Llama 3 Instruct'],
+    ['gemma 4', 'Gemma 4'], ['gemma4', 'Gemma 4'], ['gemma 2', 'Gemma 2'], ['gemma2', 'Gemma 2'],
+    ['deepseek v2 5', 'DeepSeek-V2.5'], ['command r', 'Command R'], ['chatml', 'ChatML'],
+    ['mistral v7 tekken', 'Mistral V7-Tekken'], ['mistral v3 tekken', 'Mistral V3-Tekken'],
+    ['mistral v7', 'Mistral V7'], ['mistral v3', 'Mistral V2 & V3'], ['mistral v2', 'Mistral V2 & V3'],
+  ];
+  for (const [needle, presetName] of aliases) {
+    if (normalized.includes(needle) && presets.some(preset => preset.name === presetName)) return presetName;
+  }
+  return presets.find(preset => {
+    const candidate = preset.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    return candidate.length >= 4 && normalized.includes(candidate);
+  })?.name || null;
+}
+
+function autoSelectInstructionPresetForModel(modelName) {
+  const name = String(modelName || '').trim();
+  const presetState = getInstructionPresetState();
+  if (!presetState.enabled) return false;
+  const presets = allInstructionPresets(presetState);
+  if (name) {
+    for (const preset of presets) {
+      const pattern = String(preset.activationRegex || '').trim();
+      if (!pattern) continue;
+      try {
+        if (instructionActivationRegex(pattern)?.test(name)) {
+          if (presetState.active !== preset.name) {
+            setActiveInstructionPreset(preset.name);
+            return true;
+          }
+          if (presetState.bindToContext) syncContextPresetToInstruction(preset.name);
+          return false;
+        }
+      } catch (_) { /* Invalid custom regex is ignored, as in SillyTavern auto-select. */ }
+    }
+    if (presetState.deriveFromModel) {
+      const derived = instructionPresetNameMatchForModel(name, presets);
+      if (derived && derived !== presetState.active) {
+        setActiveInstructionPreset(derived);
+        return true;
+      }
+    }
+  }
+  return syncInstructionPresetToContext();
 }
 
 function getGlobalSystemPrompt() {
@@ -531,7 +985,13 @@ function getGlobalPostHistoryInstructions() {
 }
 
 function getInstructionTemplate() {
-  return { ...DEFAULT_INSTRUCTION_TEMPLATE, ...readJson(STORAGE.instructionTemplate, {}) };
+  const presetState = getInstructionPresetState();
+  return {
+    ...resolveInstructionPreset(presetState.active, presetState),
+    enabled: presetState.enabled,
+    bindToContext: presetState.bindToContext,
+    deriveFromModel: presetState.deriveFromModel,
+  };
 }
 
 function baseContextTemplateValues(character) {
@@ -557,7 +1017,7 @@ function baseContextTemplateValues(character) {
 
 function renderPromptOverrideText(source, character) {
   const values = { ...baseContextTemplateValues(character), system: '' };
-  return renderContextTemplate(String(source || ''), values);
+  return renderTemplateMacros(String(source || ''), values).trim();
 }
 
 function effectiveSystemPrompt(character) {
@@ -572,14 +1032,64 @@ function effectivePostHistoryInstructions(character) {
   return renderPromptOverrideText(source, character);
 }
 
-function contextTemplateValues(character) {
+function contextTemplateValues(character, overrides = {}) {
+  const base = baseContextTemplateValues(character);
+  const system = effectiveSystemPrompt(character);
+  const preset = overrides.preset || getActiveContextPreset();
+  const rawExamples = overrides.mesExamplesRaw !== undefined
+    ? String(overrides.mesExamplesRaw || '')
+    : String(character.exampleMessages || '');
+  let formattedExamples;
+  if (overrides.mesExamples !== undefined) {
+    formattedExamples = String(overrides.mesExamples || '');
+  } else {
+    const separator = renderTemplateMacros(String(preset.exampleSeparator || ''), { ...base, system });
+    formattedExamples = rawExamples;
+    if (formattedExamples.trim()) {
+      formattedExamples = formattedExamples.replace(/<START>/gi, separator);
+      formattedExamples = renderTemplateMacros(formattedExamples, { ...base, system });
+    }
+  }
+  const instruct = overrides.instruction || getInstructionTemplate();
+  const instructEnabled = Boolean(instruct.enabled);
+  const instructValue = value => instructEnabled ? String(value || '') : '';
   return {
-    ...baseContextTemplateValues(character),
-    system: effectiveSystemPrompt(character),
+    ...base,
+    system,
+    mesExamples: formattedExamples,
+    mesExamplesRaw: rawExamples,
+    instructStoryStringPrefix: instructValue(instruct.storyStringPrefix),
+    instructStoryStringSuffix: instructValue(instruct.storyStringSuffix),
+    instructInput: instructValue(instruct.inputSequence),
+    instructUserPrefix: instructValue(instruct.inputSequence),
+    instructUserSuffix: instructValue(instruct.inputSuffix),
+    instructOutput: instructValue(instruct.outputSequence),
+    instructAssistantPrefix: instructValue(instruct.outputSequence),
+    instructSeparator: instructValue(instruct.outputSuffix),
+    instructAssistantSuffix: instructValue(instruct.outputSuffix),
+    instructSystemPrefix: instructValue(instruct.systemSequence),
+    instructSystemSuffix: instructValue(instruct.systemSuffix),
+    instructFirstOutput: instructValue(instruct.firstOutputSequence || instruct.outputSequence),
+    instructFirstAssistantPrefix: instructValue(instruct.firstOutputSequence || instruct.outputSequence),
+    instructLastOutput: instructValue(instruct.lastOutputSequence || instruct.outputSequence),
+    instructLastAssistantPrefix: instructValue(instruct.lastOutputSequence || instruct.outputSequence),
+    instructStop: instructValue(instruct.stopSequence),
+    instructUserFiller: instructValue(instruct.userAlignmentMessage),
+    instructSystemInstructionPrefix: instructValue(instruct.lastSystemSequence),
+    instructFirstInput: instructValue(instruct.firstInputSequence || instruct.inputSequence),
+    instructFirstUserPrefix: instructValue(instruct.firstInputSequence || instruct.inputSequence),
+    instructLastInput: instructValue(instruct.lastInputSequence || instruct.inputSequence),
+    instructLastUserPrefix: instructValue(instruct.lastInputSequence || instruct.inputSequence),
+    systemPrompt: system,
+    defaultSystemPrompt: getGlobalSystemPrompt(),
+    instructSystem: getGlobalSystemPrompt(),
+    instructSystemPrompt: getGlobalSystemPrompt(),
+    chatSeparator: String(preset.exampleSeparator || ''),
+    chatStart: String(preset.chatStart || ''),
   };
 }
 
-function renderContextTemplate(template, values) {
+function renderTemplateMacros(template, values) {
   let output = String(template || '');
   for (let pass = 0; pass < 8; pass += 1) {
     const next = output.replace(/\{\{#if\s+([a-zA-Z0-9_]+)\s*\}\}([\s\S]*?)\{\{\/if\}\}/g, (_, key, block) => {
@@ -588,9 +1098,21 @@ function renderContextTemplate(template, values) {
     if (next === output) break;
     output = next;
   }
-  output = output.replace(/\n?\s*\{\{trim\}\}\s*\n?/g, '');
+  // SillyTavern's {{trim}} removes the line break at the marker, not arbitrary spaces.
+  output = output.replace(/(?:\r?\n)*\{\{trim\}\}(?:\r?\n)*/gi, '');
   output = output.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) => String(values[key] ?? ''));
-  return output.replace(/\n{3,}/g, '\n\n').trim();
+  return output.replaceAll('\r\n', '\n');
+}
+
+function renderContextTemplate(template, values, settings = getActiveContextPreset(), instruction = getInstructionTemplate()) {
+  // SillyTavern renders the Story String first, strips only leading line breaks,
+  // then conditionally supplies the trailing newline before Instruct wrapping.
+  let output = renderTemplateMacros(template, values).replace(/^\n+/, '');
+  const inChat = Number(settings.storyStringPosition) === 1;
+  if (output && !output.endsWith('\n') && !inChat) {
+    if (!instruction.enabled || (instruction.wrap && !instruction.storyStringSuffix)) output += '\n';
+  }
+  return output;
 }
 
 function effectiveContextTemplate(character) {
@@ -598,8 +1120,15 @@ function effectiveContextTemplate(character) {
   return cardOverride || getContextTemplate();
 }
 
-function renderCharacterContext(character) {
-  return renderContextTemplate(effectiveContextTemplate(character), contextTemplateValues(character));
+function renderCharacterContext(character, options = {}) {
+  const settings = options.preset || getActiveContextPreset();
+  const instruction = options.instruction || getInstructionTemplate();
+  const values = contextTemplateValues(character, {
+    ...options,
+    preset: settings,
+    instruction,
+  });
+  return renderContextTemplate(effectiveContextTemplate(character), values, settings, instruction);
 }
 
 function estimateTokens(text) {
@@ -1115,10 +1644,31 @@ function ensureConversation(character) {
   return conversations[character.id];
 }
 
-function chatSystemPrompt(character) {
-  const context = renderCharacterContext(character);
+function estimateChatMessagesTokens(messages) {
+  return messages.reduce((total, message) => total + estimateTokens(message.content) + 4, 2);
+}
+
+function buildChatCompletionMessages(character, history = [], params = getGenerationParams()) {
+  const permanent = [];
+  const system = effectiveSystemPrompt(character);
+  if (system) permanent.push({ role: 'system', content: system });
+  if (String(character.description || '').trim()) permanent.push({ role: 'system', content: character.description.trim() });
+  if (String(character.personality || '').trim()) permanent.push({ role: 'system', content: character.personality.trim() });
+  if (String(character.scenario || '').trim()) permanent.push({ role: 'system', content: character.scenario.trim() });
   const postHistory = effectivePostHistoryInstructions(character);
-  return [context, postHistory].filter(Boolean).join('\n\n');
+  const tail = postHistory ? [{ role: 'system', content: postHistory }] : [];
+  let keptHistory = history
+    .filter(message => message && ['system', 'user', 'assistant'].includes(message.role) && String(message.content || '').trim())
+    .map(message => ({ role: message.role, content: String(message.content) }));
+  const contextTokens = Math.max(512, Number(params.contextTokens) || DEFAULT_PARAMS.contextTokens);
+  const generationReserve = Math.max(1, Number(params.maxTokens) || DEFAULT_PARAMS.maxTokens);
+  const promptBudget = Math.max(128, contextTokens - generationReserve);
+  let messages = [...permanent, ...keptHistory, ...tail];
+  while (estimateChatMessagesTokens(messages) > promptBudget && keptHistory.length > 1) {
+    keptHistory = keptHistory.slice(1);
+    messages = [...permanent, ...keptHistory, ...tail];
+  }
+  return messages;
 }
 
 function scrollChatToBottom() {
@@ -1214,15 +1764,25 @@ async function sendChatMessage(event, character) {
 
   try {
     const currentThread = getConversations()[character.id] || [];
-    const messages = [
-      { role: 'system', content: chatSystemPrompt(character) },
-      ...currentThread.map(message => ({ role: message.role, content: message.content })),
-    ];
     const params = getGenerationParams();
-    const result = await invoke('chat_completion', { messages, params });
+    if (!state.backendConfig) {
+      try { state.backendConfig = await invoke('load_backend_config'); } catch (_) { /* Native command will surface the real error. */ }
+    }
+    const mode = effectiveBackendApiMode(state.backendConfig);
+    let result;
+    let reply;
+    if (mode === 'text') {
+      const request = buildTextCompletionRequest(character, currentThread, params);
+      result = await invoke('text_completion', { prompt: request.prompt, stopStrings: request.stopStrings, params });
+      reply = postProcessTextCompletionResponse(result.content, request.preset, request.formatting, request.stopStrings);
+    } else {
+      const messages = buildChatCompletionMessages(character, currentThread, params);
+      result = await invoke('chat_completion', { messages, params });
+      reply = String(result.content || '');
+    }
     const updated = getConversations();
     updated[character.id] = updated[character.id] || [];
-    updated[character.id].push({ id: uid(), role: 'assistant', content: result.content, createdAt: Date.now() });
+    updated[character.id].push({ id: uid(), role: 'assistant', content: reply, createdAt: Date.now() });
     saveConversations(updated);
   } catch (error) {
     toast(String(error), 'error');
@@ -1567,7 +2127,7 @@ function openCharacterEditor(characterId = null) {
               </section>
 
               <section class="character-editor-panel" data-editor-panel="prompting">
-                <label class="form-field"><span>${escapeHtml(t('character.contextTemplate'))}</span><textarea id="character-context-template" name="contextTemplate" class="context-template-editor prompt-editor-compact" rows="10" spellcheck="false">${escapeHtml(character.contextTemplate)}</textarea><small class="field-hint">${escapeHtml(t('character.contextTemplate.overrideHelp'))}</small></label>
+                <label class="form-field"><span>${escapeHtml(t('character.contextTemplate'))}</span><textarea id="character-context-template" name="contextTemplate" class="context-template-editor prompt-editor-compact" rows="10" spellcheck="false">${escapeHtml(contextTemplateToEditor(character.contextTemplate))}</textarea><small class="field-hint">${escapeHtml(t('character.contextTemplate.overrideHelp'))} ${escapeHtml(t('globalPrompt.context.compactSyntaxHint'))}</small></label>
                 ${promptPlaceholderButtons(CONTEXT_TEMPLATE_PLACEHOLDERS, 'character-context-template')}
                 <label class="form-field"><span>${escapeHtml(t('character.systemPrompt'))}</span><textarea name="systemPrompt" rows="8">${escapeHtml(character.systemPrompt)}</textarea><small class="field-hint">${escapeHtml(t('character.systemPrompt.overrideHelp'))}</small></label>
                 <label class="form-field"><span>${escapeHtml(t('character.postHistory'))}</span><textarea name="postHistoryInstructions" rows="7">${escapeHtml(character.postHistoryInstructions)}</textarea><small class="field-hint">${escapeHtml(t('character.postHistory.overrideHelp'))}</small></label>
@@ -1619,7 +2179,7 @@ function openCharacterEditor(characterId = null) {
       scenario: String(data.get('scenario') || ''),
       firstMessage: String(data.get('firstMessage') || ''),
       alternateGreetings: data.getAll('alternateGreeting').map(value => String(value).trim()).filter(Boolean),
-      contextTemplate: String(data.get('contextTemplate') || ''),
+      contextTemplate: contextTemplateFromEditor(String(data.get('contextTemplate') || '')),
       systemPrompt: String(data.get('systemPrompt') || ''),
       postHistoryInstructions: String(data.get('postHistoryInstructions') || ''),
       exampleMessages: character.exampleMessages || '',
@@ -1846,7 +2406,7 @@ function openCharacterEditor(characterId = null) {
       firstMessage: String(data.get('firstMessage') || '').trim(),
       alternateGreetings: data.getAll('alternateGreeting').map(value => String(value).trim()).filter(Boolean),
       exampleMessages: existing?.exampleMessages || character.exampleMessages || '',
-      contextTemplate: String(data.get('contextTemplate') || '').trim(),
+      contextTemplate: contextTemplateFromEditor(String(data.get('contextTemplate') || '')).trim(),
       systemPrompt: String(data.get('systemPrompt') || '').trim(),
       postHistoryInstructions: String(data.get('postHistoryInstructions') || '').trim(),
       creator: String(data.get('creator') || '').trim(),
@@ -2369,6 +2929,7 @@ async function renderModelsConfig() {
   const body = document.getElementById('config-body');
   let saved = null;
   try { saved = await invoke('load_backend_config'); } catch (error) { toast(String(error), 'error'); }
+  state.backendConfig = saved;
   const selected = saved?.backendType || 'koboldcpp';
 
   body.innerHTML = `
@@ -2387,13 +2948,22 @@ async function renderModelsConfig() {
       <div class="connection-result" id="connection-result">${escapeHtml(t('models.notTested'))}</div>
     </div>
     <div class="field-card"><div class="info"><h4>${escapeHtml(t('models.model'))}</h4><p>${escapeHtml(t('models.model.desc'))}</p></div><div class="control model-control"><input id="backend-model" list="backend-model-list" value="${escapeHtml(saved?.model || '')}" placeholder="${escapeHtml(t('models.model.placeholder'))}"><datalist id="backend-model-list"></datalist></div></div>
+    <div class="field-card"><div class="info"><h4>${escapeHtml(t('models.apiMode'))}</h4><p>${escapeHtml(t('models.apiMode.desc'))}</p></div><div class="control model-control"><select id="backend-api-mode"><option value="auto" ${(saved?.apiMode || 'auto') === 'auto' ? 'selected' : ''}>${escapeHtml(t('models.apiMode.auto'))}</option><option value="chat" ${saved?.apiMode === 'chat' ? 'selected' : ''}>${escapeHtml(t('models.apiMode.chat'))}</option><option value="text" ${saved?.apiMode === 'text' ? 'selected' : ''}>${escapeHtml(t('models.apiMode.text'))}</option></select><small class="field-hint" id="backend-api-mode-hint"></small></div></div>
     <div class="field-card"><div class="info"><h4>${escapeHtml(t('models.apiKey'))}</h4><p>${escapeHtml(t('models.apiKey.desc'))}</p></div><div class="control model-control"><input id="backend-api-key" type="password" value="${escapeHtml(saved?.apiKey || '')}" placeholder="${escapeHtml(t('models.apiKey.placeholder'))}"></div></div>`;
 
+  const updateModeHint = () => {
+    const backendType = document.querySelector('input[name=backend]:checked')?.value || 'koboldcpp';
+    const selectedMode = document.getElementById('backend-api-mode')?.value || 'auto';
+    const effective = selectedMode === 'auto' ? defaultBackendApiMode(backendType) : selectedMode;
+    const hint = document.getElementById('backend-api-mode-hint');
+    if (hint) hint.textContent = t('models.apiMode.effective', { mode: t(`models.apiMode.${effective}`) });
+  };
   const selectBackend = id => {
     body.querySelectorAll('[data-backend-row]').forEach(row => row.classList.toggle('selected', row.dataset.backendRow === id));
     body.querySelectorAll('input[name=backend]').forEach(radio => radio.checked = radio.value === id);
     body.querySelectorAll('.backend-url').forEach(input => input.disabled = input.dataset.backendUrl !== id);
     body.querySelectorAll('[data-test]').forEach(button => button.disabled = button.dataset.test !== id);
+    updateModeHint();
   };
   body.querySelectorAll('input[name=backend]').forEach(radio => radio.addEventListener('change', () => selectBackend(radio.value)));
   body.querySelectorAll('[data-backend-row]').forEach(row => row.addEventListener('click', event => {
@@ -2401,6 +2971,8 @@ async function renderModelsConfig() {
     selectBackend(row.dataset.backendRow);
   }));
   body.querySelectorAll('[data-test]').forEach(button => button.addEventListener('click', () => testBackend(button.dataset.test)));
+  document.getElementById('backend-api-mode').addEventListener('change', updateModeHint);
+  updateModeHint();
   document.getElementById('save-backend').addEventListener('click', saveBackendConfiguration);
 }
 
@@ -2411,6 +2983,7 @@ function currentBackendDraft() {
     url: document.querySelector(`[data-backend-url="${backendType}"]`)?.value.trim() || '',
     model: document.getElementById('backend-model')?.value.trim() || null,
     apiKey: document.getElementById('backend-api-key')?.value.trim() || null,
+    apiMode: document.getElementById('backend-api-mode')?.value || 'auto',
   };
 }
 
@@ -2425,7 +2998,7 @@ async function testBackend(backendType) {
   try {
     const result = await invoke('test_backend_connection', { backendType: draft.backendType, url: draft.url, apiKey: draft.apiKey });
     resultBox.className = 'connection-result is-ok';
-    resultBox.textContent = result.message;
+    resultBox.textContent = result.models?.length ? t('models.connectedModels', { count: result.models.length }) : t('models.connectedNoModels');
     const list = document.getElementById('backend-model-list');
     list.innerHTML = (result.models || []).map(model => `<option value="${escapeHtml(model)}"></option>`).join('');
     const modelInput = document.getElementById('backend-model');
@@ -2442,7 +3015,8 @@ async function testBackend(backendType) {
 async function saveBackendConfiguration() {
   try {
     const config = currentBackendDraft();
-    await invoke('save_backend_config', { config });
+    const saved = await invoke('save_backend_config', { config });
+    state.backendConfig = saved || config;
     toast(t('models.saved'), 'success');
     await refreshModelStatus();
   } catch (error) {
@@ -2464,6 +3038,7 @@ const CONTEXT_TEMPLATE_PLACEHOLDERS = [
   { key: 'anchorBefore', snippet: '{{#if anchorBefore}}{{anchorBefore}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.anchorBefore' },
   { key: 'anchorAfter', snippet: '{{#if anchorAfter}}{{anchorAfter}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.anchorAfter' },
   { key: 'mesExamples', snippet: '{{#if mesExamples}}{{mesExamples}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.mesExamples' },
+  { key: 'mesExamplesRaw', snippet: '{{#if mesExamplesRaw}}{{mesExamplesRaw}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.mesExamplesRaw' },
   { key: 'trim', snippet: '{{trim}}', descriptionKey: 'globalPrompt.placeholder.trim' },
 ];
 
@@ -2589,22 +3164,107 @@ function contextPresetNameExists(name, state = getContextPresetState(), exceptNa
   return allContextPresets(state).some(preset => preset.name !== exceptName && preset.name.toLocaleLowerCase() === lower);
 }
 
+function contextPresetEditorValues() {
+  return {
+    storyString: contextTemplateFromEditor(document.getElementById('context-template-editor').value),
+    exampleSeparator: document.getElementById('context-example-separator').value,
+    chatStart: document.getElementById('context-chat-start').value,
+    storyStringPosition: Number(document.getElementById('context-story-position').value) || 0,
+    storyStringDepth: Math.max(0, Number(document.getElementById('context-story-depth').value) || 0),
+    storyStringRole: Number(document.getElementById('context-story-role').value) || 0,
+    alwaysForceName2: document.getElementById('context-always-force-name').checked,
+    singleLine: document.getElementById('context-single-line').checked,
+    trimSentences: document.getElementById('context-trim-sentences').checked,
+    useStopStrings: document.getElementById('context-separators-stop').checked,
+    namesAsStopStrings: document.getElementById('context-names-stop').checked,
+  };
+}
+
+function contextFormattingEditorValues() {
+  return {
+    collapseNewlines: document.getElementById('context-collapse-newlines').checked,
+    trimSpaces: document.getElementById('context-trim-spaces').checked,
+    exampleMessagesBehavior: document.getElementById('context-example-behavior')?.value || 'normal',
+  };
+}
+
 function renderContextPromptTab(body) {
-  const state = getContextPresetState();
-  const template = getContextTemplate();
+  const presetState = getContextPresetState();
+  const preset = resolveContextPreset(presetState.active, presetState);
+  const formatting = getContextFormatting();
   body.innerHTML = `${globalPromptTabs('context')}
     <div class="field-card field-card-stack global-prompt-card">
       <div class="info">
         <h4>${escapeHtml(t('globalPrompt.contextTemplate'))}</h4>
         <p>${escapeHtml(t('globalPrompt.contextTemplate.desc'))}</p>
       </div>
-      ${contextPresetToolbar(state)}
-      <textarea id="context-template-editor" class="context-template-editor" spellcheck="false">${escapeHtml(template)}</textarea>
+      ${contextPresetToolbar(presetState)}
+      <label class="form-field context-story-field">
+        <span>${escapeHtml(t('globalPrompt.context.storyString'))}</span>
+        <textarea id="context-template-editor" class="context-template-editor" spellcheck="false">${escapeHtml(contextTemplateToEditor(preset.storyString))}</textarea><small class="field-hint">${escapeHtml(t('globalPrompt.context.compactSyntaxHint'))}</small>
+      </label>
       ${promptPlaceholderButtons(CONTEXT_TEMPLATE_PLACEHOLDERS, 'context-template-editor')}
+      <div class="context-settings-grid">
+        <label class="form-field">
+          <span>${escapeHtml(t('globalPrompt.context.position'))}</span>
+          <select id="context-story-position">
+            <option value="0" ${preset.storyStringPosition === 0 ? 'selected' : ''}>${escapeHtml(t('globalPrompt.context.position.top'))}</option>
+            <option value="1" ${preset.storyStringPosition === 1 ? 'selected' : ''}>${escapeHtml(t('globalPrompt.context.position.chat'))}</option>
+          </select>
+        </label>
+        <label class="form-field context-depth-field" ${preset.storyStringPosition === 1 ? '' : 'hidden'}>
+          <span>${escapeHtml(t('globalPrompt.context.depth'))}</span>
+          <input id="context-story-depth" type="number" min="0" max="10000" step="1" value="${preset.storyStringDepth}">
+        </label>
+        <label class="form-field context-role-field" ${preset.storyStringPosition === 1 ? '' : 'hidden'}>
+          <span>${escapeHtml(t('globalPrompt.context.role'))}</span>
+          <select id="context-story-role">
+            <option value="0" ${preset.storyStringRole === 0 ? 'selected' : ''}>${escapeHtml(t('globalPrompt.context.role.system'))}</option>
+            <option value="1" ${preset.storyStringRole === 1 ? 'selected' : ''}>${escapeHtml(t('globalPrompt.context.role.user'))}</option>
+            <option value="2" ${preset.storyStringRole === 2 ? 'selected' : ''}>${escapeHtml(t('globalPrompt.context.role.assistant'))}</option>
+          </select>
+        </label>
+      </div>
+      <div class="context-separator-grid">
+        <label class="form-field"><span>${escapeHtml(t('globalPrompt.context.exampleSeparator'))}</span><textarea id="context-example-separator" rows="3" spellcheck="false">${escapeHtml(preset.exampleSeparator)}</textarea></label>
+        <label class="form-field"><span>${escapeHtml(t('globalPrompt.context.chatStart'))}</span><textarea id="context-chat-start" rows="3" spellcheck="false">${escapeHtml(preset.chatStart)}</textarea></label>
+      </div>
+      <div class="context-formatting-panel">
+        <h5>${escapeHtml(t('globalPrompt.context.formatting'))}</h5>
+        <label class="form-field context-example-behavior">
+          <span>${escapeHtml(t('globalPrompt.context.exampleBehavior'))}</span>
+          <select id="context-example-behavior">
+            <option value="normal" ${formatting.exampleMessagesBehavior === 'normal' ? 'selected' : ''}>${escapeHtml(t('globalPrompt.context.exampleBehavior.normal'))}</option>
+            <option value="keep" ${formatting.exampleMessagesBehavior === 'keep' ? 'selected' : ''}>${escapeHtml(t('globalPrompt.context.exampleBehavior.keep'))}</option>
+            <option value="strip" ${formatting.exampleMessagesBehavior === 'strip' ? 'selected' : ''}>${escapeHtml(t('globalPrompt.context.exampleBehavior.strip'))}</option>
+          </select>
+        </label>
+        <div class="context-formatting-options">
+          <label class="toggle-row"><input type="checkbox" id="context-always-force-name" ${preset.alwaysForceName2 ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.context.alwaysForceName'))}</span></label>
+          <label class="toggle-row"><input type="checkbox" id="context-single-line" ${preset.singleLine ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.context.singleLine'))}</span></label>
+          <label class="toggle-row"><input type="checkbox" id="context-collapse-newlines" ${formatting.collapseNewlines ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.context.collapseNewlines'))}</span></label>
+          <label class="toggle-row"><input type="checkbox" id="context-trim-spaces" ${formatting.trimSpaces ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.context.trimSpaces'))}</span></label>
+          <label class="toggle-row"><input type="checkbox" id="context-trim-sentences" ${preset.trimSentences ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.context.trimSentences'))}</span></label>
+          <label class="toggle-row"><input type="checkbox" id="context-separators-stop" ${preset.useStopStrings ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.context.separatorsStop'))}</span></label>
+          <label class="toggle-row"><input type="checkbox" id="context-names-stop" ${preset.namesAsStopStrings ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.context.namesStop'))}</span></label>
+        </div>
+        <p class="field-hint">${escapeHtml(t('globalPrompt.context.formattingHint'))}</p>
+      </div>
     </div>`;
   bindPromptPlaceholderButtons(body);
   const editor = document.getElementById('context-template-editor');
   const select = document.getElementById('context-preset-select');
+  const position = document.getElementById('context-story-position');
+
+  const syncPositionFields = () => {
+    const inChat = Number(position.value) === 1;
+    document.querySelector('.context-depth-field').hidden = !inChat;
+    document.querySelector('.context-role-field').hidden = !inChat;
+  };
+  position.addEventListener('change', syncPositionFields);
+  ['context-collapse-newlines', 'context-trim-spaces', 'context-example-behavior'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => saveContextFormatting(contextFormattingEditorValues()));
+  });
 
   select.addEventListener('change', () => {
     setActiveContextPreset(select.value);
@@ -2613,11 +3273,13 @@ function renderContextPromptTab(body) {
 
   document.getElementById('context-preset-save').addEventListener('click', () => {
     const current = getContextPresetState();
+    const values = contextPresetEditorValues();
     const custom = contextPresetCustomEntry(current.active, current);
-    if (custom) custom.storyString = editor.value;
-    else current.overrides[current.active] = editor.value;
+    if (custom) Object.assign(custom, values);
+    else current.overrides[current.active] = values;
     saveContextPresetState(current);
-    localStorage.setItem(STORAGE.contextTemplate, editor.value);
+    saveContextFormatting(contextFormattingEditorValues());
+    localStorage.setItem(STORAGE.contextTemplate, values.storyString);
     renderGlobalPromptConfig('context');
     toast(t('globalPrompt.presets.saved'), 'success');
   });
@@ -2627,10 +3289,12 @@ function renderContextPromptTab(body) {
     const name = promptForContextPresetName('globalPrompt.presets.newPrompt');
     if (!name) return;
     if (contextPresetNameExists(name, current)) return toast(t('globalPrompt.presets.nameExists'), 'error');
-    current.custom.push({ name, storyString: editor.value });
+    const values = contextPresetEditorValues();
+    current.custom.push(normalizeContextPresetRecord({ name, ...values }, name));
     current.active = name;
     saveContextPresetState(current);
-    localStorage.setItem(STORAGE.contextTemplate, editor.value);
+    saveContextFormatting(contextFormattingEditorValues());
+    localStorage.setItem(STORAGE.contextTemplate, values.storyString);
     renderGlobalPromptConfig('context');
     toast(t('globalPrompt.presets.created'), 'success');
   });
@@ -2642,15 +3306,17 @@ function renderContextPromptTab(body) {
     if (!name || name === oldName) return;
     if (contextPresetNameExists(name, current, oldName)) return toast(t('globalPrompt.presets.nameExists'), 'error');
     const custom = contextPresetCustomEntry(oldName, current);
+    const values = contextPresetEditorValues();
     if (custom) {
-      custom.name = name;
+      Object.assign(custom, values, { name });
       current.active = name;
     } else {
-      current.custom.push({ name, storyString: editor.value });
+      current.custom.push(normalizeContextPresetRecord({ name, ...values }, name));
       current.active = name;
     }
     saveContextPresetState(current);
-    localStorage.setItem(STORAGE.contextTemplate, editor.value);
+    saveContextFormatting(contextFormattingEditorValues());
+    localStorage.setItem(STORAGE.contextTemplate, values.storyString);
     renderGlobalPromptConfig('context');
     toast(t('globalPrompt.presets.renamed'), 'success');
   });
@@ -2672,7 +3338,7 @@ function renderContextPromptTab(body) {
     const custom = contextPresetCustomEntry(current.active, current);
     if (!custom) return;
     if (!window.confirm(t('globalPrompt.presets.deleteConfirm', { name: current.active }))) return;
-    current.custom = current.custom.filter(preset => preset.name !== current.active);
+    current.custom = current.custom.filter(item => item.name !== current.active);
     current.active = defaultContextPresetName();
     saveContextPresetState(current);
     localStorage.setItem(STORAGE.contextTemplate, resolveContextPresetTemplate(current.active, current));
@@ -2681,40 +3347,511 @@ function renderContextPromptTab(body) {
   });
 }
 
-function instructionPreviewMessage(role, content, character, template) {
-  if (!String(content || '').trim()) return '';
-  const includeName = template.includeNames === 'always';
-  const roleName = role === 'user' ? 'User' : role === 'assistant' ? character.name : '';
-  const prefix = role === 'user' ? template.userPrefix : role === 'assistant' ? template.assistantPrefix : template.systemPrefix;
-  const suffix = role === 'user' ? template.userSuffix : role === 'assistant' ? template.assistantSuffix : template.systemSuffix;
-  const namedContent = includeName && roleName ? `${roleName}: ${content}` : content;
-  return `${prefix || ''}${namedContent}${suffix || ''}`;
+function renderInstructionSequence(value, character, template, name = '') {
+  let text = String(value || '');
+  if (!template.macro) return text;
+  const values = { ...contextTemplateValues(character), name: String(name || '') };
+  text = text.replace(/\{\{name\}\}/gi, String(name || ''));
+  return renderTemplateMacros(text, values);
 }
 
-function buildPromptPreview(character) {
-  const renderedContext = renderCharacterContext(character);
-  const postHistory = effectivePostHistoryInstructions(character);
-  const currentPayload = [
-    { role: 'system', content: [renderedContext, postHistory].filter(Boolean).join('\n\n') },
-  ];
-  if (character.firstMessage?.trim()) currentPayload.push({ role: 'assistant', content: character.firstMessage.trim() });
-  currentPayload.push({ role: 'user', content: t('globalPrompt.preview.sampleUser') });
+function instructionRoleName(role, character) {
+  if (role === 'user') return 'User';
+  if (role === 'assistant') return String(character.name || 'Assistant');
+  return 'System';
+}
 
-  const instruction = getInstructionTemplate();
-  const separator = instruction.wrapWithNewline ? '\n' : '';
-  const textCompletionParts = [
-    `${instruction.storyPrefix || ''}${renderedContext}${instruction.storySuffix || ''}`,
-  ];
-  if (character.firstMessage?.trim()) textCompletionParts.push(instructionPreviewMessage('assistant', character.firstMessage.trim(), character, instruction));
-  textCompletionParts.push(instructionPreviewMessage('user', t('globalPrompt.preview.sampleUser'), character, instruction));
-  if (postHistory) textCompletionParts.push(instructionPreviewMessage('system', postHistory, character, instruction));
-  textCompletionParts.push(`${instruction.assistantPrefix || ''}${instruction.includeNames === 'always' ? `${character.name}: ` : ''}`);
+function instructionNamesEnabled(template, forceName = false) {
+  if (template.namesBehavior === 'always') return true;
+  if (template.namesBehavior === 'force') return Boolean(forceName);
+  return false;
+}
+
+function instructionMessageParts(role, template, options = {}) {
+  if (role === 'user' || (role === 'system' && template.systemSameAsUser)) {
+    const sequence = options.isLastUser && template.lastInputSequence
+      ? template.lastInputSequence
+      : options.isFirst && template.firstInputSequence
+        ? template.firstInputSequence
+        : template.inputSequence;
+    return { sequence, suffix: template.inputSuffix };
+  }
+  if (role === 'assistant') {
+    const sequence = options.isFirst && template.firstOutputSequence
+      ? template.firstOutputSequence
+      : options.isLastAssistant && template.lastOutputSequence
+        ? template.lastOutputSequence
+        : template.outputSequence;
+    return { sequence, suffix: template.outputSuffix };
+  }
+  return {
+    sequence: options.isLastSystem && template.lastSystemSequence ? template.lastSystemSequence : template.systemSequence,
+    suffix: template.systemSuffix,
+  };
+}
+
+function formatInstructionMessage(role, content, character, template, options = {}) {
+  const body = String(content || '');
+  if (!body.trim()) return '';
+  if (!template.enabled) {
+    if (role === 'user') return `User: ${body}\n`;
+    if (role === 'assistant') return `${character.name || 'Assistant'}: ${body}\n`;
+    return `${body}${body.endsWith('\n') ? '' : '\n'}`;
+  }
+  const roleName = instructionRoleName(role, character);
+  const parts = instructionMessageParts(role, template, options);
+  const prefix = renderInstructionSequence(parts.sequence, character, template, roleName);
+  let suffix = renderInstructionSequence(parts.suffix, character, template, roleName);
+  if (!suffix && template.wrap) suffix = '\n';
+  const separator = template.wrap ? '\n' : '';
+  const includeName = role !== 'system' && instructionNamesEnabled(template, options.forceName);
+  const namedBody = includeName ? `${roleName}: ${body}` : body;
+  return [prefix, namedBody + suffix].filter(Boolean).join(separator);
+}
+
+function renderContextPresetText(value, character) {
+  return renderTemplateMacros(String(value || ''), contextTemplateValues(character));
+}
+
+function parseSillyTavernExamples(value, character, preset, isInstruct) {
+  let raw = String(value || '');
+  if (!raw || raw === '<START>') return [];
+  if (!raw.startsWith('<START>')) raw = `<START>\n${raw.trim()}`;
+  const separator = preset.exampleSeparator ? `${renderContextPresetText(preset.exampleSeparator, character)}\n` : '';
+  const blockHeading = isInstruct ? '<START>\n' : separator;
+  return raw.split(/<START>/gi).slice(1).map(block => `${blockHeading}${block.trim()}\n`);
+}
+
+function parseExampleDialogueBlock(block, character) {
+  const rendered = renderContextPresetText(String(block || '').replace(/<START>/i, '{Example Dialogue:}'), character).replaceAll('\r\n', '\n');
+  const userName = String(baseContextTemplateValues(character).user || 'User');
+  const charName = String(character.name || '');
+  const lines = rendered.split('\n');
+  const entries = [];
+  let current = null;
+
+  const flush = () => {
+    if (!current) return;
+    current.content = current.lines.join('\n').replace(`${current.speaker}:`, '').trim();
+    delete current.lines;
+    delete current.speaker;
+    entries.push(current);
+    current = null;
+  };
+
+  // ST skips the first heading line and switches speakers on exact "Name:" prefixes.
+  for (let i = 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (line.startsWith(`${userName}:`)) {
+      flush();
+      current = { role: 'user', name: 'example_user', speaker: userName, lines: [line] };
+      continue;
+    }
+    if (charName && line.startsWith(`${charName}:`)) {
+      flush();
+      current = { role: 'assistant', name: 'example_assistant', speaker: charName, lines: [line] };
+      continue;
+    }
+    if (current) current.lines.push(line);
+  }
+  flush();
+  return entries;
+}
+
+function formatInstructionExampleMessage(role, content, character, template, forceName = false) {
+  const roleName = instructionRoleName(role, character);
+  let prefix = role === 'user' ? template.inputSequence : template.outputSequence;
+  let suffix = role === 'user' ? template.inputSuffix : template.outputSuffix;
+  if (template.macro) {
+    prefix = renderInstructionSequence(prefix, character, template, roleName);
+    suffix = renderInstructionSequence(suffix, character, template, roleName);
+    if (!suffix && template.wrap) suffix = '\n';
+  }
+  const includeName = instructionNamesEnabled(template, forceName);
+  const messageContent = includeName ? `${roleName}: ${content}` : content;
+  const separator = template.wrap ? '\n' : '';
+  return [prefix, messageContent + suffix].filter(Boolean).join(separator);
+}
+
+function formatSillyTavernExamples(parsedBlocks, character, preset, template) {
+  const blockHeading = preset.exampleSeparator ? `${renderContextPresetText(preset.exampleSeparator, character)}\n` : '';
+  if (!template.enabled || template.skipExamples) {
+    return parsedBlocks.map(block => renderContextPresetText(block.replace(/<START>\n/i, blockHeading), character));
+  }
+
+  const formatted = [];
+  for (const block of parsedBlocks) {
+    const cleaned = String(block || '').replace(/<START>/i, '{Example Dialogue:}').replace(/\r/g, '');
+    const entries = parseExampleDialogueBlock(cleaned, character);
+    if (!entries.length) continue;
+    if (blockHeading) formatted.push(blockHeading);
+    for (const entry of entries) {
+      const forceName = template.namesBehavior === 'force' && entry.name === 'example_user';
+      formatted.push(formatInstructionExampleMessage(entry.role, entry.content, character, template, forceName));
+    }
+  }
+
+  if (!formatted.length) {
+    return parsedBlocks.map(block => renderContextPresetText(block.replace(/<START>\n/i, blockHeading), character));
+  }
+  return formatted;
+}
+
+function buildTextCompletionStopStrings(character, preset, instruction) {
+  const result = [];
+  const push = value => {
+    const text = String(value || '');
+    if (text && text.trim() && !result.includes(text)) result.push(text);
+  };
+
+  if (instruction.enabled) {
+    const names = {
+      input: 'User',
+      output: String(character.name || 'Assistant'),
+      system: 'System',
+    };
+    const combined = [String(instruction.stopSequence || '')];
+    if (instruction.sequencesAsStopStrings) {
+      combined.push(
+        String(instruction.inputSequence || '').replace(/{{name}}/gi, names.input),
+        String(instruction.outputSequence || '').replace(/{{name}}/gi, names.output),
+        String(instruction.firstOutputSequence || '').replace(/{{name}}/gi, names.output),
+        String(instruction.lastOutputSequence || '').replace(/{{name}}/gi, names.output),
+        String(instruction.systemSequence || '').replace(/{{name}}/gi, names.system),
+        String(instruction.lastSystemSequence || '').replace(/{{name}}/gi, names.system),
+      );
+    }
+    const unique = [];
+    for (const line of combined.join('\n').split('\n')) {
+      if (unique.includes(line)) continue;
+      unique.push(line);
+      if (!line || !line.trim()) continue;
+      const wrapped = instruction.wrap ? `\n${line}` : line;
+      push(instruction.macro ? renderTemplateMacros(wrapped, contextTemplateValues(character, { instruction })) : wrapped);
+    }
+  }
+
+  if (preset.useStopStrings) {
+    if (preset.chatStart) push(`\n${renderContextPresetText(preset.chatStart, character)}`);
+    if (preset.exampleSeparator) push(`\n${renderContextPresetText(preset.exampleSeparator, character)}`);
+  }
+
+  // Normal SillyTavern generation stops on the user name. It does not also add
+  // the active character name unless continuing a user message / impersonating.
+  if (preset.namesAsStopStrings) push('\nUser:');
+  if (preset.singleLine) result.unshift('\n');
+  return result.filter((value, index, all) => value && all.indexOf(value) === index);
+}
+
+function formatInstructionStoryString(story, character, preset, template) {
+  if (!story) return '';
+  if (!template.enabled || Number(preset.storyStringPosition) === 1) return story;
+  const separator = template.wrap ? '\n' : '';
+  const values = contextTemplateValues(character, { preset, instruction: template });
+  let output = story;
+  if (template.storyStringPrefix) {
+    const prefix = renderTemplateMacros(String(template.storyStringPrefix), { ...values, name: 'System' }).replace(/{{name}}/gi, 'System');
+    output = `${prefix}${separator}${output}`;
+  }
+  if (template.storyStringSuffix) {
+    output += renderTemplateMacros(String(template.storyStringSuffix), values);
+  }
+  return output;
+}
+
+function textCompletionGenerationPrefix(character, preset, instruction) {
+  if (!instruction.enabled) return preset.alwaysForceName2 && character.name ? `${character.name}:` : '';
+  const roleName = String(character.name || 'Assistant');
+  const rawSequence = instruction.lastOutputSequence || instruction.outputSequence || '';
+  let sequence = rawSequence;
+  if (instruction.macro) sequence = renderInstructionSequence(sequence, character, instruction, roleName);
+  const separator = instruction.wrap ? '\n' : '';
+  const includeName = instruction.namesBehavior === 'always';
+  let nameFiller = '';
+  if (
+    includeName && instruction.lastOutputSequence && instruction.outputSequence &&
+    rawSequence === instruction.lastOutputSequence && /\s$/.test(instruction.outputSequence) && !/\s$/.test(instruction.lastOutputSequence)
+  ) {
+    nameFiller = instruction.outputSequence.slice(-1);
+  }
+  let text = includeName
+    ? `${separator}${sequence}${separator}${nameFiller}${roleName}:`
+    : `${separator}${sequence}`;
+  return (instruction.wrap ? text.trimEnd() : text) + (includeName ? '' : separator);
+}
+
+function collapsePromptNewlines(value) {
+  return String(value || '').replace(/\n+/g, '\n');
+}
+
+function contextPresetRoleName(value) {
+  if (Number(value) === 1) return 'user';
+  if (Number(value) === 2) return 'assistant';
+  return 'system';
+}
+
+function injectStoryStringAtDepth(entries, story, preset) {
+  if (!String(story || '').trim()) return [...entries];
+  const depth = Math.max(0, Number(preset.storyStringDepth) || 0);
+  const index = Math.max(0, entries.length - depth);
+  const next = [...entries];
+  next.splice(index, 0, {
+    role: contextPresetRoleName(preset.storyStringRole),
+    content: String(story).replace(/\n+$/, ''),
+    injectedStory: true,
+  });
+  return next;
+}
+
+function markInstructionMessagePositions(entries) {
+  const lastUserIndex = entries.findLastIndex(entry => entry.role === 'user');
+  return entries.map((entry, index) => ({
+    ...entry,
+    isFirst: index === 0,
+    isLastUser: entry.role === 'user' && index === lastUserIndex,
+  }));
+}
+
+function prepareTextCompletionComponents(character, history, preset, formatting, instruction) {
+  // ST parses examples before rendering the Story String because {{mesExamples}}
+  // receives the already-Instruct-formatted representation.
+  const parsedExamples = parseSillyTavernExamples(character.exampleMessages, character, preset, instruction.enabled);
+  const rawExamples = [...parsedExamples];
+  const formattedExamples = instruction.enabled
+    ? formatSillyTavernExamples(parsedExamples, character, preset, instruction)
+    : parsedExamples.map(item => renderContextPresetText(item, character));
+
+  const story = renderCharacterContext(character, {
+    preset,
+    instruction,
+    mesExamples: formattedExamples.join(''),
+    mesExamplesRaw: rawExamples.join(''),
+  });
+  const combinedStory = formatInstructionStoryString(story, character, preset, instruction);
+  const postHistory = effectivePostHistoryInstructions(character);
+
+  let entries = history
+    .filter(entry => entry && ['system', 'user', 'assistant'].includes(entry.role) && String(entry.content || '').trim())
+    .map(entry => ({ role: entry.role, content: String(entry.content) }));
+
+  if (Number(preset.storyStringPosition) === 1) {
+    entries = injectStoryStringAtDepth(entries, story, preset);
+  }
+  if (postHistory) entries.push({ role: 'user', content: postHistory, postHistory: true });
+  entries = markInstructionMessagePositions(entries);
+
+  const formattedEntries = entries.map(entry => ({
+    ...entry,
+    formatted: formatInstructionMessage(entry.role, entry.content, character, instruction, {
+      isFirst: entry.isFirst,
+      isLastUser: entry.isLastUser,
+    }),
+  }));
+
+  const alignment = instruction.enabled && instruction.userAlignmentMessage
+    ? formatInstructionMessage('user', renderContextPresetText(instruction.userAlignmentMessage, character), character, instruction, { isFirst: true })
+    : '';
 
   return {
-    renderedContext,
+    story,
+    combinedStory: Number(preset.storyStringPosition) === 1 ? '' : combinedStory,
+    formattedExamples,
+    rawExamples,
+    entries: formattedEntries,
+    alignment,
+    chatStart: renderContextPresetText(preset.chatStart, character),
     postHistory,
-    chatPayload: currentPayload,
-    textCompletion: textCompletionParts.filter(Boolean).join(separator),
+    generationPrefix: textCompletionGenerationPrefix(character, preset, instruction),
+  };
+}
+
+function assembleSelectedTextCompletionPrompt(components, selectedNewestFirst, selectedExamples, preset, formatting, instruction) {
+  // SillyTavern stores selected chat entries newest-first while budgeting, then
+  // reverses them back to chronological order before the final concatenation.
+  const chronological = [...selectedNewestFirst].reverse();
+  const oldestSelected = chronological[0] || null;
+  const addAlignment = Boolean(components.alignment) && (!oldestSelected || oldestSelected.role !== 'user');
+  const messages = chronological.map(entry => entry.formatted);
+  if (addAlignment) messages.unshift(components.alignment);
+
+  // Before appending the final generation line ST removes one terminal newline
+  // from the newest history item (when regular wrapping is active).
+  if (messages.length) {
+    const last = messages.length - 1;
+    if (!instruction.enabled || instruction.wrap) messages[last] = messages[last].replace(/\n?$/, '');
+    messages[last] += components.generationPrefix;
+  } else {
+    messages.push(components.generationPrefix);
+  }
+
+  let chat = messages.join('');
+  if (components.chatStart) chat = `${components.chatStart}\n${chat}`;
+
+  let prompt = `${components.combinedStory}${selectedExamples.join('')}${chat}`.replace(/\r/g, '');
+  if (formatting.collapseNewlines) prompt = collapsePromptNewlines(prompt);
+  return { prompt, chat, addAlignment };
+}
+
+function buildTextCompletionRequest(character, history = [], params = getGenerationParams()) {
+  const preset = getActiveContextPreset();
+  const formatting = getContextFormatting();
+  const instruction = getInstructionTemplate();
+  const contextTokens = Math.max(512, Number(params.contextTokens) || DEFAULT_PARAMS.contextTokens);
+  const generationReserve = Math.max(1, Number(params.maxTokens) || DEFAULT_PARAMS.maxTokens);
+  const promptBudget = Math.max(128, contextTokens - generationReserve);
+  const components = prepareTextCompletionComponents(character, history, preset, formatting, instruction);
+  const behavior = ['normal', 'keep', 'strip'].includes(formatting.exampleMessagesBehavior)
+    ? formatting.exampleMessagesBehavior
+    : 'normal';
+  const availableExamples = behavior === 'strip' ? [] : [...components.formattedExamples];
+
+  // ST budgets formatted history from newest to oldest. In-chat injections are
+  // preallocated first, then ordinary messages are collected newest-first.
+  const newestFirst = [...components.entries].reverse();
+  const selectedNewestFirst = [];
+  const selectedSet = new Set();
+  const pinnedExamples = behavior === 'keep' ? availableExamples : [];
+  const orderSelected = messages => [...messages].sort((a, b) => newestFirst.indexOf(a) - newestFirst.indexOf(b));
+  const candidateResult = (messages, examples) => assembleSelectedTextCompletionPrompt(
+    components,
+    orderSelected(messages),
+    examples,
+    preset,
+    formatting,
+    instruction,
+  );
+  const fits = (messages, examples) => {
+    const candidate = candidateResult(messages, examples);
+    // getMessagesTokenCount() in SillyTavern reserves the user-alignment
+    // message even when the oldest retained chat line is already a user line.
+    const alignmentReserve = components.alignment && !candidate.addAlignment ? estimateTokens(components.alignment) : 0;
+    return estimateTokens(candidate.prompt) + alignmentReserve < promptBudget;
+  };
+
+  for (let index = 0; index < newestFirst.length; index += 1) {
+    const entry = newestFirst[index];
+    if (!entry.injectedStory) continue;
+    const next = orderSelected([...selectedNewestFirst, entry]);
+    if (fits(next, pinnedExamples)) {
+      selectedNewestFirst.splice(0, selectedNewestFirst.length, ...next);
+      selectedSet.add(index);
+    } else {
+      break;
+    }
+  }
+
+  for (let index = 0; index < newestFirst.length; index += 1) {
+    if (selectedSet.has(index)) continue;
+    const entry = newestFirst[index];
+    const next = orderSelected([...selectedNewestFirst, entry]);
+    if (fits(next, pinnedExamples)) {
+      selectedNewestFirst.splice(0, selectedNewestFirst.length, ...next);
+      selectedSet.add(index);
+    } else {
+      break;
+    }
+  }
+
+  let selectedExamples = behavior === 'keep' ? [...availableExamples] : [];
+  if (behavior === 'normal') {
+    for (const example of availableExamples) {
+      const next = [...selectedExamples, example];
+      if (fits(selectedNewestFirst, next)) selectedExamples.push(example);
+      else break;
+    }
+  }
+
+  // Keep ST's final safety pass: if formatting the final line tips the prompt
+  // over budget, discard examples first and then the oldest retained messages.
+  let assembled = assembleSelectedTextCompletionPrompt(components, selectedNewestFirst, selectedExamples, preset, formatting, instruction);
+  while (estimateTokens(assembled.prompt) > promptBudget && behavior !== 'keep' && selectedExamples.length) {
+    selectedExamples = selectedExamples.slice(0, -1);
+    assembled = assembleSelectedTextCompletionPrompt(components, selectedNewestFirst, selectedExamples, preset, formatting, instruction);
+  }
+  while (estimateTokens(assembled.prompt) > promptBudget && selectedNewestFirst.length) {
+    // newestFirst ends with the oldest retained message
+    selectedNewestFirst.pop();
+    assembled = assembleSelectedTextCompletionPrompt(components, selectedNewestFirst, selectedExamples, preset, formatting, instruction);
+  }
+
+  return {
+    mode: 'text',
+    prompt: assembled.prompt,
+    story: components.story,
+    examples: selectedExamples.join(''),
+    chat: assembled.chat,
+    chatStart: components.chatStart,
+    postHistory: components.postHistory,
+    stopStrings: buildTextCompletionStopStrings(character, preset, instruction),
+    preset,
+    instruction,
+    formatting,
+    promptTokens: estimateTokens(assembled.prompt),
+    promptBudget,
+    overBudget: estimateTokens(assembled.prompt) > promptBudget,
+    droppedExamples: components.formattedExamples.length - selectedExamples.length,
+    droppedMessages: components.entries.length - selectedNewestFirst.length,
+    exampleMessagesBehavior: behavior,
+  };
+}
+
+function trimIncompleteSentence(value) {
+  const text = String(value || '').trimEnd();
+  if (!text || /[.!?…](?:["'”’\)\]\}*_~]+)?$/.test(text)) return text;
+  const matches = [...text.matchAll(/[.!?…](?:["'”’\)\]\}*_~]+)?(?=\s|$)/g)];
+  if (!matches.length) return text;
+  const last = matches[matches.length - 1];
+  return text.slice(0, last.index + last[0].length).trimEnd();
+}
+
+function truncateAtStopStrings(value, stopStrings = []) {
+  const text = String(value || '');
+  let cut = text.length;
+  for (const stop of stopStrings) {
+    const marker = String(stop || '');
+    if (!marker) continue;
+    const index = text.indexOf(marker);
+    if (index >= 0 && index < cut) cut = index;
+  }
+  return text.slice(0, cut);
+}
+
+function postProcessTextCompletionResponse(value, preset = getActiveContextPreset(), formatting = getContextFormatting(), stopStrings = []) {
+  let output = truncateAtStopStrings(value, stopStrings).replaceAll('\r\n', '\n').replace(/^\n+/, '');
+  if (preset.singleLine) output = output.split('\n', 1)[0];
+  if (preset.trimSentences) output = trimIncompleteSentence(output);
+  if (formatting.trimSpaces) {
+    output = output.split('\n').map(line => line.trim()).join('\n').trim();
+  }
+  return output;
+}
+
+function promptPreviewHistory(character) {
+  const saved = getConversations()[character.id];
+  if (Array.isArray(saved) && saved.length) {
+    return saved.map(message => ({ role: message.role, content: message.content }));
+  }
+  const fallback = [];
+  if (character.firstMessage?.trim()) fallback.push({ role: 'assistant', content: character.firstMessage.trim() });
+  fallback.push({ role: 'user', content: t('globalPrompt.preview.sampleUser') });
+  return fallback;
+}
+
+function buildTextCompletionPreview(character) {
+  return buildTextCompletionRequest(character, promptPreviewHistory(character), getGenerationParams());
+}
+
+function buildChatCompletionPreview(character) {
+  return {
+    mode: 'chat',
+    messages: buildChatCompletionMessages(character, promptPreviewHistory(character)),
+  };
+}
+
+function buildPromptPreview(character, mode = 'chat') {
+  const result = mode === 'text' ? buildTextCompletionPreview(character) : buildChatCompletionPreview(character);
+  return {
+    ...result,
     tokenCounts: characterTokenCounts(character),
     contextSource: String(character.contextTemplate || '').trim() ? 'character' : 'global',
     systemSource: String(character.systemPrompt || '').trim() ? 'character' : 'global',
@@ -2733,99 +3870,357 @@ function renderPromptPreviewTab(body) {
     || characters.find(character => character.id === state.activeCharacterId)
     || characters[0]
     || null;
+  const savedMode = localStorage.getItem(STORAGE.promptPreviewMode);
+  const mode = ['auto', 'chat', 'text'].includes(savedMode) ? savedMode : 'auto';
 
   body.innerHTML = `${globalPromptTabs('preview')}
     <div class="field-card field-card-stack global-prompt-card prompt-preview-card">
       <div class="info"><h4>${escapeHtml(t('globalPrompt.preview.title'))}</h4><p>${escapeHtml(t('globalPrompt.preview.desc'))}</p></div>
-      ${characters.length ? `<label class="form-field prompt-preview-character"><span>${escapeHtml(t('globalPrompt.preview.character'))}</span><select id="prompt-preview-character">${characters.map(character => `<option value="${escapeHtml(character.id)}" ${character.id === selected?.id ? 'selected' : ''}>${escapeHtml(character.name)}</option>`).join('')}</select></label>` : ''}
+      <div class="prompt-preview-controls">
+        ${characters.length ? `<label class="form-field prompt-preview-character"><span>${escapeHtml(t('globalPrompt.preview.character'))}</span><select id="prompt-preview-character">${characters.map(character => `<option value="${escapeHtml(character.id)}" ${character.id === selected?.id ? 'selected' : ''}>${escapeHtml(character.name)}</option>`).join('')}</select></label>` : ''}
+        <label class="form-field prompt-preview-mode"><span>${escapeHtml(t('globalPrompt.preview.mode'))}</span><select id="prompt-preview-mode"><option value="auto" ${mode === 'auto' ? 'selected' : ''}>${escapeHtml(t('globalPrompt.preview.mode.auto'))}</option><option value="chat" ${mode === 'chat' ? 'selected' : ''}>${escapeHtml(t('globalPrompt.preview.mode.chat'))}</option><option value="text" ${mode === 'text' ? 'selected' : ''}>${escapeHtml(t('globalPrompt.preview.mode.text'))}</option></select></label>
+      </div>
       <div id="prompt-preview-content"></div>
     </div>`;
 
   const content = document.getElementById('prompt-preview-content');
-  const draw = character => {
+  const draw = (character, selectedMode) => {
+    const previewMode = selectedMode === 'auto' ? effectiveBackendApiMode(state.backendConfig) : selectedMode;
     if (!character) {
       content.innerHTML = `<div class="empty-state prompt-preview-empty"><h3>${escapeHtml(t('globalPrompt.preview.emptyTitle'))}</h3><p>${escapeHtml(t('globalPrompt.preview.emptyBody'))}</p></div>`;
       return;
     }
-    const preview = buildPromptPreview(character);
-    content.innerHTML = `
+    const preview = buildPromptPreview(character, previewMode);
+    const commonMeta = `
       <div class="prompt-preview-meta">
-        <span>${escapeHtml(t('globalPrompt.preview.contextSource'))}: <strong>${escapeHtml(promptPreviewSourceLabel(preview.contextSource))}</strong></span>
         <span>${escapeHtml(t('globalPrompt.preview.systemSource'))}: <strong>${escapeHtml(promptPreviewSourceLabel(preview.systemSource))}</strong></span>
         <span>${escapeHtml(t('globalPrompt.preview.postHistorySource'))}: <strong>${escapeHtml(promptPreviewSourceLabel(preview.postHistorySource))}</strong></span>
         <span>${escapeHtml(t('character.tokens.permanent'))}: <strong>${preview.tokenCounts.permanent}</strong></span>
         <span>${escapeHtml(t('character.tokens.total'))}: <strong>${preview.tokenCounts.total}</strong></span>
-      </div>
+      </div>`;
+    if (previewMode === 'chat') {
+      content.innerHTML = `${commonMeta}
+        <div class="global-prompt-note">${escapeHtml(t('globalPrompt.preview.chatNote'))}</div>
+        <section class="prompt-preview-section">
+          <h5>${escapeHtml(t('globalPrompt.preview.finalChat'))}</h5>
+          <pre>${escapeHtml(JSON.stringify(preview.messages, null, 2))}</pre>
+        </section>`;
+      return;
+    }
+
+    content.innerHTML = `${commonMeta}
+      <div class="prompt-preview-meta"><span>${escapeHtml(t('globalPrompt.preview.contextSource'))}: <strong>${escapeHtml(promptPreviewSourceLabel(preview.contextSource))}</strong></span><span>${escapeHtml(t('globalPrompt.preview.contextPreset'))}: <strong>${escapeHtml(preview.preset.name)}</strong></span><span>${escapeHtml(t('globalPrompt.preview.instructionPreset'))}: <strong>${escapeHtml(preview.instruction?.enabled ? preview.instruction.name : t('globalPrompt.preview.disabled'))}</strong></span><span>${escapeHtml(t('globalPrompt.preview.budget'))}: <strong>${preview.promptTokens}/${preview.promptBudget}</strong></span></div>
+      ${preview.droppedExamples || preview.droppedMessages || preview.overBudget ? `<div class="global-prompt-note ${preview.overBudget ? 'is-warning' : ''}">${escapeHtml(t('globalPrompt.preview.contextTrimmed', { examples: preview.droppedExamples, messages: preview.droppedMessages }))}${preview.overBudget ? ` ${escapeHtml(t('globalPrompt.preview.overBudget'))}` : ''}</div>` : ''}
+      <div class="global-prompt-note">${escapeHtml(t('globalPrompt.preview.textNote'))}</div>
       <section class="prompt-preview-section">
-        <h5>${escapeHtml(t('globalPrompt.preview.renderedContext'))}</h5>
-        <pre>${escapeHtml([preview.renderedContext, preview.postHistory].filter(Boolean).join('\n\n'))}</pre>
+        <h5>${escapeHtml(t('globalPrompt.preview.finalText'))}</h5>
+        <pre>${escapeHtml(preview.prompt)}</pre>
       </section>
-      <section class="prompt-preview-section">
-        <h5>${escapeHtml(t('globalPrompt.preview.chatPayload'))}</h5>
-        <pre>${escapeHtml(JSON.stringify(preview.chatPayload, null, 2))}</pre>
-      </section>
-      <section class="prompt-preview-section">
-        <h5>${escapeHtml(t('globalPrompt.preview.textCompletion'))}</h5>
-        <pre>${escapeHtml(preview.textCompletion)}</pre>
-      </section>`;
+      <details class="prompt-preview-breakdown">
+        <summary>${escapeHtml(t('globalPrompt.preview.breakdown'))}</summary>
+        <div class="prompt-preview-breakdown-body">
+          <section class="prompt-preview-section"><h5>${escapeHtml(t('globalPrompt.preview.storyString'))}</h5><pre>${escapeHtml(preview.story)}</pre></section>
+          <section class="prompt-preview-section"><h5>${escapeHtml(t('globalPrompt.preview.examples'))}</h5><pre>${escapeHtml(preview.examples || t('globalPrompt.preview.none'))}</pre></section>
+          <section class="prompt-preview-section"><h5>${escapeHtml(t('globalPrompt.preview.chatBlock'))}</h5><pre>${escapeHtml(preview.chat || t('globalPrompt.preview.none'))}</pre></section>
+          <section class="prompt-preview-section"><h5>${escapeHtml(t('globalPrompt.preview.stopStrings'))}</h5><pre>${escapeHtml(preview.stopStrings.length ? JSON.stringify(preview.stopStrings, null, 2) : t('globalPrompt.preview.none'))}</pre></section>
+          <section class="prompt-preview-section"><h5>${escapeHtml(t('globalPrompt.preview.instructionSequences'))}</h5><pre>${escapeHtml(preview.instruction?.enabled ? JSON.stringify(instructionPresetToSillyTavernJson(preview.instruction), null, 2) : t('globalPrompt.preview.disabled'))}</pre></section>
+          <div class="prompt-preview-behavior">
+            <span>${escapeHtml(t('globalPrompt.context.singleLine'))}: <strong>${preview.preset.singleLine ? '✓' : '—'}</strong></span>
+            <span>${escapeHtml(t('globalPrompt.context.trimSentences'))}: <strong>${preview.preset.trimSentences ? '✓' : '—'}</strong></span>
+            <span>${escapeHtml(t('globalPrompt.context.trimSpaces'))}: <strong>${preview.formatting.trimSpaces ? '✓' : '—'}</strong></span>
+            <span>${escapeHtml(t('globalPrompt.context.collapseNewlines'))}: <strong>${preview.formatting.collapseNewlines ? '✓' : '—'}</strong></span>
+            <span>${escapeHtml(t('globalPrompt.context.exampleBehavior'))}: <strong>${escapeHtml(t(`globalPrompt.context.exampleBehavior.${preview.exampleMessagesBehavior}`))}</strong></span>
+          </div>
+        </div>
+      </details>`;
   };
-  draw(selected);
+
+  draw(selected, mode);
   document.getElementById('prompt-preview-character')?.addEventListener('change', event => {
     const character = characters.find(item => item.id === event.target.value) || null;
     if (character) localStorage.setItem(STORAGE.promptPreviewCharacter, character.id);
-    draw(character);
+    draw(character, document.getElementById('prompt-preview-mode').value);
+  });
+  document.getElementById('prompt-preview-mode')?.addEventListener('change', event => {
+    localStorage.setItem(STORAGE.promptPreviewMode, event.target.value);
+    const characterId = document.getElementById('prompt-preview-character')?.value;
+    const character = characters.find(item => item.id === characterId) || selected;
+    draw(character, event.target.value);
   });
 }
 
-function instructionField(id, labelKey, value, rows = 2) {
-  return `<label class="form-field instruction-sequence-field"><span>${escapeHtml(t(labelKey))}</span><textarea id="${id}" rows="${rows}" spellcheck="false">${escapeHtml(value)}</textarea></label>`;
+function instructionField(id, labelKey, value, rows = 2, hintKey = '') {
+  return `<label class="form-field instruction-sequence-field"><span>${escapeHtml(t(labelKey))}</span><textarea id="${id}" rows="${rows}" spellcheck="false">${escapeHtml(value)}</textarea>${hintKey ? `<small class="field-hint">${escapeHtml(t(hintKey))}</small>` : ''}</label>`;
+}
+
+function instructionPresetToSillyTavernJson(preset) {
+  return {
+    input_sequence: preset.inputSequence,
+    output_sequence: preset.outputSequence,
+    last_output_sequence: preset.lastOutputSequence,
+    system_sequence: preset.systemSequence,
+    stop_sequence: preset.stopSequence,
+    wrap: Boolean(preset.wrap),
+    macro: Boolean(preset.macro),
+    names_behavior: preset.namesBehavior,
+    activation_regex: preset.activationRegex,
+    first_output_sequence: preset.firstOutputSequence,
+    skip_examples: Boolean(preset.skipExamples),
+    output_suffix: preset.outputSuffix,
+    input_suffix: preset.inputSuffix,
+    system_suffix: preset.systemSuffix,
+    user_alignment_message: preset.userAlignmentMessage,
+    system_same_as_user: Boolean(preset.systemSameAsUser),
+    last_system_sequence: preset.lastSystemSequence,
+    first_input_sequence: preset.firstInputSequence,
+    last_input_sequence: preset.lastInputSequence,
+    sequences_as_stop_strings: Boolean(preset.sequencesAsStopStrings),
+    story_string_prefix: preset.storyStringPrefix,
+    story_string_suffix: preset.storyStringSuffix,
+    name: preset.name,
+  };
+}
+
+function downloadJsonFile(filename, value) {
+  const blob = new Blob([`${JSON.stringify(value, null, 2)}\n`], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function instructionPresetToolbar(presetState) {
+  const presets = allInstructionPresets(presetState);
+  const active = resolveInstructionPreset(presetState.active, presetState);
+  const builtIn = Boolean(instructionPresetFactoryEntry(active.name));
+  const custom = Boolean(instructionPresetCustomEntry(active.name, presetState));
+  return `<div class="context-preset-toolbar instruction-preset-toolbar">
+    <label class="form-field context-preset-select-field"><span>${escapeHtml(t('globalPrompt.instruction.preset'))}</span>
+      <select id="instruction-preset-select">${presets.map(preset => `<option value="${escapeHtml(preset.name)}" ${preset.name === active.name ? 'selected' : ''}>${escapeHtml(preset.name)}${preset.modified && preset.builtIn ? ' *' : ''}</option>`).join('')}</select>
+    </label>
+    <div class="context-preset-actions">
+      <button type="button" class="btn btn-ghost" id="instruction-preset-save">${escapeHtml(t('globalPrompt.presets.save'))}</button>
+      <button type="button" class="btn btn-ghost" id="instruction-preset-new">${escapeHtml(t('globalPrompt.presets.new'))}</button>
+      <button type="button" class="btn btn-ghost" id="instruction-preset-rename">${escapeHtml(t('globalPrompt.presets.rename'))}</button>
+      <button type="button" class="btn btn-ghost" id="instruction-preset-import">${escapeHtml(t('globalPrompt.presets.import'))}</button>
+      <button type="button" class="btn btn-ghost" id="instruction-preset-export">${escapeHtml(t('globalPrompt.presets.export'))}</button>
+      <input type="file" id="instruction-preset-import-file" accept=".json,.settings,application/json" hidden>
+      <button type="button" class="btn btn-ghost" id="instruction-preset-restore" ${builtIn && presetState.overrides?.[active.name] ? '' : 'disabled'}>${escapeHtml(t('globalPrompt.presets.restore'))}</button>
+      <button type="button" class="btn btn-ghost" id="instruction-preset-delete" ${custom ? '' : 'disabled'}>${escapeHtml(t('globalPrompt.presets.delete'))}</button>
+    </div>
+  </div>`;
+}
+
+function instructionPresetEditorValues() {
+  return normalizeInstructionPresetRecord({
+    name: getInstructionPresetState().active,
+    activation_regex: document.getElementById('instruction-activation-regex').value,
+    wrap: document.getElementById('instruction-wrap-newline').checked,
+    macro: document.getElementById('instruction-macro').checked,
+    sequences_as_stop_strings: document.getElementById('instruction-sequences-stop').checked,
+    skip_examples: document.getElementById('instruction-skip-examples').checked,
+    names_behavior: document.getElementById('instruction-names-behavior').value,
+    story_string_prefix: document.getElementById('instruction-story-prefix').value,
+    story_string_suffix: document.getElementById('instruction-story-suffix').value,
+    input_sequence: document.getElementById('instruction-user-prefix').value,
+    input_suffix: document.getElementById('instruction-user-suffix').value,
+    first_input_sequence: document.getElementById('instruction-first-user-prefix').value,
+    last_input_sequence: document.getElementById('instruction-last-user-prefix').value,
+    output_sequence: document.getElementById('instruction-assistant-prefix').value,
+    output_suffix: document.getElementById('instruction-assistant-suffix').value,
+    first_output_sequence: document.getElementById('instruction-first-assistant-prefix').value,
+    last_output_sequence: document.getElementById('instruction-last-assistant-prefix').value,
+    system_sequence: document.getElementById('instruction-system-prefix').value,
+    system_suffix: document.getElementById('instruction-system-suffix').value,
+    last_system_sequence: document.getElementById('instruction-last-system-prefix').value,
+    system_same_as_user: document.getElementById('instruction-system-same-user').checked,
+    stop_sequence: document.getElementById('instruction-stop-sequence').value,
+    user_alignment_message: document.getElementById('instruction-user-alignment').value,
+  }, getInstructionPresetState().active);
+}
+
+function instructionPresetNameExists(name, presetState = getInstructionPresetState(), exceptName = null) {
+  const normalized = String(name || '').trim().toLocaleLowerCase();
+  return allInstructionPresets(presetState).some(preset => preset.name !== exceptName && preset.name.toLocaleLowerCase() === normalized);
 }
 
 function renderInstructionPromptTab(body) {
-  const template = getInstructionTemplate();
+  const presetState = getInstructionPresetState();
+  const template = resolveInstructionPreset(presetState.active, presetState);
   body.innerHTML = `${globalPromptTabs('instruction')}
     <div class="field-card field-card-stack global-prompt-card">
       <div class="info"><h4>${escapeHtml(t('globalPrompt.instructionTemplate'))}</h4><p>${escapeHtml(t('globalPrompt.instructionTemplate.desc'))}</p></div>
-      <div class="instruction-options-grid">
-        <label class="toggle-row"><input type="checkbox" id="instruction-wrap-newline" ${template.wrapWithNewline ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.instruction.wrapNewline'))}</span></label>
-        <label class="form-field"><span>${escapeHtml(t('globalPrompt.instruction.includeNames'))}</span><select id="instruction-include-names"><option value="never" ${template.includeNames === 'never' ? 'selected' : ''}>${escapeHtml(t('globalPrompt.instruction.names.never'))}</option><option value="always" ${template.includeNames === 'always' ? 'selected' : ''}>${escapeHtml(t('globalPrompt.instruction.names.always'))}</option></select></label>
+      ${instructionPresetToolbar(presetState)}
+      <div class="instruction-runtime-bar">
+        <label class="toggle-row"><input type="checkbox" id="instruction-enabled" ${presetState.enabled ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.instruction.enabled'))}</span></label>
+        <label class="toggle-row"><input type="checkbox" id="instruction-bind-context" ${presetState.bindToContext ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.instruction.bindContext'))}</span></label>
+        <label class="toggle-row" title="${escapeHtml(t('globalPrompt.instruction.deriveModel.hint'))}"><input type="checkbox" id="instruction-derive-model" ${presetState.deriveFromModel ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.instruction.deriveModel'))}</span></label>
       </div>
-      <div class="instruction-sequence-grid">
-        ${instructionField('instruction-story-prefix', 'globalPrompt.instruction.storyPrefix', template.storyPrefix)}
-        ${instructionField('instruction-story-suffix', 'globalPrompt.instruction.storySuffix', template.storySuffix)}
-        ${instructionField('instruction-user-prefix', 'globalPrompt.instruction.userPrefix', template.userPrefix)}
-        ${instructionField('instruction-user-suffix', 'globalPrompt.instruction.userSuffix', template.userSuffix)}
-        ${instructionField('instruction-assistant-prefix', 'globalPrompt.instruction.assistantPrefix', template.assistantPrefix)}
-        ${instructionField('instruction-assistant-suffix', 'globalPrompt.instruction.assistantSuffix', template.assistantSuffix)}
-        ${instructionField('instruction-system-prefix', 'globalPrompt.instruction.systemPrefix', template.systemPrefix)}
-        ${instructionField('instruction-system-suffix', 'globalPrompt.instruction.systemSuffix', template.systemSuffix)}
+      <label class="form-field"><span>${escapeHtml(t('globalPrompt.instruction.activationRegex'))}</span><input id="instruction-activation-regex" type="text" value="${escapeHtml(template.activationRegex)}" placeholder="${escapeHtml(t('globalPrompt.instruction.activationRegex.placeholder'))}"><small class="field-hint">${escapeHtml(t('globalPrompt.instruction.activationRegex.hint'))}</small></label>
+      <div class="instruction-options-grid instruction-options-grid-wide">
+        <label class="toggle-row"><input type="checkbox" id="instruction-wrap-newline" ${template.wrap ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.instruction.wrapNewline'))}</span></label>
+        <label class="toggle-row"><input type="checkbox" id="instruction-macro" ${template.macro ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.instruction.macro'))}</span></label>
+        <label class="toggle-row"><input type="checkbox" id="instruction-sequences-stop" ${template.sequencesAsStopStrings ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.instruction.sequencesStop'))}</span></label>
+        <label class="toggle-row"><input type="checkbox" id="instruction-skip-examples" ${template.skipExamples ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.instruction.skipExamples'))}</span></label>
+        <label class="form-field instruction-name-select"><span>${escapeHtml(t('globalPrompt.instruction.includeNames'))}</span><select id="instruction-names-behavior"><option value="none" ${template.namesBehavior === 'none' ? 'selected' : ''}>${escapeHtml(t('globalPrompt.instruction.names.never'))}</option><option value="force" ${template.namesBehavior === 'force' ? 'selected' : ''}>${escapeHtml(t('globalPrompt.instruction.names.force'))}</option><option value="always" ${template.namesBehavior === 'always' ? 'selected' : ''}>${escapeHtml(t('globalPrompt.instruction.names.always'))}</option></select></label>
       </div>
-      ${instructionField('instruction-stop-sequence', 'globalPrompt.instruction.stopSequence', template.stopSequence, 2)}
+
+      <details class="instruction-sequence-section" open><summary>${escapeHtml(t('globalPrompt.instruction.section.story'))}</summary><div class="instruction-sequence-grid">
+        ${instructionField('instruction-story-prefix', 'globalPrompt.instruction.storyPrefix', template.storyStringPrefix, 3)}
+        ${instructionField('instruction-story-suffix', 'globalPrompt.instruction.storySuffix', template.storyStringSuffix, 3)}
+      </div></details>
+      <details class="instruction-sequence-section" open><summary>${escapeHtml(t('globalPrompt.instruction.section.user'))}</summary><div class="instruction-sequence-grid">
+        ${instructionField('instruction-user-prefix', 'globalPrompt.instruction.userPrefix', template.inputSequence, 3)}
+        ${instructionField('instruction-user-suffix', 'globalPrompt.instruction.userSuffix', template.inputSuffix, 3)}
+      </div></details>
+      <details class="instruction-sequence-section" open><summary>${escapeHtml(t('globalPrompt.instruction.section.assistant'))}</summary><div class="instruction-sequence-grid">
+        ${instructionField('instruction-assistant-prefix', 'globalPrompt.instruction.assistantPrefix', template.outputSequence, 3)}
+        ${instructionField('instruction-assistant-suffix', 'globalPrompt.instruction.assistantSuffix', template.outputSuffix, 3)}
+      </div></details>
+      <details class="instruction-sequence-section" open><summary>${escapeHtml(t('globalPrompt.instruction.section.system'))}</summary><div class="instruction-sequence-grid">
+        ${instructionField('instruction-system-prefix', 'globalPrompt.instruction.systemPrefix', template.systemSequence, 3)}
+        ${instructionField('instruction-system-suffix', 'globalPrompt.instruction.systemSuffix', template.systemSuffix, 3)}
+        <label class="toggle-row instruction-system-same"><input type="checkbox" id="instruction-system-same-user" ${template.systemSameAsUser ? 'checked' : ''}><span>${escapeHtml(t('globalPrompt.instruction.systemSameUser'))}</span></label>
+      </div></details>
+      <details class="instruction-sequence-section" open><summary>${escapeHtml(t('globalPrompt.instruction.section.misc'))}</summary><div class="instruction-sequence-grid">
+        ${instructionField('instruction-first-assistant-prefix', 'globalPrompt.instruction.firstAssistantPrefix', template.firstOutputSequence, 2)}
+        ${instructionField('instruction-last-assistant-prefix', 'globalPrompt.instruction.lastAssistantPrefix', template.lastOutputSequence, 2)}
+        ${instructionField('instruction-first-user-prefix', 'globalPrompt.instruction.firstUserPrefix', template.firstInputSequence, 2)}
+        ${instructionField('instruction-last-user-prefix', 'globalPrompt.instruction.lastUserPrefix', template.lastInputSequence, 2)}
+        ${instructionField('instruction-last-system-prefix', 'globalPrompt.instruction.lastSystemPrefix', template.lastSystemSequence, 2)}
+        ${instructionField('instruction-stop-sequence', 'globalPrompt.instruction.stopSequence', template.stopSequence, 2)}
+        ${instructionField('instruction-user-alignment', 'globalPrompt.instruction.userAlignment', template.userAlignmentMessage, 3, 'globalPrompt.instruction.userAlignment.hint')}
+      </div></details>
       <div class="global-prompt-note">${escapeHtml(t('globalPrompt.instruction.chatCompletionNote'))}</div>
-      <div class="global-prompt-actions"><button type="button" class="btn btn-ghost" id="reset-instruction-template">${escapeHtml(t('globalPrompt.reset'))}</button><button type="button" class="btn btn-primary" id="save-instruction-template">${escapeHtml(t('config.save'))}</button></div>
     </div>`;
 
-  document.getElementById('save-instruction-template').addEventListener('click', () => {
-    const next = {
-      wrapWithNewline: document.getElementById('instruction-wrap-newline').checked,
-      includeNames: document.getElementById('instruction-include-names').value,
-      storyPrefix: document.getElementById('instruction-story-prefix').value,
-      storySuffix: document.getElementById('instruction-story-suffix').value,
-      userPrefix: document.getElementById('instruction-user-prefix').value,
-      userSuffix: document.getElementById('instruction-user-suffix').value,
-      assistantPrefix: document.getElementById('instruction-assistant-prefix').value,
-      assistantSuffix: document.getElementById('instruction-assistant-suffix').value,
-      systemPrefix: document.getElementById('instruction-system-prefix').value,
-      systemSuffix: document.getElementById('instruction-system-suffix').value,
-      stopSequence: document.getElementById('instruction-stop-sequence').value,
-    };
-    writeJson(STORAGE.instructionTemplate, next);
+  const select = document.getElementById('instruction-preset-select');
+  const systemSame = document.getElementById('instruction-system-same-user');
+  const syncSystemFields = () => {
+    const disabled = systemSame.checked;
+    ['instruction-system-prefix', 'instruction-system-suffix'].forEach(id => {
+      const field = document.getElementById(id);
+      if (!field) return;
+      field.readOnly = disabled;
+      field.closest('.form-field')?.classList.toggle('is-disabled', disabled);
+    });
+  };
+  systemSame.addEventListener('change', syncSystemFields);
+  syncSystemFields();
+  select.addEventListener('change', () => { setActiveInstructionPreset(select.value); renderGlobalPromptConfig('instruction'); });
+
+  const saveRuntime = () => {
+    const current = getInstructionPresetState();
+    current.enabled = document.getElementById('instruction-enabled').checked;
+    current.bindToContext = document.getElementById('instruction-bind-context').checked;
+    current.deriveFromModel = document.getElementById('instruction-derive-model').checked;
+    saveInstructionPresetState(current);
+    if (current.enabled && current.bindToContext) syncContextPresetToInstruction(current.active);
+  };
+  document.getElementById('instruction-enabled').addEventListener('change', () => { saveRuntime(); renderGlobalPromptConfig('instruction'); });
+  document.getElementById('instruction-bind-context').addEventListener('change', () => { saveRuntime(); renderGlobalPromptConfig('instruction'); });
+  document.getElementById('instruction-derive-model').addEventListener('change', () => { saveRuntime(); refreshModelStatus(); });
+
+  document.getElementById('instruction-preset-save').addEventListener('click', () => {
+    const current = getInstructionPresetState();
+    const values = instructionPresetEditorValues();
+    const custom = instructionPresetCustomEntry(current.active, current);
+    if (custom) Object.assign(custom, values, { name: current.active });
+    else current.overrides[current.active] = normalizeInstructionPresetOverride(values);
+    current.enabled = document.getElementById('instruction-enabled').checked;
+    current.bindToContext = document.getElementById('instruction-bind-context').checked;
+    current.deriveFromModel = document.getElementById('instruction-derive-model').checked;
+    saveInstructionPresetState(current);
+    renderGlobalPromptConfig('instruction');
     toast(t('globalPrompt.instruction.saved'), 'success');
   });
-  document.getElementById('reset-instruction-template').addEventListener('click', () => {
-    writeJson(STORAGE.instructionTemplate, DEFAULT_INSTRUCTION_TEMPLATE);
+
+  document.getElementById('instruction-preset-new').addEventListener('click', () => {
+    const current = getInstructionPresetState();
+    const name = String(window.prompt(t('globalPrompt.presets.newPrompt'), '') || '').trim();
+    if (!name) return;
+    if (instructionPresetNameExists(name, current)) return toast(t('globalPrompt.presets.nameExists'), 'error');
+    current.custom.push(normalizeInstructionPresetRecord({ ...instructionPresetEditorValues(), name }, name));
+    current.active = name;
+    saveInstructionPresetState(current);
     renderGlobalPromptConfig('instruction');
-    toast(t('globalPrompt.instruction.resetDone'), 'success');
+    toast(t('globalPrompt.presets.created'), 'success');
+  });
+
+  document.getElementById('instruction-preset-rename').addEventListener('click', () => {
+    const current = getInstructionPresetState();
+    const oldName = current.active;
+    const name = String(window.prompt(t('globalPrompt.presets.renamePrompt', { name: oldName }), oldName) || '').trim();
+    if (!name || name === oldName) return;
+    if (instructionPresetNameExists(name, current, oldName)) return toast(t('globalPrompt.presets.nameExists'), 'error');
+    const values = instructionPresetEditorValues();
+    const custom = instructionPresetCustomEntry(oldName, current);
+    if (custom) Object.assign(custom, values, { name });
+    else current.custom.push(normalizeInstructionPresetRecord({ ...values, name }, name));
+    current.active = name;
+    saveInstructionPresetState(current);
+    renderGlobalPromptConfig('instruction');
+    toast(t('globalPrompt.presets.renamed'), 'success');
+  });
+
+  document.getElementById('instruction-preset-export').addEventListener('click', () => {
+    const current = getInstructionPresetState();
+    const preset = resolveInstructionPreset(current.active, current);
+    const filename = `${preset.name.replace(/[^a-z0-9._-]+/gi, '_') || 'instruct-preset'}.json`;
+    downloadJsonFile(filename, instructionPresetToSillyTavernJson(preset));
+  });
+
+  const importFile = document.getElementById('instruction-preset-import-file');
+  document.getElementById('instruction-preset-import').addEventListener('click', () => importFile.click());
+  importFile.addEventListener('change', async () => {
+    const file = importFile.files?.[0];
+    importFile.value = '';
+    if (!file) return;
+    try {
+      const raw = JSON.parse(await file.text());
+      const current = getInstructionPresetState();
+      let name = String(raw?.name || file.name.replace(/\.(?:json|settings)$/i, '') || '').trim();
+      if (!name) throw new Error(t('globalPrompt.instruction.importInvalid'));
+      if (instructionPresetNameExists(name, current)) {
+        name = String(window.prompt(t('globalPrompt.presets.renamePrompt', { name }), `${name} (Imported)`) || '').trim();
+        if (!name) return;
+        if (instructionPresetNameExists(name, current)) return toast(t('globalPrompt.presets.nameExists'), 'error');
+      }
+      const preset = normalizeInstructionPresetRecord({ ...raw, name }, name);
+      current.custom.push(preset);
+      current.active = name;
+      saveInstructionPresetState(current);
+      renderGlobalPromptConfig('instruction');
+      toast(t('globalPrompt.instruction.imported'), 'success');
+    } catch (error) {
+      console.error('[prompt] Unable to import instruction preset.', error);
+      toast(error?.message || t('globalPrompt.instruction.importInvalid'), 'error');
+    }
+  });
+
+  document.getElementById('instruction-preset-restore').addEventListener('click', () => {
+    const current = getInstructionPresetState();
+    if (!instructionPresetFactoryEntry(current.active)) return;
+    if (!window.confirm(t('globalPrompt.presets.restoreConfirm', { name: current.active }))) return;
+    delete current.overrides[current.active];
+    saveInstructionPresetState(current);
+    renderGlobalPromptConfig('instruction');
+    toast(t('globalPrompt.presets.restored'), 'success');
+  });
+
+  document.getElementById('instruction-preset-delete').addEventListener('click', () => {
+    const current = getInstructionPresetState();
+    if (!instructionPresetCustomEntry(current.active, current)) return;
+    if (!window.confirm(t('globalPrompt.presets.deleteConfirm', { name: current.active }))) return;
+    current.custom = current.custom.filter(item => item.name !== current.active);
+    current.active = defaultInstructionPresetName();
+    saveInstructionPresetState(current);
+    renderGlobalPromptConfig('instruction');
+    toast(t('globalPrompt.presets.deleted'), 'success');
   });
 }
 
@@ -2873,12 +4268,14 @@ function renderParamsConfig() {
     <div class="config-page-head"><div><h2>${escapeHtml(t('config.params'))}</h2><p>${escapeHtml(t('params.page.desc'))}</p></div><button class="btn btn-primary" id="save-params">${escapeHtml(t('config.save'))}</button></div>
     ${numberField('temperature', t('params.temperature'), t('params.temperature.desc'), params.temperature, 0, 2, 0.05)}
     ${numberField('topP', t('params.topP'), t('params.topP.desc'), params.topP, 0.05, 1, 0.05)}
-    ${numberField('maxTokens', t('params.maxTokens'), t('params.maxTokens.desc'), params.maxTokens, 16, 32768, 16)} `;
+    ${numberField('maxTokens', t('params.maxTokens'), t('params.maxTokens.desc'), params.maxTokens, 16, 32768, 16)}
+    ${numberField('contextTokens', t('params.contextTokens'), t('params.contextTokens.desc'), params.contextTokens, 512, 1048576, 256)} `;
   document.getElementById('save-params').addEventListener('click', () => {
     const next = {
       temperature: Number(document.getElementById('param-temperature').value),
       topP: Number(document.getElementById('param-topP').value),
       maxTokens: Number(document.getElementById('param-maxTokens').value),
+      contextTokens: Number(document.getElementById('param-contextTokens').value),
     };
     writeJson(STORAGE.params, next);
     toast(t('config.save'), 'success');
@@ -2918,6 +4315,10 @@ async function refreshModelStatus() {
   try {
     const status = await invoke('get_model_status');
     state.modelStatus = status;
+    autoSelectInstructionPresetForModel(status?.modelName);
+    if (!state.backendConfig) {
+      try { state.backendConfig = await invoke('load_backend_config'); } catch (_) { /* Status already contains the user-facing error. */ }
+    }
     pill.classList.remove('is-loading');
     if (status.loaded) {
       pill.classList.add('is-loaded');
@@ -2943,6 +4344,8 @@ async function bootstrap() {
   applyUiSettings();
   await initI18n();
   await loadContextPresetFactory();
+  await loadInstructionPresetFactory();
+  try { state.backendConfig = await invoke('load_backend_config'); } catch (error) { console.warn('[backend] Unable to load saved backend configuration.', error); }
   try {
     await loadAvatarAssets();
     await migrateInlineCharacterAvatars();

@@ -122,13 +122,15 @@ Catalog translations keep their current format for now.
 
 Launcher/native host and application payload use independent versions.
 
-- Launcher/native host: **0.1.8**
-- Application payload: **0.1.12** (`app/src/app-version.json`)
+- Launcher/native host: **0.1.9**
+- Application payload: **0.1.26** (`app/src/app-version.json`)
 
 Changes limited to `app/src/**` advance only the application version and are synchronized from GitHub `main`; they do not require a new launcher Release. The application must remain tolerant of native commands that may be unavailable on older launchers. Native launcher changes use their own release cycle.
 
-## Application base 0.1.12
+## Application base 0.1.26
 
 The replaceable `app/src/**` frontend currently provides the Character Library base: search/sort/filter/favorites/tags, rich character cards, avatar editing, personality/scenario/greetings/example messages, prompt overrides, creator metadata, duplication, JSON export, Character Card import from JSON/PNG/APNG/CHARX, and local conversation statistics. Characters and conversations are still persisted locally in the WebView profile for this first application version.
 
-Backend-native features remain optional from the application point of view: if a launcher does not expose a newer native command, the application must keep loading and only the dependent capability may be unavailable.
+The native host now persists/tests backend configuration and exposes non-streaming Chat Completion and Text Completion commands for KoboldCpp, llama.cpp server, text-generation-webui, Ollama and Custom OpenAI-compatible endpoints. The application selects Chat/Text mode from the saved backend configuration, and Text Completion uses the Context/Instruction pipeline plus stop strings and response post-processing. The Instruction Template editor now ships the 38 presets from the supplied SillyTavern source set, preserves their exact sequence/flag values, supports ST-compatible JSON import/export, context binding, activation regexes, model-assisted selection, and applies Story String/user/assistant/system/first/last/filler/stop-sequence behavior to the actual Text Completion prompt. Context presets are now rebuilt directly from the 34 presets in the supplied SillyTavern source set, retaining only the established NastyVerse `loreBefore`/`loreAfter` placeholder names. The Context editor shows each Handlebars conditional on one readable line by displaying emitted line breaks as `\n`, then restores the canonical SillyTavern-compatible Story String before saving or rendering.
+
+Application payload 0.1.26 aligns Text Completion context assembly with the supplied SillyTavern source for the features NastyVerse currently implements, including example budgeting behavior and final prompt ordering.

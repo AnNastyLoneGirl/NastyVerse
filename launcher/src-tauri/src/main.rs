@@ -1,11 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod backend;
 mod bootstrap;
 mod installer;
 mod launcher_updater;
 mod protocol;
 
-use serde::Serialize;
 use std::process::Command;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -249,20 +249,56 @@ async fn launch_app(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Serialize)]
-struct ModelStatus {
-    loaded: bool,
-    backend: Option<String>,
-    model_name: Option<String>,
+#[tauri::command]
+fn load_backend_config(app: tauri::AppHandle) -> Result<Option<backend::BackendConfig>, String> {
+    backend::load_backend_config(&app)
 }
 
 #[tauri::command]
-fn get_model_status() -> ModelStatus {
-    ModelStatus {
-        loaded: false,
-        backend: None,
-        model_name: None,
-    }
+fn save_backend_config(
+    app: tauri::AppHandle,
+    config: backend::BackendConfig,
+) -> Result<backend::BackendConfig, String> {
+    backend::save_backend_config(&app, config)
+}
+
+#[tauri::command]
+async fn test_backend_connection(
+    backend_type: String,
+    url: String,
+    api_key: Option<String>,
+) -> Result<backend::BackendTestResult, String> {
+    backend::test_backend_connection(backend::BackendConfig {
+        backend_type,
+        url,
+        model: None,
+        api_key,
+        api_mode: "auto".into(),
+    }).await
+}
+
+#[tauri::command]
+async fn chat_completion(
+    app: tauri::AppHandle,
+    messages: Vec<backend::ChatMessage>,
+    params: backend::GenerationParams,
+) -> Result<backend::CompletionResult, String> {
+    backend::chat_completion(&app, messages, params).await
+}
+
+#[tauri::command]
+async fn text_completion(
+    app: tauri::AppHandle,
+    prompt: String,
+    stop_strings: Vec<String>,
+    params: backend::GenerationParams,
+) -> Result<backend::CompletionResult, String> {
+    backend::text_completion(&app, prompt, stop_strings, params).await
+}
+
+#[tauri::command]
+async fn get_model_status(app: tauri::AppHandle) -> backend::ModelStatus {
+    backend::get_model_status(&app).await
 }
 
 fn main() {
@@ -293,6 +329,11 @@ fn main() {
             check_installation,
             sync_installation,
             launch_app,
+            load_backend_config,
+            save_backend_config,
+            test_backend_connection,
+            chat_completion,
+            text_completion,
             get_model_status
         ])
         .setup(|app| {

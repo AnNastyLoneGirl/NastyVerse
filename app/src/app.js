@@ -18,6 +18,15 @@ const invoke = TAURI?.core?.invoke
       return null;
     };
 
+
+function friendlyNativeError(error) {
+  const message = String(error ?? '');
+  if (/command\s+(test_backend_connection|load_backend_config|save_backend_config|get_model_status|chat_completion|text_completion)\s+not found/i.test(message)) {
+    return t('models.launcherUpdateRequired');
+  }
+  return message;
+}
+
 const STORAGE = {
   locale: 'nv_app_locale',
   accent: 'nv_app_accent',
@@ -3141,7 +3150,7 @@ function updateProviderFields(backendType, { resetUrl = false } = {}) {
 async function renderModelsConfig() {
   const body = document.getElementById('config-body');
   let saved = null;
-  try { saved = await invoke('load_backend_config'); } catch (error) { toast(String(error), 'error'); }
+  try { saved = await invoke('load_backend_config'); } catch (error) { toast(friendlyNativeError(error), 'error'); }
   state.backendConfig = saved;
   const selected = saved?.backendType || 'koboldcpp';
   const selectedProvider = backendDefinition(selected);
@@ -3266,9 +3275,9 @@ async function testBackend(backendType, { quiet = false } = {}) {
   } catch (error) {
     if (resultBox) {
       resultBox.className = 'connection-result is-error';
-      resultBox.textContent = String(error);
+      resultBox.textContent = friendlyNativeError(error);
     }
-    if (!quiet) toast(String(error), 'error');
+    if (!quiet) toast(friendlyNativeError(error), 'error');
     return null;
   } finally {
     if (button) {
@@ -4594,7 +4603,7 @@ async function refreshModelStatus() {
   } catch (error) {
     pill.classList.remove('is-loading');
     text.textContent = t('status.none');
-    pill.title = String(error);
+    pill.title = friendlyNativeError(error);
   }
 }
 

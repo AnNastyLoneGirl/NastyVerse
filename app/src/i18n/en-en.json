@@ -369,5 +369,6 @@
   "models.meta.vision": "Vision",
   "models.meta.reasoning": "Reasoning",
   "models.meta.tools": "Tools",
-  "models.apiKey.missing": "Enter an API key for this provider."
+  "models.apiKey.missing": "Enter an API key for this provider.",
+  "models.launcherUpdateRequired": "This feature requires NastyVerse Launcher 0.1.9 or newer. Update the native launcher, then restart NastyVerse."
 }

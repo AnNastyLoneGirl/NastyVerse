@@ -288,6 +288,15 @@ document.getElementById('btn-max').addEventListener('click', () => invoke('windo
 document.querySelector('.titlebar').addEventListener('mousedown', event => {
   if (event.button !== 0) return;
   if (event.target.closest('button, a, input, select, textarea, [data-no-drag]')) return;
+
+  // On the second press of a double-click, toggle maximize/restore instead of
+  // starting another drag. Using MouseEvent.detail here is more reliable with
+  // the custom Tauri drag region than waiting for a later `dblclick` event.
+  if (event.detail >= 2) {
+    invoke('window_toggle_maximize');
+    return;
+  }
+
   invoke('window_start_dragging');
 });
 

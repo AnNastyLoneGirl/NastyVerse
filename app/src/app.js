@@ -102,6 +102,116 @@ const TRANSLATIONS = {
   },
 };
 
+
+Object.assign(TRANSLATIONS.en, {
+  'library.importJson': 'Import JSON',
+  'library.create': 'Create character',
+  'library.search': 'Search characters, tags, creators…',
+  'library.sort': 'Sort',
+  'library.sort.nameAsc': 'Name A–Z',
+  'library.sort.nameDesc': 'Name Z–A',
+  'library.sort.newest': 'Newest',
+  'library.sort.oldest': 'Oldest',
+  'library.sort.recent': 'Recently updated',
+  'library.sort.chats': 'Most chats',
+  'library.sort.favorites': 'Favorites first',
+  'library.filters': 'Filters',
+  'library.allCharacters': 'All characters',
+  'library.favorites': 'Favorites',
+  'library.tags': 'Tags',
+  'library.clearFilters': 'Clear filters',
+  'library.noTags': 'No tags yet',
+  'library.results': 'characters',
+  'library.noResults.title': 'No characters match these filters.',
+  'library.noResults.body': 'Try clearing the search or filters.',
+  'library.empty.title': 'Create your first character.',
+  'library.empty.body': 'Build a personality, scenario and first message, then start a conversation.',
+  'library.updated': 'Updated',
+  'library.chats': 'Chats',
+  'library.tokens': 'Approx. tokens',
+  'library.duplicate': 'Duplicate',
+  'library.export': 'Export JSON',
+  'library.favorite': 'Favorite',
+  'library.unfavorite': 'Remove favorite',
+  'library.imported': 'Character imported.',
+  'library.importInvalid': 'This JSON is not a recognized character card.',
+  'library.importUnsupported': 'PNG and CHARX import will be added with the native Character Card parser.',
+  'library.avatarTooLarge': 'Avatar must be smaller than 2 MB.',
+  'library.exported': 'Character JSON exported.',
+  'character.identity': 'Identity',
+  'character.avatar': 'Choose avatar',
+  'character.avatarHelp': 'PNG, JPG or WebP. Stored locally for this base.',
+  'character.removeAvatar': 'Remove avatar',
+  'character.personality': 'Personality',
+  'character.altGreetings': 'Alternative greetings',
+  'character.altGreetingsHelp': 'Separate greetings with a line containing only ---',
+  'character.examples': 'Example messages',
+  'character.prompting': 'Prompting',
+  'character.postHistory': 'Post-history instructions',
+  'character.metadata': 'Creator metadata',
+  'character.creator': 'Creator',
+  'character.version': 'Character version',
+  'character.creatorNotes': 'Creator notes',
+  'character.tags': 'Tags',
+  'character.tagsHelp': 'Comma-separated',
+  'character.favorite': 'Favorite character',
+  'character.deleteConfirm': 'Delete this character and its local chat history?',
+});
+Object.assign(TRANSLATIONS.fr, {
+  'library.importJson': 'Importer JSON',
+  'library.create': 'Créer un personnage',
+  'library.search': 'Rechercher personnages, tags, créateurs…',
+  'library.sort': 'Trier',
+  'library.sort.nameAsc': 'Nom A–Z',
+  'library.sort.nameDesc': 'Nom Z–A',
+  'library.sort.newest': 'Plus récents',
+  'library.sort.oldest': 'Plus anciens',
+  'library.sort.recent': 'Modifiés récemment',
+  'library.sort.chats': 'Plus de discussions',
+  'library.sort.favorites': 'Favoris en premier',
+  'library.filters': 'Filtres',
+  'library.allCharacters': 'Tous les personnages',
+  'library.favorites': 'Favoris',
+  'library.tags': 'Tags',
+  'library.clearFilters': 'Effacer les filtres',
+  'library.noTags': 'Aucun tag',
+  'library.results': 'personnages',
+  'library.noResults.title': 'Aucun personnage ne correspond aux filtres.',
+  'library.noResults.body': 'Essayez de supprimer la recherche ou les filtres.',
+  'library.empty.title': 'Créez votre premier personnage.',
+  'library.empty.body': 'Définissez sa personnalité, son scénario et son premier message, puis lancez une discussion.',
+  'library.updated': 'Modifié',
+  'library.chats': 'Discussions',
+  'library.tokens': 'Tokens approx.',
+  'library.duplicate': 'Dupliquer',
+  'library.export': 'Exporter JSON',
+  'library.favorite': 'Favori',
+  'library.unfavorite': 'Retirer des favoris',
+  'library.imported': 'Personnage importé.',
+  'library.importInvalid': 'Ce JSON n’est pas une carte de personnage reconnue.',
+  'library.importUnsupported': 'L’import PNG et CHARX arrivera avec le parseur natif Character Card.',
+  'library.avatarTooLarge': 'L’avatar doit faire moins de 2 Mo.',
+  'library.exported': 'JSON du personnage exporté.',
+  'character.identity': 'Identité',
+  'character.avatar': 'Choisir un avatar',
+  'character.avatarHelp': 'PNG, JPG ou WebP. Stocké localement pour cette base.',
+  'character.removeAvatar': 'Retirer l’avatar',
+  'character.personality': 'Personnalité',
+  'character.altGreetings': 'Salutations alternatives',
+  'character.altGreetingsHelp': 'Séparez les salutations par une ligne contenant uniquement ---',
+  'character.examples': 'Messages d’exemple',
+  'character.prompting': 'Prompting',
+  'character.postHistory': 'Instructions post-historique',
+  'character.metadata': 'Métadonnées créateur',
+  'character.creator': 'Créateur',
+  'character.version': 'Version du personnage',
+  'character.creatorNotes': 'Notes du créateur',
+  'character.tags': 'Tags',
+  'character.tagsHelp': 'Séparés par des virgules',
+  'character.favorite': 'Personnage favori',
+  'character.deleteConfirm': 'Supprimer ce personnage et son historique local ?',
+});
+
 const NAV_ITEMS = [
   { id: 'chat', labelKey: 'nav.chat', icon: '<path d="M4 5h16v10H8l-4 4V5z"/>' },
   { id: 'library', labelKey: 'nav.library', icon: '<path d="M4 4h7v16H4zM13 4h7v16h-7z"/>' },
@@ -273,7 +383,10 @@ function chatSystemPrompt(character) {
   if (character.systemPrompt?.trim()) return character.systemPrompt.trim();
   const blocks = [`You are ${character.name}. Stay in character and respond naturally.`];
   if (character.description?.trim()) blocks.push(`Character description:\n${character.description.trim()}`);
+  if (character.personality?.trim()) blocks.push(`Personality:\n${character.personality.trim()}`);
   if (character.scenario?.trim()) blocks.push(`Scenario:\n${character.scenario.trim()}`);
+  if (character.exampleMessages?.trim()) blocks.push(`Example messages:\n${character.exampleMessages.trim()}`);
+  if (character.postHistoryInstructions?.trim()) blocks.push(`Post-history instructions:\n${character.postHistoryInstructions.trim()}`);
   return blocks.join('\n\n');
 }
 
@@ -390,50 +503,119 @@ async function sendChatMessage(event, character) {
   }
 }
 
+
 /* ===================================================================
    Library
 =================================================================== */
+
+const LIBRARY_SORTS = [
+  ['recent', 'library.sort.recent'],
+  ['name-asc', 'library.sort.nameAsc'],
+  ['name-desc', 'library.sort.nameDesc'],
+  ['newest', 'library.sort.newest'],
+  ['oldest', 'library.sort.oldest'],
+  ['chats', 'library.sort.chats'],
+  ['favorites', 'library.sort.favorites'],
+];
+
+const libraryState = { query: '', sort: 'recent', favoritesOnly: false, tag: '' };
+
+function normalizeCharacter(record = {}) {
+  return {
+    id: record.id || uid(),
+    name: String(record.name || '').trim(),
+    avatar: record.avatar || '',
+    description: record.description || '',
+    personality: record.personality || '',
+    scenario: record.scenario || '',
+    firstMessage: record.firstMessage || record.first_mes || '',
+    alternateGreetings: Array.isArray(record.alternateGreetings)
+      ? record.alternateGreetings
+      : Array.isArray(record.alternate_greetings) ? record.alternate_greetings : [],
+    exampleMessages: record.exampleMessages || record.mes_example || '',
+    systemPrompt: record.systemPrompt || record.system_prompt || '',
+    postHistoryInstructions: record.postHistoryInstructions || record.post_history_instructions || '',
+    creator: record.creator || '',
+    characterVersion: record.characterVersion || record.character_version || '',
+    creatorNotes: record.creatorNotes || record.creator_notes || '',
+    tags: Array.isArray(record.tags) ? record.tags.filter(Boolean) : [],
+    favorite: Boolean(record.favorite),
+    createdAt: Number(record.createdAt || Date.now()),
+    updatedAt: Number(record.updatedAt || record.createdAt || Date.now()),
+  };
+}
+
+function getNormalizedCharacters() {
+  const raw = getCharacters();
+  const normalized = raw.map(normalizeCharacter);
+  if (JSON.stringify(raw) !== JSON.stringify(normalized)) saveCharacters(normalized);
+  return normalized;
+}
+
+function characterChatCount(id) {
+  const thread = getConversations()[id];
+  return Array.isArray(thread) ? thread.filter(message => message.role === 'user').length : 0;
+}
+
+function characterApproxTokens(character) {
+  const text = [
+    character.description, character.personality, character.scenario, character.firstMessage,
+    ...(character.alternateGreetings || []), character.exampleMessages, character.systemPrompt,
+    character.postHistoryInstructions, character.creatorNotes
+  ].filter(Boolean).join('\n');
+  return Math.round(text.length / 4);
+}
+
+function characterDate(timestamp) {
+  try {
+    return new Intl.DateTimeFormat(state.locale === 'fr' ? 'fr-FR' : 'en-US', {
+      year: 'numeric', month: 'short', day: 'numeric'
+    }).format(new Date(timestamp));
+  } catch {
+    return '—';
+  }
+}
+
+function characterAvatar(character, className) {
+  if (character.avatar) return `<div class="${className}"><img src="${escapeHtml(character.avatar)}" alt=""></div>`;
+  return `<div class="${className} character-avatar-fallback">${escapeHtml((character.name || '?').slice(0, 1).toUpperCase())}</div>`;
+}
 
 function renderLibrary(tab = 'characters') {
   state.currentPage = 'library';
   state.libraryTab = tab;
   sectionLabel.textContent = t('nav.library');
   renderNavbar();
+  const characters = getNormalizedCharacters();
 
-  const characters = getCharacters();
-  const searchValue = '';
   pageRoot.innerHTML = `
-    <div class="page active">
-      <div class="lib-eyebrow">${escapeHtml(t('library.eyebrow'))}</div>
-      <div class="lib-head">
-        <div><h1 class="font-display">${escapeHtml(t('library.title'))}</h1><p>${escapeHtml(t('library.subtitle'))}</p></div>
-        <div class="lib-actions">
-          <button class="btn btn-ghost" id="library-import">${escapeHtml(t('library.import'))}</button>
-          <button class="btn btn-primary" id="library-create">+ ${escapeHtml(t('library.create'))}</button>
-        </div>
-      </div>
-      <div class="lib-toolbar">
+    <div class="page active library-page">
+      <div class="library-commandbar">
         <div class="lib-tabs">
           <button class="lib-tab ${tab === 'characters' ? 'active' : ''}" data-tab="characters">${escapeHtml(t('library.characters'))} <span class="count">${characters.length}</span></button>
           <button class="lib-tab ${tab === 'lorebooks' ? 'active' : ''}" data-tab="lorebooks">${escapeHtml(t('library.lorebooks'))} <span class="count">0</span></button>
           <button class="lib-tab ${tab === 'personas' ? 'active' : ''}" data-tab="personas">${escapeHtml(t('library.personas'))} <span class="count">0</span></button>
         </div>
-        ${tab === 'characters' ? `<input class="search" id="library-search" value="${escapeHtml(searchValue)}" placeholder="${escapeHtml(t('library.search'))}">` : ''}
+        ${tab === 'characters' ? `
+          <div class="library-command-actions">
+            <input type="file" id="character-import-file" accept=".json,application/json" hidden>
+            <button class="btn btn-ghost" id="library-import">${escapeHtml(t('library.importJson'))}</button>
+            <button class="btn btn-primary" id="library-create">+ ${escapeHtml(t('library.create'))}</button>
+          </div>` : ''}
       </div>
-      <div id="library-content"></div>
+      <div id="library-content" class="library-content"></div>
     </div>`;
 
   pageRoot.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => renderLibrary(button.dataset.tab)));
-  document.getElementById('library-create').addEventListener('click', () => openCharacterEditor());
-  document.getElementById('library-import').addEventListener('click', () => toast(t('toast.importSoon')));
 
   if (tab === 'characters') {
-    const search = document.getElementById('library-search');
-    search.addEventListener('input', () => renderCharacterGrid(search.value));
-    renderCharacterGrid('');
+    document.getElementById('library-create').addEventListener('click', () => openCharacterEditor());
+    document.getElementById('library-import').addEventListener('click', () => document.getElementById('character-import-file').click());
+    document.getElementById('character-import-file').addEventListener('change', importCharacterJson);
+    renderCharacterLibrary();
   } else {
     document.getElementById('library-content').innerHTML = `
-      <div class="empty-state">
+      <div class="empty-state library-empty-wide">
         <svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg>
         <h2>${escapeHtml(t('library.soon.title'))}</h2>
         <p>${escapeHtml(t('library.soon.body'))}</p>
@@ -441,40 +623,132 @@ function renderLibrary(tab = 'characters') {
   }
 }
 
-function renderCharacterGrid(query) {
+function renderCharacterLibrary() {
   const root = document.getElementById('library-content');
-  const normalized = query.trim().toLowerCase();
-  const characters = getCharacters().filter(character => {
-    if (!normalized) return true;
-    return `${character.name} ${character.description || ''}`.toLowerCase().includes(normalized);
+  if (!root) return;
+  const allCharacters = getNormalizedCharacters();
+  const allTags = [...new Set(allCharacters.flatMap(character => character.tags || []))].sort((a, b) => a.localeCompare(b));
+  const q = libraryState.query.trim().toLowerCase();
+
+  let characters = allCharacters.filter(character => {
+    if (libraryState.favoritesOnly && !character.favorite) return false;
+    if (libraryState.tag && !(character.tags || []).includes(libraryState.tag)) return false;
+    if (!q) return true;
+    return [character.name, character.description, character.personality, character.scenario, character.creator, ...(character.tags || [])]
+      .join(' ').toLowerCase().includes(q);
   });
 
+  characters.sort((a, b) => {
+    if (libraryState.sort === 'name-asc') return a.name.localeCompare(b.name);
+    if (libraryState.sort === 'name-desc') return b.name.localeCompare(a.name);
+    if (libraryState.sort === 'newest') return b.createdAt - a.createdAt;
+    if (libraryState.sort === 'oldest') return a.createdAt - b.createdAt;
+    if (libraryState.sort === 'chats') return characterChatCount(b.id) - characterChatCount(a.id);
+    if (libraryState.sort === 'favorites') return Number(b.favorite) - Number(a.favorite) || a.name.localeCompare(b.name);
+    return b.updatedAt - a.updatedAt;
+  });
+
+  root.innerHTML = `
+    <div class="character-library-layout">
+      <aside class="character-filters">
+        <div class="filter-heading">${escapeHtml(t('library.filters'))}</div>
+        <button class="filter-choice ${!libraryState.favoritesOnly && !libraryState.tag ? 'active' : ''}" data-filter-all>
+          <span>${escapeHtml(t('library.allCharacters'))}</span><strong>${allCharacters.length}</strong>
+        </button>
+        <button class="filter-choice ${libraryState.favoritesOnly ? 'active' : ''}" data-filter-favorites>
+          <span>★ ${escapeHtml(t('library.favorites'))}</span><strong>${allCharacters.filter(character => character.favorite).length}</strong>
+        </button>
+        <div class="filter-heading filter-heading-spaced">${escapeHtml(t('library.tags'))}</div>
+        <div class="tag-filter-list">
+          ${allTags.length ? allTags.map(tag => `
+            <button class="tag-filter ${libraryState.tag === tag ? 'active' : ''}" data-filter-tag="${escapeHtml(tag)}">
+              <span>${escapeHtml(tag)}</span><strong>${allCharacters.filter(character => (character.tags || []).includes(tag)).length}</strong>
+            </button>`).join('') : `<div class="filter-muted">${escapeHtml(t('library.noTags'))}</div>`}
+        </div>
+        ${(libraryState.query || libraryState.tag || libraryState.favoritesOnly) ? `<button class="filter-clear" data-clear-filters>${escapeHtml(t('library.clearFilters'))}</button>` : ''}
+      </aside>
+
+      <section class="character-browser">
+        <div class="character-browser-toolbar">
+          <div class="character-search-wrap">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg>
+            <input id="character-search" value="${escapeHtml(libraryState.query)}" placeholder="${escapeHtml(t('library.search'))}">
+          </div>
+          <label class="sort-control">
+            <span>${escapeHtml(t('library.sort'))}</span>
+            <select id="character-sort">${LIBRARY_SORTS.map(([value, key]) => `<option value="${value}" ${libraryState.sort === value ? 'selected' : ''}>${escapeHtml(t(key))}</option>`).join('')}</select>
+          </label>
+          <div class="character-result-count">${characters.length} ${escapeHtml(t('library.results'))}</div>
+        </div>
+        <div id="character-grid-root">${renderCharacterCards(characters, allCharacters.length)}</div>
+      </section>
+    </div>`;
+
+  document.getElementById('character-search')?.addEventListener('input', event => {
+    libraryState.query = event.target.value;
+    renderCharacterLibrary();
+    requestAnimationFrame(() => {
+      const next = document.getElementById('character-search');
+      if (next) { next.focus(); next.setSelectionRange(next.value.length, next.value.length); }
+    });
+  });
+  document.getElementById('character-sort')?.addEventListener('change', event => { libraryState.sort = event.target.value; renderCharacterLibrary(); });
+  root.querySelector('[data-filter-all]')?.addEventListener('click', () => { libraryState.favoritesOnly = false; libraryState.tag = ''; renderCharacterLibrary(); });
+  root.querySelector('[data-filter-favorites]')?.addEventListener('click', () => { libraryState.favoritesOnly = !libraryState.favoritesOnly; libraryState.tag = ''; renderCharacterLibrary(); });
+  root.querySelectorAll('[data-filter-tag]').forEach(button => button.addEventListener('click', () => {
+    libraryState.tag = libraryState.tag === button.dataset.filterTag ? '' : button.dataset.filterTag;
+    libraryState.favoritesOnly = false;
+    renderCharacterLibrary();
+  }));
+  root.querySelector('[data-clear-filters]')?.addEventListener('click', () => { libraryState.query = ''; libraryState.tag = ''; libraryState.favoritesOnly = false; renderCharacterLibrary(); });
+  bindCharacterCardActions(root);
+}
+
+function renderCharacterCards(characters, totalCount) {
   if (!characters.length) {
-    root.innerHTML = `
-      <div class="empty-state">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
-        <h2>${escapeHtml(t('library.empty.title'))}</h2>
-        <p>${escapeHtml(t('library.empty.body'))}</p>
-        <button class="btn btn-primary" id="empty-create">+ ${escapeHtml(t('library.create'))}</button>
-      </div>`;
-    document.getElementById('empty-create').addEventListener('click', () => openCharacterEditor());
-    return;
+    const empty = totalCount === 0;
+    return `<div class="empty-state library-empty-wide">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
+      <h2>${escapeHtml(t(empty ? 'library.empty.title' : 'library.noResults.title'))}</h2>
+      <p>${escapeHtml(t(empty ? 'library.empty.body' : 'library.noResults.body'))}</p>
+      ${empty ? `<button class="btn btn-primary" data-empty-create>+ ${escapeHtml(t('library.create'))}</button>` : ''}
+    </div>`;
   }
 
-  root.innerHTML = `<div class="character-grid">${characters.map(character => `
-    <article class="character-card">
-      <div class="character-card-avatar">${escapeHtml(character.name.slice(0, 1).toUpperCase())}</div>
-      <div class="character-card-body">
-        <h3>${escapeHtml(character.name)}</h3>
-        <p>${escapeHtml(character.description || 'No description yet.')}</p>
+  return `<div class="character-grid character-grid-rich">${characters.map(character => {
+    const tags = (character.tags || []).slice(0, 3);
+    return `<article class="character-card character-card-rich">
+      <div class="character-card-visual">
+        ${characterAvatar(character, 'character-card-avatar-rich')}
+        <button class="favorite-button ${character.favorite ? 'active' : ''}" data-favorite="${character.id}" title="${escapeHtml(t(character.favorite ? 'library.unfavorite' : 'library.favorite'))}">★</button>
+        <div class="character-card-overlay"><button class="btn btn-primary btn-small" data-chat="${character.id}">${escapeHtml(t('library.openChat'))}</button></div>
       </div>
-      <div class="character-card-actions">
-        <button class="btn btn-primary btn-small" data-chat="${character.id}">${escapeHtml(t('library.openChat'))}</button>
-        <button class="icon-action" data-edit="${character.id}" title="${escapeHtml(t('library.edit'))}">✎</button>
-        <button class="icon-action danger" data-delete="${character.id}" title="${escapeHtml(t('library.delete'))}">×</button>
+      <div class="character-card-info">
+        <div class="character-card-titleline">
+          <div><h3>${escapeHtml(character.name)}</h3>${character.creator ? `<span class="character-creator">by ${escapeHtml(character.creator)}</span>` : ''}</div>
+          <button class="character-more" data-edit="${character.id}">•••</button>
+        </div>
+        <p class="character-summary">${escapeHtml(character.description || character.personality || 'No description yet.')}</p>
+        <div class="character-tags">${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}${(character.tags || []).length > 3 ? `<span>+${character.tags.length - 3}</span>` : ''}</div>
+        <div class="character-card-stats">
+          <span><strong>${characterChatCount(character.id)}</strong> ${escapeHtml(t('library.chats'))}</span>
+          <span><strong>${characterApproxTokens(character)}</strong> ${escapeHtml(t('library.tokens'))}</span>
+        </div>
+        <div class="character-card-footer">
+          <span>${escapeHtml(t('library.updated'))} ${escapeHtml(characterDate(character.updatedAt))}</span>
+          <div>
+            <button class="card-mini-action" data-duplicate="${character.id}" title="${escapeHtml(t('library.duplicate'))}">⧉</button>
+            <button class="card-mini-action" data-export="${character.id}" title="${escapeHtml(t('library.export'))}">⇩</button>
+            <button class="card-mini-action" data-edit="${character.id}" title="${escapeHtml(t('library.edit'))}">✎</button>
+          </div>
+        </div>
       </div>
-    </article>`).join('')}</div>`;
+    </article>`;
+  }).join('')}</div>`;
+}
 
+function bindCharacterCardActions(root) {
+  root.querySelector('[data-empty-create]')?.addEventListener('click', () => openCharacterEditor());
   root.querySelectorAll('[data-chat]').forEach(button => button.addEventListener('click', () => {
     state.activeCharacterId = button.dataset.chat;
     localStorage.setItem(STORAGE.activeCharacter, state.activeCharacterId);
@@ -483,56 +757,253 @@ function renderCharacterGrid(query) {
     goTo('chat');
   }));
   root.querySelectorAll('[data-edit]').forEach(button => button.addEventListener('click', () => openCharacterEditor(button.dataset.edit)));
-  root.querySelectorAll('[data-delete]').forEach(button => button.addEventListener('click', () => deleteCharacter(button.dataset.delete)));
+  root.querySelectorAll('[data-favorite]').forEach(button => button.addEventListener('click', () => toggleCharacterFavorite(button.dataset.favorite)));
+  root.querySelectorAll('[data-duplicate]').forEach(button => button.addEventListener('click', () => duplicateCharacter(button.dataset.duplicate)));
+  root.querySelectorAll('[data-export]').forEach(button => button.addEventListener('click', () => exportCharacterJson(button.dataset.export)));
 }
 
 function openCharacterEditor(characterId = null) {
-  const existing = characterId ? getCharacters().find(item => item.id === characterId) : null;
+  const existing = characterId ? getNormalizedCharacters().find(item => item.id === characterId) : null;
+  const character = existing || normalizeCharacter({ name: '' });
   const overlay = document.createElement('div');
   overlay.className = 'modal-backdrop';
   overlay.innerHTML = `
-    <form class="modal" id="character-form">
-      <div class="modal-head"><div><span class="modal-kicker">NastyVerse</span><h2>${escapeHtml(t(existing ? 'character.edit' : 'character.new'))}</h2></div><button type="button" class="modal-close" id="modal-close">×</button></div>
-      <label class="form-field"><span>${escapeHtml(t('character.name'))}</span><input name="name" maxlength="80" value="${escapeHtml(existing?.name || '')}" required></label>
-      <label class="form-field"><span>${escapeHtml(t('character.description'))}</span><textarea name="description" rows="3">${escapeHtml(existing?.description || '')}</textarea></label>
-      <label class="form-field"><span>${escapeHtml(t('character.scenario'))}</span><textarea name="scenario" rows="3">${escapeHtml(existing?.scenario || '')}</textarea></label>
-      <label class="form-field"><span>${escapeHtml(t('character.firstMessage'))}</span><textarea name="firstMessage" rows="4">${escapeHtml(existing?.firstMessage || '')}</textarea></label>
-      <label class="form-field"><span>${escapeHtml(t('character.systemPrompt'))}</span><textarea name="systemPrompt" rows="4">${escapeHtml(existing?.systemPrompt || '')}</textarea></label>
-      <div class="modal-actions"><button type="button" class="btn btn-ghost" id="modal-cancel">${escapeHtml(t('common.cancel'))}</button><button class="btn btn-primary" type="submit">${escapeHtml(t('common.save'))}</button></div>
+    <form class="modal character-editor-modal" id="character-form">
+      <div class="modal-head character-editor-head">
+        <div><span class="modal-kicker">NastyVerse Character</span><h2>${escapeHtml(t(existing ? 'character.edit' : 'character.new'))}</h2></div>
+        <button type="button" class="modal-close" id="modal-close">×</button>
+      </div>
+      <div class="character-editor-layout">
+        <aside class="character-editor-aside">
+          <div id="character-avatar-preview">${characterAvatar(character, 'character-editor-avatar')}</div>
+          <label class="avatar-upload-button"><input type="file" id="character-avatar-file" accept="image/png,image/jpeg,image/webp" hidden>${escapeHtml(t('character.avatar'))}</label>
+          <button type="button" class="avatar-remove" id="character-avatar-remove">${escapeHtml(t('character.removeAvatar'))}</button>
+          <p class="avatar-help">${escapeHtml(t('character.avatarHelp'))}</p>
+          <div class="editor-mini-stats">
+            <div><strong>${characterChatCount(character.id)}</strong><span>${escapeHtml(t('library.chats'))}</span></div>
+            <div><strong>${characterApproxTokens(character)}</strong><span>${escapeHtml(t('library.tokens'))}</span></div>
+          </div>
+          <label class="favorite-check"><input type="checkbox" name="favorite" ${character.favorite ? 'checked' : ''}><span>★ ${escapeHtml(t('character.favorite'))}</span></label>
+        </aside>
+
+        <div class="character-editor-fields">
+          <section class="editor-section">
+            <div class="editor-section-title">${escapeHtml(t('character.identity'))}</div>
+            <div class="editor-grid-2">
+              <label class="form-field"><span>${escapeHtml(t('character.name'))}</span><input name="name" maxlength="80" value="${escapeHtml(character.name)}" required></label>
+              <label class="form-field"><span>${escapeHtml(t('character.tags'))}</span><input name="tags" value="${escapeHtml((character.tags || []).join(', '))}" placeholder="${escapeHtml(t('character.tagsHelp'))}"></label>
+            </div>
+            <label class="form-field"><span>${escapeHtml(t('character.description'))}</span><textarea name="description" rows="3">${escapeHtml(character.description)}</textarea></label>
+            <label class="form-field"><span>${escapeHtml(t('character.personality'))}</span><textarea name="personality" rows="4">${escapeHtml(character.personality)}</textarea></label>
+            <label class="form-field"><span>${escapeHtml(t('character.scenario'))}</span><textarea name="scenario" rows="3">${escapeHtml(character.scenario)}</textarea></label>
+          </section>
+
+          <section class="editor-section">
+            <div class="editor-section-title">${escapeHtml(t('character.firstMessage'))}</div>
+            <label class="form-field"><textarea name="firstMessage" rows="5">${escapeHtml(character.firstMessage)}</textarea></label>
+            <label class="form-field"><span>${escapeHtml(t('character.altGreetings'))}</span><textarea name="alternateGreetings" rows="5" placeholder="${escapeHtml(t('character.altGreetingsHelp'))}">${escapeHtml((character.alternateGreetings || []).join('\n---\n'))}</textarea></label>
+            <label class="form-field"><span>${escapeHtml(t('character.examples'))}</span><textarea name="exampleMessages" rows="6">${escapeHtml(character.exampleMessages)}</textarea></label>
+          </section>
+
+          <details class="editor-section editor-details">
+            <summary>${escapeHtml(t('character.prompting'))}</summary>
+            <label class="form-field"><span>${escapeHtml(t('character.systemPrompt'))}</span><textarea name="systemPrompt" rows="5">${escapeHtml(character.systemPrompt)}</textarea></label>
+            <label class="form-field"><span>${escapeHtml(t('character.postHistory'))}</span><textarea name="postHistoryInstructions" rows="4">${escapeHtml(character.postHistoryInstructions)}</textarea></label>
+          </details>
+
+          <details class="editor-section editor-details">
+            <summary>${escapeHtml(t('character.metadata'))}</summary>
+            <div class="editor-grid-2">
+              <label class="form-field"><span>${escapeHtml(t('character.creator'))}</span><input name="creator" value="${escapeHtml(character.creator)}"></label>
+              <label class="form-field"><span>${escapeHtml(t('character.version'))}</span><input name="characterVersion" value="${escapeHtml(character.characterVersion)}"></label>
+            </div>
+            <label class="form-field"><span>${escapeHtml(t('character.creatorNotes'))}</span><textarea name="creatorNotes" rows="4">${escapeHtml(character.creatorNotes)}</textarea></label>
+          </details>
+        </div>
+      </div>
+      <input type="hidden" name="avatar" id="character-avatar-value" value="${escapeHtml(character.avatar)}">
+      <div class="modal-actions character-editor-actions">
+        ${existing ? `<div class="editor-actions-left">
+          <button type="button" class="btn btn-ghost" id="character-duplicate">${escapeHtml(t('library.duplicate'))}</button>
+          <button type="button" class="btn btn-ghost" id="character-export">${escapeHtml(t('library.export'))}</button>
+          <button type="button" class="btn btn-danger" id="character-delete">${escapeHtml(t('library.delete'))}</button>
+        </div>` : '<div></div>'}
+        <div class="editor-actions-right">
+          <button type="button" class="btn btn-ghost" id="modal-cancel">${escapeHtml(t('common.cancel'))}</button>
+          <button class="btn btn-primary" type="submit">${escapeHtml(t('common.save'))}</button>
+        </div>
+      </div>
     </form>`;
   document.body.appendChild(overlay);
+
   const close = () => overlay.remove();
   document.getElementById('modal-close').addEventListener('click', close);
   document.getElementById('modal-cancel').addEventListener('click', close);
   overlay.addEventListener('mousedown', event => { if (event.target === overlay) close(); });
+
+  const avatarInput = document.getElementById('character-avatar-file');
+  const avatarValue = document.getElementById('character-avatar-value');
+  avatarInput.addEventListener('change', () => {
+    const file = avatarInput.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { avatarInput.value = ''; toast(t('library.avatarTooLarge'), 'error'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      avatarValue.value = String(reader.result || '');
+      document.getElementById('character-avatar-preview').innerHTML = `<div class="character-editor-avatar"><img src="${escapeHtml(avatarValue.value)}" alt=""></div>`;
+    };
+    reader.readAsDataURL(file);
+  });
+  document.getElementById('character-avatar-remove').addEventListener('click', () => {
+    avatarValue.value = '';
+    document.getElementById('character-avatar-preview').innerHTML = `<div class="character-editor-avatar character-avatar-fallback">${escapeHtml((character.name || '?').slice(0, 1).toUpperCase())}</div>`;
+  });
+
   document.getElementById('character-form').addEventListener('submit', event => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const name = String(data.get('name') || '').trim();
     if (!name) return toast(t('character.required'), 'error');
-    const characters = getCharacters();
-    const record = {
-      id: existing?.id || uid(),
+
+    const characters = getNormalizedCharacters();
+    const record = normalizeCharacter({
+      ...character,
+      id: existing?.id || character.id || uid(),
       name,
+      avatar: String(data.get('avatar') || ''),
       description: String(data.get('description') || '').trim(),
+      personality: String(data.get('personality') || '').trim(),
       scenario: String(data.get('scenario') || '').trim(),
       firstMessage: String(data.get('firstMessage') || '').trim(),
+      alternateGreetings: String(data.get('alternateGreetings') || '').split(/\n\s*---\s*\n/g).map(v => v.trim()).filter(Boolean),
+      exampleMessages: String(data.get('exampleMessages') || '').trim(),
       systemPrompt: String(data.get('systemPrompt') || '').trim(),
+      postHistoryInstructions: String(data.get('postHistoryInstructions') || '').trim(),
+      creator: String(data.get('creator') || '').trim(),
+      characterVersion: String(data.get('characterVersion') || '').trim(),
+      creatorNotes: String(data.get('creatorNotes') || '').trim(),
+      tags: String(data.get('tags') || '').split(',').map(v => v.trim()).filter(Boolean),
+      favorite: data.get('favorite') === 'on',
+      createdAt: existing?.createdAt || Date.now(),
       updatedAt: Date.now(),
-    };
-    if (existing) characters[characters.findIndex(item => item.id === existing.id)] = record;
-    else characters.push(record);
+    });
+
+    const index = characters.findIndex(item => item.id === record.id);
+    if (index >= 0) characters[index] = record; else characters.push(record);
     saveCharacters(characters);
     close();
-    renderLibrary('characters');
+    renderCharacterLibrary();
   });
+
+  document.getElementById('character-duplicate')?.addEventListener('click', () => { close(); duplicateCharacter(existing.id); });
+  document.getElementById('character-export')?.addEventListener('click', () => exportCharacterJson(existing.id));
+  document.getElementById('character-delete')?.addEventListener('click', () => {
+    if (!confirm(t('character.deleteConfirm'))) return;
+    close(); deleteCharacter(existing.id, true);
+  });
+
   overlay.querySelector('input[name=name]').focus();
 }
 
-function deleteCharacter(id) {
-  const character = getCharacters().find(item => item.id === id);
-  if (!character || !confirm(`${t('library.delete')} “${character.name}”?`)) return;
-  saveCharacters(getCharacters().filter(item => item.id !== id));
+function toggleCharacterFavorite(id) {
+  const characters = getNormalizedCharacters();
+  const index = characters.findIndex(character => character.id === id);
+  if (index < 0) return;
+  characters[index].favorite = !characters[index].favorite;
+  characters[index].updatedAt = Date.now();
+  saveCharacters(characters);
+  renderCharacterLibrary();
+}
+
+function duplicateCharacter(id) {
+  const source = getNormalizedCharacters().find(character => character.id === id);
+  if (!source) return;
+  const characters = getNormalizedCharacters();
+  characters.push(normalizeCharacter({ ...source, id: uid(), name: `${source.name} Copy`, favorite: false, createdAt: Date.now(), updatedAt: Date.now() }));
+  saveCharacters(characters);
+  renderCharacterLibrary();
+}
+
+function exportCharacterJson(id) {
+  const character = getNormalizedCharacters().find(item => item.id === id);
+  if (!character) return;
+  const payload = {
+    spec: 'chara_card_v3',
+    spec_version: '3.0',
+    data: {
+      name: character.name,
+      description: character.description,
+      personality: character.personality,
+      scenario: character.scenario,
+      first_mes: character.firstMessage,
+      mes_example: character.exampleMessages,
+      system_prompt: character.systemPrompt,
+      post_history_instructions: character.postHistoryInstructions,
+      alternate_greetings: character.alternateGreetings,
+      tags: character.tags,
+      creator: character.creator,
+      character_version: character.characterVersion,
+      creator_notes: character.creatorNotes,
+      extensions: {},
+      group_only_greetings: [],
+      creation_date: Math.floor((character.createdAt || Date.now()) / 1000),
+      modification_date: Math.floor(Date.now() / 1000),
+    }
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${character.name.replace(/[^\w.-]+/g, '_') || 'character'}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  toast(t('library.exported'), 'success');
+}
+
+async function importCharacterJson(event) {
+  const input = event.currentTarget;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith('.json')) return toast(t('library.importUnsupported'), 'error');
+
+  try {
+    const payload = JSON.parse(await file.text());
+    const data = payload?.data && typeof payload.data === 'object' ? payload.data : payload;
+    if (!data || typeof data !== 'object' || !String(data.name || '').trim()) throw new Error('invalid card');
+    const character = normalizeCharacter({
+      name: data.name,
+      description: data.description,
+      personality: data.personality,
+      scenario: data.scenario,
+      firstMessage: data.first_mes ?? data.firstMessage,
+      alternateGreetings: data.alternate_greetings ?? data.alternateGreetings,
+      exampleMessages: data.mes_example ?? data.exampleMessages,
+      systemPrompt: data.system_prompt ?? data.systemPrompt,
+      postHistoryInstructions: data.post_history_instructions ?? data.postHistoryInstructions,
+      creator: data.creator,
+      characterVersion: data.character_version ?? data.characterVersion,
+      creatorNotes: data.creator_notes ?? data.creatorNotes,
+      tags: data.tags,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    const characters = getNormalizedCharacters();
+    characters.push(character);
+    saveCharacters(characters);
+    toast(t('library.imported'), 'success');
+    renderCharacterLibrary();
+  } catch (error) {
+    console.error(error);
+    toast(t('library.importInvalid'), 'error');
+  }
+}
+
+function deleteCharacter(id, confirmed = false) {
+  const character = getNormalizedCharacters().find(item => item.id === id);
+  if (!character) return;
+  if (!confirmed && !confirm(t('character.deleteConfirm'))) return;
+  saveCharacters(getNormalizedCharacters().filter(item => item.id !== id));
   const conversations = getConversations();
   delete conversations[id];
   saveConversations(conversations);
@@ -540,8 +1011,9 @@ function deleteCharacter(id) {
     state.activeCharacterId = null;
     localStorage.removeItem(STORAGE.activeCharacter);
   }
-  renderLibrary('characters');
+  renderCharacterLibrary();
 }
+
 
 /* ===================================================================
    Configuration

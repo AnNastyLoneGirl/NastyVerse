@@ -1,11 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod app_backend;
 mod bootstrap;
 mod installer;
 mod launcher_updater;
 mod protocol;
 
+use serde::Serialize;
 use std::process::Command;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -249,6 +249,22 @@ async fn launch_app(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Serialize)]
+struct ModelStatus {
+    loaded: bool,
+    backend: Option<String>,
+    model_name: Option<String>,
+}
+
+#[tauri::command]
+fn get_model_status() -> ModelStatus {
+    ModelStatus {
+        loaded: false,
+        backend: None,
+        model_name: None,
+    }
+}
+
 fn main() {
     match bootstrap::handle_early_startup() {
         Ok(bootstrap::StartupAction::Continue) => {}
@@ -277,11 +293,7 @@ fn main() {
             check_installation,
             sync_installation,
             launch_app,
-            app_backend::load_backend_config,
-            app_backend::save_backend_config,
-            app_backend::test_backend_connection,
-            app_backend::get_model_status,
-            app_backend::chat_completion
+            get_model_status
         ])
         .setup(|app| {
             let _ = app.get_webview_window("main");

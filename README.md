@@ -85,25 +85,6 @@ No installer is generated.
 For an official public release, push a matching `launcher-vX.Y.Z` tag. GitHub Actions builds the raw executable, signs it using the repository secrets, and publishes the EXE plus `.sig` to GitHub Releases.
 
 
-## Application base 0.1.9
-
-The native host now exposes the minimum backend commands required by the application runtime:
-
-- persist/load backend type, URL, selected model and optional bearer API key;
-- test KoboldCpp, llama.cpp server, text-generation-webui, Ollama and generic OpenAI-compatible endpoints;
-- report the real model/backend status in the application titlebar;
-- perform a non-streaming chat completion through the configured backend.
-
-The replaceable `app/src/**` frontend now provides a functional first product base:
-
-- character creation/edit/delete stored locally in the WebView profile (temporary until SQLite/Character Card storage);
-- persistent per-character conversations;
-- working chat composer and complete-response generation;
-- functional Configuration → Models, Model parameters, General and User Interface sections;
-- English/French application UI base.
-
-Streaming, Character Card import (V1/V2/V3/CHARX), Lorebooks, Personas and SQLite remain later passes.
-
 ## Remote Home carousel
 
 The Home hero/carousel is driven by `launcher-content/home.json` on GitHub `main`. Updating that JSON (or images referenced by it) does **not** require rebuilding the launcher. The launcher uses the last successful JSON as a local cache and falls back to a bundled default when GitHub is unavailable.
@@ -135,3 +116,19 @@ Localized text lives in `launcher-content/i18n/<locale>.json` using nested keys 
 `slide.<key>.description`, `slide.<key>.button`, and `news.<key>.title|summary|description`.
 Catalog translations keep their current format for now.
 
+
+
+## Versioning
+
+Launcher/native host and application payload use independent versions.
+
+- Launcher/native host: **0.1.8**
+- Application payload: **0.1.0** (`app/src/app-version.json`)
+
+Changes limited to `app/src/**` advance only the application version and are synchronized from GitHub `main`; they do not require a new launcher Release. The application must remain tolerant of native commands that may be unavailable on older launchers. Native launcher changes use their own release cycle.
+
+## Application base 0.1.0
+
+The replaceable `app/src/**` frontend currently provides the Character Library base: search/sort/filter/favorites/tags, rich character cards, avatar editing, personality/scenario/greetings/example messages, prompt overrides, creator metadata, duplication, JSON import/export, and local conversation statistics. Characters and conversations are still persisted locally in the WebView profile for this first application version.
+
+Backend-native features remain optional from the application point of view: if a launcher does not expose a newer native command, the application must keep loading and only the dependent capability may be unavailable.

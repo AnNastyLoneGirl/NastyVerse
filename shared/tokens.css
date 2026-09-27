@@ -5,6 +5,7 @@
   --violet:#8b2fe0; --violet-2:#b24bff; --magenta:#e86eff;
   --text:#f2ecfb; --text-dim:#a996c9; --text-faint:#6f5c94;
   --danger:#e14b6b; --ok:#3fbf9e;
+  --cover-overlay:rgba(10,7,19,.62); --cover-shadow:rgba(0,0,0,.16); --cover-shadow-hover:rgba(0,0,0,.24);
   --radius:10px;
   --titlebar-h:38px; --navbar-h:44px;
 }

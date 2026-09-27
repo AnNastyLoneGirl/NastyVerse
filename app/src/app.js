@@ -1161,6 +1161,38 @@ function renderCharacterLibrary() {
   bindCharacterCardActions(root);
 }
 
+function renderLibraryCoverCard({ id, name, image = '', kind, fallback = '' }) {
+  const displayName = String(name || '').trim() || '?';
+  const fallbackLabel = String(fallback || displayName.slice(0, 1) || '?').trim().slice(0, 2).toUpperCase();
+  const media = image
+    ? `<img class="library-cover-image" src="${escapeHtml(image)}" alt="">`
+    : `<div class="library-cover-fallback" aria-hidden="true">${escapeHtml(fallbackLabel)}</div>`;
+
+  return `<button
+    type="button"
+    class="library-cover-card"
+    data-library-card
+    data-library-kind="${escapeHtml(kind)}"
+    data-library-id="${escapeHtml(id)}"
+    aria-label="${escapeHtml(displayName)}">
+      <span class="library-cover-media">${media}</span>
+      <span class="library-cover-name">${escapeHtml(displayName)}</span>
+    </button>`;
+}
+
+function renderLibraryCoverGrid(items) {
+  return `<div class="library-cover-grid">${items.map(renderLibraryCoverCard).join('')}</div>`;
+}
+
+function bindLibraryCoverCards(root, handlers = {}) {
+  root.querySelectorAll('[data-library-card]').forEach(card => {
+    card.addEventListener('click', () => {
+      const handler = handlers[card.dataset.libraryKind];
+      if (typeof handler === 'function') handler(card.dataset.libraryId);
+    });
+  });
+}
+
 function renderCharacterCards(characters, totalCount) {
   if (!characters.length) {
     const empty = totalCount === 0;
@@ -1171,51 +1203,22 @@ function renderCharacterCards(characters, totalCount) {
     </div>`;
   }
 
-  return `<div class="character-grid character-grid-rich">${characters.map(character => {
-    const tags = (character.tags || []).slice(0, 3);
-    return `<article class="character-card character-card-rich">
-      <div class="character-card-visual">
-        ${characterAvatar(character, 'character-card-avatar-rich')}
-        <button class="favorite-button ${character.favorite ? 'active' : ''}" data-favorite="${character.id}" title="${escapeHtml(t(character.favorite ? 'library.unfavorite' : 'library.favorite'))}">★</button>
-        <div class="character-card-overlay"><button class="btn btn-primary btn-small" data-chat="${character.id}">${escapeHtml(t('library.openChat'))}</button></div>
-      </div>
-      <div class="character-card-info">
-        <div class="character-card-titleline">
-          <div><h3>${escapeHtml(character.name)}</h3>${character.creator ? `<span class="character-creator">${escapeHtml(t('library.by'))} ${escapeHtml(character.creator)}</span>` : ''}</div>
-          <button class="character-more" data-edit="${character.id}">•••</button>
-        </div>
-        <p class="character-summary">${escapeHtml(character.description || character.personality || t('library.noDescription'))}</p>
-        <div class="character-tags">${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}${(character.tags || []).length > 3 ? `<span>+${character.tags.length - 3}</span>` : ''}</div>
-        <div class="character-card-stats">
-          <span><strong>${characterChatCount(character.id)}</strong> ${escapeHtml(t('library.chats'))}</span>
-          <span><strong>${characterApproxTokens(character)}</strong> ${escapeHtml(t('library.tokens'))}</span>
-        </div>
-        <div class="character-card-footer">
-          <span>${escapeHtml(t('library.updated'))} ${escapeHtml(characterDate(character.updatedAt))}</span>
-          <div>
-            <button class="card-mini-action" data-duplicate="${character.id}" title="${escapeHtml(t('library.duplicate'))}">⧉</button>
-            <button class="card-mini-action" data-export="${character.id}" title="${escapeHtml(t('library.export'))}">⇩</button>
-            <button class="card-mini-action" data-edit="${character.id}" title="${escapeHtml(t('library.edit'))}">✎</button>
-          </div>
-        </div>
-      </div>
-    </article>`;
-  }).join('')}</div>`;
+  const cards = characters.map(character => ({
+    id: character.id,
+    name: character.name,
+    image: resolvedAvatarSource(character),
+    kind: 'character',
+    fallback: (character.name || '?').slice(0, 1),
+  }));
+
+  return renderLibraryCoverGrid(cards);
 }
 
 function bindCharacterCardActions(root) {
   root.querySelector('[data-empty-create]')?.addEventListener('click', () => openCharacterEditor());
-  root.querySelectorAll('[data-chat]').forEach(button => button.addEventListener('click', () => {
-    state.activeCharacterId = button.dataset.chat;
-    localStorage.setItem(STORAGE.activeCharacter, state.activeCharacterId);
-    const character = activeCharacter();
-    if (character) ensureConversation(character);
-    goTo('chat');
-  }));
-  root.querySelectorAll('[data-edit]').forEach(button => button.addEventListener('click', () => openCharacterEditor(button.dataset.edit)));
-  root.querySelectorAll('[data-favorite]').forEach(button => button.addEventListener('click', () => toggleCharacterFavorite(button.dataset.favorite)));
-  root.querySelectorAll('[data-duplicate]').forEach(button => button.addEventListener('click', () => duplicateCharacter(button.dataset.duplicate)));
-  root.querySelectorAll('[data-export]').forEach(button => button.addEventListener('click', () => exportCharacterJson(button.dataset.export)));
+  bindLibraryCoverCards(root, {
+    character: id => openCharacterEditor(id),
+  });
 }
 
 function openCharacterEditor(characterId = null) {

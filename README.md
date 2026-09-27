@@ -104,3 +104,15 @@ Each entry supports `title`, `category`, `image`, `date`, `summary_fr`, `summary
 - Home cards open Changelog for `Update` entries and News for every other category.
 
 Relative image paths resolve under `launcher-content/`, e.g. `"image": "news/example.webp"` maps to `launcher-content/news/example.webp`.
+
+## Launcher content & translations
+
+The launcher reads its editable Home/News content from `launcher-content/` on the GitHub `main` branch. `home.json` and `news.json` contain structure and translation keys only. Visible strings live in `launcher-content/i18n/<locale>.json`. Locale files are discovered dynamically, so adding a new translation file does not require rebuilding the launcher. English (`en-en`) is the fallback language.
+
+## Launcher remote content
+
+`launcher-content/home.json` and `launcher-content/news.json` only describe structure.
+Localized text lives in `launcher-content/i18n/<locale>.json` using nested keys such as
+`slide.<key>.description`, `slide.<key>.button`, and `news.<key>.title|summary|description`.
+Catalog translations keep their current format for now.
+

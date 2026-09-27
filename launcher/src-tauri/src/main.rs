@@ -13,6 +13,10 @@ const LAUNCHER_HOME_CONTENT_URL: &str =
     "https://raw.githubusercontent.com/AnNastyLoneGirl/NastyVerse/main/launcher-content/home.json";
 const LAUNCHER_NEWS_CONTENT_URL: &str =
     "https://raw.githubusercontent.com/AnNastyLoneGirl/NastyVerse/main/launcher-content/news.json";
+const LAUNCHER_I18N_CONTENTS_URL: &str =
+    "https://api.github.com/repos/AnNastyLoneGirl/NastyVerse/contents/launcher-content/i18n?ref=main";
+const LAUNCHER_I18N_RAW_BASE_URL: &str =
+    "https://raw.githubusercontent.com/AnNastyLoneGirl/NastyVerse/main/launcher-content/i18n/";
 
 #[tauri::command]
 fn window_minimize(window: tauri::WebviewWindow) -> Result<(), String> {
@@ -80,6 +84,90 @@ async fn get_launcher_news_content() -> Result<serde_json::Value, String> {
         .json::<serde_json::Value>()
         .await
         .map_err(|error| format!("launcher-content/news.json is not valid JSON: {error}"))
+}
+
+fn embedded_launcher_translation(locale: &str) -> Option<serde_json::Value> {
+    let raw = match locale {
+        "en-en" => include_str!("../../../launcher-content/i18n/en-en.json"),
+        "fr-fr" => include_str!("../../../launcher-content/i18n/fr-fr.json"),
+        _ => return None,
+    };
+    serde_json::from_str(raw).ok()
+}
+
+fn valid_locale_name(locale: &str) -> bool {
+    !locale.is_empty()
+        && locale.len() <= 32
+        && locale
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+}
+
+#[tauri::command]
+async fn get_launcher_locales() -> Result<Vec<String>, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("NastyVerse-Launcher")
+        .build()
+        .map_err(|error| format!("Unable to create the locale discovery client: {error}"))?;
+    let response = client
+        .get(LAUNCHER_I18N_CONTENTS_URL)
+        .send()
+        .await
+        .map_err(|error| format!("Unable to list launcher translations: {error}"))?
+        .error_for_status()
+        .map_err(|error| format!("GitHub returned an error while listing launcher translations: {error}"))?;
+    let payload = response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| format!("GitHub returned invalid translation metadata: {error}"))?;
+    let mut locales = payload
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.get("name").and_then(|value| value.as_str()))
+        .filter_map(|name| name.strip_suffix(".json"))
+        .map(|locale| locale.to_ascii_lowercase())
+        .filter(|locale| valid_locale_name(locale))
+        .collect::<Vec<_>>();
+    locales.sort();
+    locales.dedup();
+    if !locales.iter().any(|locale| locale == "en-en") {
+        locales.insert(0, "en-en".into());
+    }
+    Ok(locales)
+}
+
+#[tauri::command]
+async fn get_launcher_translation(locale: String) -> Result<serde_json::Value, String> {
+    let locale = locale.trim().to_ascii_lowercase();
+    if !valid_locale_name(&locale) {
+        return Err("Invalid launcher locale name.".into());
+    }
+    let url = format!("{LAUNCHER_I18N_RAW_BASE_URL}{locale}.json");
+    let client = reqwest::Client::builder()
+        .user_agent("NastyVerse-Launcher")
+        .build()
+        .map_err(|error| format!("Unable to create the translation client: {error}"))?;
+    match client.get(&url).send().await {
+        Ok(response) => match response.error_for_status() {
+            Ok(response) => return response
+                .json::<serde_json::Value>()
+                .await
+                .map_err(|error| format!("{locale}.json is not valid JSON: {error}")),
+            Err(error) => {
+                if let Some(fallback) = embedded_launcher_translation(&locale) {
+                    return Ok(fallback);
+                }
+                return Err(format!("GitHub returned an error for {locale}.json: {error}"));
+            }
+        },
+        Err(error) => {
+            if let Some(fallback) = embedded_launcher_translation(&locale) {
+                return Ok(fallback);
+            }
+            Err(format!("Unable to download launcher translation {locale}.json: {error}"))
+        }
+    }
 }
 
 #[tauri::command]
@@ -199,6 +287,8 @@ fn main() {
             launcher_updater::install_launcher_update,
             get_launcher_home_content,
             get_launcher_news_content,
+            get_launcher_locales,
+            get_launcher_translation,
             open_external_url,
             check_installation,
             sync_installation,

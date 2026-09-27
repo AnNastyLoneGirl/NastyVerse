@@ -19,6 +19,8 @@ const invoke = TAURI?.core?.invoke
       if (cmd === 'sync_installation') {
         return { state: 'launch', message: 'Browser preview — updater disabled.', files_to_download: 0, files_to_remove: 0, bytes_to_download: 0, remote_revision: null, installed: true, offline: true };
       }
+      if (cmd === 'get_launcher_locales') return ['en-en', 'fr-fr'];
+      if (cmd === 'get_launcher_translation') return null;
     };
 const listen = TAURI?.event?.listen ? TAURI.event.listen : async () => () => {};
 
@@ -37,148 +39,186 @@ chrome.addEventListener('mousedown', event => {
 });
 
 /* ===================================================================
-   i18n — English is the default; add a language by adding a key below.
-   A missing key in a non-English language falls back to English.
+   Remote i18n
+   Translation files live in `launcher-content/i18n/*.json` on GitHub main.
+   The launcher discovers locale files remotely, caches them, and falls back
+   to English when a key is missing. Legacy `en`/`fr` preferences are migrated
+   to `en-en`/`fr-fr` automatically.
 =================================================================== */
-const TRANSLATIONS = {
-  en: {
-    "launcher": "Launcher", "launch.cta": "Launch",
-    "nav.home": "Home", "nav.news": "News", "nav.catalog": "Catalog", "nav.changelog": "Changelog", "nav.options": "Options",
-    "hero.eyebrow": "Your world. Your rules.",
-    "hero.body": "NastyVerse is a universe of AI characters you can create, customize, and grow. Choose their world, shape their mind, and start your own story.",
-    "hero.cta": "Discover",
-    "home.news": "Latest news", "home.seeall": "See all →",
-    "home.catalog": "Latest from the catalog", "home.opencatalog": "Open catalog →",
-    "update.title": "Update available", "update.body": "One or more NastyVerse components changed on GitHub.", "update.cta": "Update now",
-    "launcher.update.checking.title": "Checking the launcher…",
-    "launcher.update.checking.detail": "Checking GitHub Releases for a newer signed portable launcher.",
-    "launcher.update.available.title": "Launcher update available",
-    "launcher.update.available.detail": "Launcher {current} → {version}. Update the launcher before checking the application files.",
-    "launcher.update.button": "Update launcher",
-    "launcher.update.downloading": "Downloading launcher update — {percent}%",
-    "launcher.update.downloading.unknown": "Downloading launcher update…",
-    "launcher.update.installing": "Applying launcher update…",
-    "launcher.update.installing.detail": "The launcher will replace itself in the background, then reopen automatically.",
-    "news.title": "News", "news.empty": "No news available yet.", "catalog.title": "Catalog", "changelog.title": "Changelog", "changelog.empty": "No updates available yet.",
-    "options.title": "Options",
-    "options.lang.title": "Language", "options.lang.hint": "Interface language. More translations can be added at any time.",
-    "options.accent.title": "Accent color", "options.accent.hint": "Used for primary actions and other important interface elements.",
-    "options.music.title": "Launcher music", "options.music.hint": "Volume of the launcher theme. Set it to 0% to mute it.",
-    "options.models.note": "Connecting local backends (KoboldCpp, llama.cpp server, text-generation-webui, Ollama…) happens in the main app, under Configuration ▸ Models — not here.",
-    "install.checking.title": "Checking NastyVerse…",
-    "install.checking.detail": "Comparing local files with the current GitHub main branch.",
-    "install.checking.button": "Checking…",
-    "install.install.title": "NastyVerse is ready to install",
-    "install.install.detail": "{files} file(s) • {size} to download",
-    "install.install.button": "Install",
-    "install.update.title": "Update available",
-    "install.update.detail": "{files} changed file(s) • {size}{removal}",
-    "install.update.removal": " • {files} obsolete file(s) removed",
-    "install.update.button": "Update",
-    "install.ready.title": "NastyVerse is up to date",
-    "install.ready.detail": "All application files match the current GitHub main branch.",
-    "install.offline.title": "Installed — verification unavailable",
-    "install.error.title": "Verification failed",
-    "install.error.detail": "Unable to verify NastyVerse.",
-    "install.retry": "Retry",
-    "install.installing": "Installing…",
-    "install.updating": "Updating…",
-    "install.installing.title": "Installing NastyVerse…",
-    "install.updating.title": "Updating NastyVerse…",
-    "install.preparing": "Preparing the required files…",
-    "install.launch": "Launch →",
-    "install.launching": "Launching…",
-    "install.downloading": "Downloading {path} — {percent}%",
-    "install.downloading.generic": "Downloading files — {percent}%",
-    "install.applying": "Applying verified files…",
-    "install.complete": "Final integrity check complete."
-  },
-  fr: {
-    "launcher": "Launcher", "launch.cta": "Lancer",
-    "nav.home": "Accueil", "nav.news": "Actualités", "nav.catalog": "Catalogue", "nav.changelog": "Changelog", "nav.options": "Options",
-    "hero.eyebrow": "Votre univers. Vos règles.",
-    "hero.body": "NastyVerse est un univers de personnages IA que vous pouvez créer, personnaliser et faire évoluer. Choisissez leur monde, façonnez leur esprit, commencez votre histoire.",
-    "hero.cta": "Découvrir",
-    "home.news": "Dernières actualités", "home.seeall": "Voir tout →", "home.catalog": "Derniers contenus du catalogue",
-    "update.title": "Mise à jour disponible", "update.cta": "Mettre à jour",
-    "launcher.update.checking.title": "Vérification du launcher…",
-    "launcher.update.checking.detail": "Recherche d’une version portable plus récente et signée sur GitHub Releases.",
-    "launcher.update.available.title": "Mise à jour du launcher disponible",
-    "launcher.update.available.detail": "Launcher {current} → {version}. Le launcher doit être mis à jour avant de vérifier les fichiers de l’application.",
-    "launcher.update.button": "Mettre à jour le launcher",
-    "launcher.update.downloading": "Téléchargement de la mise à jour du launcher — {percent}%",
-    "launcher.update.downloading.unknown": "Téléchargement de la mise à jour du launcher…",
-    "launcher.update.installing": "Application de la mise à jour du launcher…",
-    "launcher.update.installing.detail": "Le launcher va se remplacer en arrière-plan puis se rouvrir automatiquement.",
-    "news.title": "Actualités", "news.empty": "Aucune actualité disponible pour le moment.", "catalog.title": "Catalogue", "changelog.title": "Changelog", "changelog.empty": "Aucune mise à jour disponible pour le moment.", "options.title": "Options",
-    "options.lang.title": "Langue", "options.lang.hint": "Langue de l’interface. D’autres traductions pourront être ajoutées à tout moment.",
-    "options.accent.title": "Couleur d’accent", "options.accent.hint": "Utilisée pour les actions principales et les éléments importants de l’interface.",
-    "options.music.title": "Musique du launcher", "options.music.hint": "Volume du thème du launcher. Réglez-le à 0 % pour couper le son.",
-    "options.models.note": "La connexion aux backends locaux (KoboldCpp, llama.cpp server, text-generation-webui, Ollama…) se fait dans l’application principale, Configuration ▸ Models — pas ici.",
-    "install.checking.title": "Vérification de NastyVerse…",
-    "install.checking.detail": "Comparaison des fichiers locaux avec la branche GitHub main actuelle.",
-    "install.checking.button": "Vérification…",
-    "install.install.title": "NastyVerse est prêt à être installé",
-    "install.install.detail": "{files} fichier(s) • {size} à télécharger",
-    "install.install.button": "Installer",
-    "install.update.title": "Mise à jour disponible",
-    "install.update.detail": "{files} fichier(s) modifié(s) • {size}{removal}",
-    "install.update.removal": " • {files} fichier(s) obsolète(s) supprimé(s)",
-    "install.update.button": "Mettre à jour",
-    "install.ready.title": "NastyVerse est à jour",
-    "install.ready.detail": "Tous les fichiers correspondent à la branche GitHub main actuelle.",
-    "install.offline.title": "Installé — vérification indisponible",
-    "install.error.title": "Échec de la vérification",
-    "install.error.detail": "Impossible de vérifier NastyVerse.",
-    "install.retry": "Réessayer",
-    "install.installing": "Installation…",
-    "install.updating": "Mise à jour…",
-    "install.installing.title": "Installation de NastyVerse…",
-    "install.updating.title": "Mise à jour de NastyVerse…",
-    "install.preparing": "Préparation des fichiers nécessaires…",
-    "install.launch": "Lancer →",
-    "install.launching": "Lancement…",
-    "install.downloading": "Téléchargement de {path} — {percent}%",
-    "install.downloading.generic": "Téléchargement des fichiers — {percent}%",
-    "install.applying": "Application des fichiers vérifiés…",
-    "install.complete": "Vérification finale terminée."
-  }
-};
-function t(key, lang) {
-  const dict = TRANSLATIONS[lang] || TRANSLATIONS.en;
-  return dict[key] || TRANSLATIONS.en[key] || key;
+const DEFAULT_LOCALE = 'en-en';
+const I18N_CACHE_PREFIX = 'nv_launcher_i18n_v1:';
+const LOCALES_CACHE_KEY = 'nv_launcher_locales_v1';
+const BUILTIN_EN = {"_meta":{"locale":"en-en","name":"English"},"launcher":"Launcher","launch.cta":"Launch","nav.home":"Home","nav.news":"News","nav.catalog":"Catalog","nav.changelog":"Changelog","nav.options":"Options","home.news":"Latest news","home.seeall":"See all →","home.catalog":"Latest from the catalog","home.opencatalog":"Open catalog →","carousel.slide":"Slide {number}","launcher.update.checking.title":"Checking the launcher…","launcher.update.checking.detail":"Checking GitHub Releases for a newer signed portable launcher.","launcher.update.available.title":"Launcher update available","launcher.update.available.detail":"Launcher {current} → {version}. Update the launcher before checking the application files.","launcher.update.button":"Update launcher","launcher.update.downloading":"Downloading launcher update — {percent}%","launcher.update.downloading.unknown":"Downloading launcher update…","launcher.update.installing":"Applying launcher update…","launcher.update.installing.detail":"The launcher will replace itself in the background, then reopen automatically.","news.title":"News","news.empty":"No news available yet.","catalog.title":"Catalog","changelog.title":"Changelog","changelog.empty":"No updates available yet.","options.title":"Options","options.lang.title":"Language","options.lang.hint":"Translations are loaded from launcher-content/i18n. New language files are discovered automatically.","options.accent.title":"Accent color","options.accent.hint":"Used for primary actions and other important interface elements.","options.music.title":"Launcher music","options.music.hint":"Volume of the launcher theme. Set it to 0% to mute it.","options.models.note":"Connecting local backends (KoboldCpp, llama.cpp server, text-generation-webui, Ollama…) happens in the main app, under Configuration ▸ Models — not here.","install.checking.title":"Checking NastyVerse…","install.checking.detail":"Comparing local files with the current GitHub main branch.","install.checking.button":"Checking…","install.install.title":"NastyVerse is ready to install","install.install.detail":"{files} file(s) • {size} to download","install.install.button":"Install","install.update.title":"Update available","install.update.detail":"{files} changed file(s) • {size}{removal}","install.update.removal":" • {files} obsolete file(s) removed","install.update.button":"Update","install.ready.title":"NastyVerse is up to date","install.ready.detail":"All application files match the current GitHub main branch.","install.offline.title":"Installed — verification unavailable","install.error.title":"Verification failed","install.error.detail":"Unable to verify NastyVerse.","install.retry":"Retry","install.installing":"Installing…","install.updating":"Updating…","install.installing.title":"Installing NastyVerse…","install.updating.title":"Updating NastyVerse…","install.preparing":"Preparing the required files…","install.launch":"Launch →","install.launching":"Launching…","install.downloading":"Downloading {path} — {percent}%","install.downloading.generic":"Downloading files — {percent}%","install.applying":"Applying verified files…","install.complete":"Final integrity check complete.","category.update":"Update","category.news":"News","category.announcement":"Announcement","category.event":"Event","category.content":"Content","category.character":"Character","category.lorebook":"Lorebook","category.persona":"Persona","catalog.jade.title":"Jade, Your New Roommate","catalog.jade.description":"A complice slice-of-life with conversations that evolve.","catalog.astra.title":"Astra, Night Operative","catalog.astra.description":"A calm, sharp cyberpunk guide for late-night talks.","catalog.neon.title":"Neon District Archives","catalog.neon.description":"Notes on a high-tech world, its factions and secrets.","catalog.midnight.title":"Midnight Creator","catalog.midnight.description":"A refined persona for stylish creative roleplay.","catalog.rook.title":"Rook, Old Friend","catalog.rook.description":"Warm, dry humor, a decade of shared history.","catalog.vex.title":"Vex, Arena Champion","catalog.vex.description":"Competitive, sharp-tongued, loyal once earned.","slide":{"slogan":"Your universe. Your rules.","overview":{"description":"Welcome to NastyVerse. Create your universe, bring your characters to life, and build fully personalized chat experiences. Everything starts here.","button":""},"creator":{"description":"Build your universe. Create your characters, define your Persona, and expand their world with Lorebooks. Every element shapes the personality, context, and story of your conversations.","button":"Open catalog"},"models":{"description":"Choose the intelligence behind your universe. Connect NastyVerse to a locally hosted model through KoboldCpp, llama.cpp, Ollama, or text-generation-webui, or use a remote service through a compatible API.","button":"Configure models"},"portal":{"description":"Your character is ready, their universe is defined, and your model is connected. All that remains is to open the portal: start the conversation and let your story unfold.","button":"Start"}},"news":{"launcher-017":{"title":"NastyVerse Launcher 0.1.7","summary":"Launcher content and translations now use external JSON files.","description":"Home, News, Changelog, and the launcher interface now share a translation system based on language files in launcher-content/i18n."},"welcome":{"title":"Welcome to NastyVerse","summary":"Discover how NastyVerse organizes your AI character universe.","description":"NastyVerse brings characters, Personas, Lorebooks, models, and conversations together in a dedicated desktop experience."}}};
+const translations = { [DEFAULT_LOCALE]: BUILTIN_EN };
+const translationMeta = { [DEFAULT_LOCALE]: BUILTIN_EN._meta || { locale: DEFAULT_LOCALE, name: 'English' } };
+let availableLocales = ['en-en', 'fr-fr'];
+
+function normalizeLocale(value) {
+  const locale = String(value || '').trim().toLowerCase().replaceAll('_', '-');
+  if (locale === 'en') return 'en-en';
+  if (locale === 'fr') return 'fr-fr';
+  return /^[a-z0-9-]+$/.test(locale) ? locale : DEFAULT_LOCALE;
 }
+
+let currentLang = DEFAULT_LOCALE;
+try { currentLang = normalizeLocale(localStorage.getItem('nv_lang') || DEFAULT_LOCALE); } catch (error) {}
+
+function cloneTranslationTree(value) {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const cloned = {};
+  Object.entries(value).forEach(([key, child]) => {
+    const normalized = cloneTranslationTree(child);
+    if (normalized !== undefined) cloned[key] = normalized;
+  });
+  return cloned;
+}
+
+function normalizeTranslation(raw, locale) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const normalized = {};
+  Object.entries(raw).forEach(([key, value]) => {
+    if (key === '_meta') return;
+    const cloned = cloneTranslationTree(value);
+    if (cloned !== undefined) normalized[key] = cloned;
+  });
+  const meta = raw._meta && typeof raw._meta === 'object' ? raw._meta : {};
+  normalized._meta = {
+    locale: normalizeLocale(meta.locale || locale),
+    name: typeof meta.name === 'string' && meta.name.trim() ? meta.name.trim() : normalizeLocale(locale)
+  };
+  return normalized;
+}
+
+function translationValue(dict, key) {
+  if (!dict || typeof dict !== 'object') return null;
+  if (typeof dict[key] === 'string') return dict[key];
+  let value = dict;
+  for (const part of String(key).split('.')) {
+    if (!value || typeof value !== 'object' || !(part in value)) return null;
+    value = value[part];
+  }
+  return typeof value === 'string' ? value : null;
+}
+
+function readCachedTranslation(locale) {
+  try {
+    return normalizeTranslation(JSON.parse(localStorage.getItem(`${I18N_CACHE_PREFIX}${locale}`) || 'null'), locale);
+  } catch (error) {
+    return null;
+  }
+}
+
+function cacheTranslation(locale, dict) {
+  try { localStorage.setItem(`${I18N_CACHE_PREFIX}${locale}`, JSON.stringify(dict)); } catch (error) {}
+}
+
+function installTranslation(locale, raw, persist = true) {
+  const normalized = normalizeTranslation(raw, locale);
+  if (!normalized) return null;
+  const key = normalizeLocale(locale);
+  translations[key] = normalized;
+  translationMeta[key] = normalized._meta;
+  if (persist) cacheTranslation(key, normalized);
+  return normalized;
+}
+
+function t(key, lang = currentLang) {
+  const locale = normalizeLocale(lang);
+  const preferred = translationValue(translations[locale], key);
+  if (preferred) return preferred;
+  const english = translationValue(translations[DEFAULT_LOCALE], key);
+  if (english) return english;
+  const builtin = translationValue(BUILTIN_EN, key);
+  return builtin || key;
+}
+
 function tf(key, vars = {}) {
   return Object.entries(vars).reduce(
     (value, [name, replacement]) => value.replaceAll(`{${name}}`, String(replacement)),
     t(key, currentLang)
   );
 }
-let currentLang = 'en';
-try { currentLang = localStorage.getItem('nv_lang') || 'en'; } catch (e) {}
+
+function contentText(value) {
+  if (typeof value !== 'string' || !value) return '';
+  return t(value, currentLang);
+}
+
+function localeDisplayName(locale) {
+  return translationMeta[locale]?.name || locale;
+}
+
+function readCachedLocales() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(LOCALES_CACHE_KEY) || 'null');
+    if (!Array.isArray(cached)) return null;
+    const locales = cached.map(normalizeLocale).filter(Boolean);
+    return [...new Set(locales)];
+  } catch (error) {
+    return null;
+  }
+}
+
+async function loadTranslation(locale, forceRemote = false) {
+  const key = normalizeLocale(locale);
+  if (!forceRemote && translations[key]) return translations[key];
+  if (!forceRemote) {
+    const cached = readCachedTranslation(key);
+    if (cached) installTranslation(key, cached, false);
+  }
+  try {
+    const remote = await invoke('get_launcher_translation', { locale: key });
+    const installed = installTranslation(key, remote, true);
+    if (installed) return installed;
+  } catch (error) {
+    console.warn(`[i18n] unable to refresh ${key}:`, error);
+  }
+  return translations[key] || (key === DEFAULT_LOCALE ? BUILTIN_EN : null);
+}
+
+async function refreshAvailableLocales() {
+  try {
+    const remote = await invoke('get_launcher_locales');
+    if (Array.isArray(remote) && remote.length) {
+      availableLocales = [...new Set(remote.map(normalizeLocale))].sort();
+      if (!availableLocales.includes(DEFAULT_LOCALE)) availableLocales.unshift(DEFAULT_LOCALE);
+      try { localStorage.setItem(LOCALES_CACHE_KEY, JSON.stringify(availableLocales)); } catch (error) {}
+      return;
+    }
+  } catch (error) {
+    console.warn('[i18n] locale discovery failed:', error);
+  }
+  availableLocales = readCachedLocales() || ['en-en', 'fr-fr'];
+}
+
+async function initializeI18n() {
+  await refreshAvailableLocales();
+  const cachedEnglish = readCachedTranslation(DEFAULT_LOCALE);
+  if (cachedEnglish) installTranslation(DEFAULT_LOCALE, cachedEnglish, false);
+  await loadTranslation(DEFAULT_LOCALE, true);
+  if (!availableLocales.includes(currentLang)) currentLang = DEFAULT_LOCALE;
+  if (currentLang !== DEFAULT_LOCALE) await loadTranslation(currentLang);
+  try { localStorage.setItem('nv_lang', currentLang); } catch (error) {}
+}
+
+async function hydrateLocaleNames(select) {
+  await Promise.all(availableLocales.map(locale => loadTranslation(locale)));
+  if (!select?.isConnected) return;
+  [...select.options].forEach(option => { option.textContent = localeDisplayName(option.value); });
+}
 
 /* ===================================================================
    Remote Home carousel content
-   `launcher-content/home.json` on GitHub main is the source of truth.
-   Priority: remote JSON -> last successful cache -> built-in fallback.
+   `launcher-content/home.json` defines structure only. Visible strings are
+   inferred from slide.<key>.* in the current locale dictionary.
 =================================================================== */
-const HOME_CONTENT_CACHE_KEY = 'nv_launcher_home_content_v1';
+const HOME_CONTENT_CACHE_KEY = 'nv_launcher_home_content_v3';
 const LAUNCHER_CONTENT_BASE_URL = 'https://raw.githubusercontent.com/AnNastyLoneGirl/NastyVerse/main/launcher-content/';
 const HOME_SLIDE_INTERVAL_MS = 8000;
 const DEFAULT_HOME_CONTENT = {
-  slogan_fr: 'Votre univers. Vos règles.',
-  slogan_en: 'Your world. Your rules.',
   slides: [
-    {
-      key: 'welcome',
-      description_en: 'NastyVerse is a universe of AI characters you can create, customize, and grow. Choose their world, shape their mind, and start your own story.',
-      description_fr: 'NastyVerse est un univers de personnages IA que vous pouvez créer, personnaliser et faire évoluer. Choisissez leur monde, façonnez leur esprit, commencez votre histoire.',
-      image: '',
-      button: true,
-      button_text_fr: 'Découvrir',
-      button_text_en: 'Discover',
-      action: 'tab:catalog'
-    }
+    { key: 'overview', image: '', button: false, action: '' }
   ]
 };
 
@@ -189,44 +229,22 @@ function normalizeHomeContent(raw) {
     .filter(slide => slide && typeof slide === 'object' && typeof slide.key === 'string' && slide.key.trim())
     .map(slide => ({
       key: slide.key.trim(),
-      description_en: typeof slide.description_en === 'string' ? slide.description_en : '',
-      description_fr: typeof slide.description_fr === 'string' ? slide.description_fr : '',
       image: typeof slide.image === 'string' ? slide.image.trim() : '',
-      button: slide.button === true,
-      button_text_fr: typeof slide.button_text_fr === 'string' ? slide.button_text_fr : '',
-      button_text_en: typeof slide.button_text_en === 'string' ? slide.button_text_en : '',
-      action: typeof slide.action === 'string' ? slide.action.trim() : ''
+      button: slide.button === true || (slide.button && typeof slide.button === 'object'),
+      action: typeof slide.action === 'string' ? slide.action.trim()
+        : (slide.button && typeof slide.button === 'object' && typeof slide.button.action === 'string' ? slide.button.action.trim() : '')
     }));
-
-  if (!normalizedSlides.length) return null;
-  return {
-    slogan_fr: typeof raw.slogan_fr === 'string' ? raw.slogan_fr : DEFAULT_HOME_CONTENT.slogan_fr,
-    slogan_en: typeof raw.slogan_en === 'string' ? raw.slogan_en : DEFAULT_HOME_CONTENT.slogan_en,
-    slides: normalizedSlides
-  };
+  return normalizedSlides.length ? { slides: normalizedSlides } : null;
 }
 
 function readCachedHomeContent() {
-  try {
-    const cached = JSON.parse(localStorage.getItem(HOME_CONTENT_CACHE_KEY) || 'null');
-    return normalizeHomeContent(cached);
-  } catch (error) {
-    return null;
-  }
+  try { return normalizeHomeContent(JSON.parse(localStorage.getItem(HOME_CONTENT_CACHE_KEY) || 'null')); }
+  catch (error) { return null; }
 }
 
 let homeContent = readCachedHomeContent() || DEFAULT_HOME_CONTENT;
 let homeSlideIndex = 0;
 let homeCarouselTimer = null;
-
-function localizedHomeValue(source, field) {
-  const preferred = source?.[`${field}_${currentLang}`];
-  if (typeof preferred === 'string' && preferred) return preferred;
-  const english = source?.[`${field}_en`];
-  if (typeof english === 'string' && english) return english;
-  const french = source?.[`${field}_fr`];
-  return typeof french === 'string' ? french : '';
-}
 
 function resolveHomeImage(image) {
   if (!image) return '';
@@ -255,79 +273,45 @@ function startHomeCarousel() {
   stopHomeCarousel();
   if (homeContent.slides.length <= 1) return;
   homeCarouselTimer = setInterval(() => {
-    const next = (homeSlideIndex + 1) % homeContent.slides.length;
-    applyHomeSlide(next);
+    applyHomeSlide((homeSlideIndex + 1) % homeContent.slides.length);
   }, HOME_SLIDE_INTERVAL_MS);
 }
 
 /* ===================================================================
    Remote launcher news / changelog content
-   `launcher-content/news.json` on GitHub main is the source of truth.
-   One feed powers Home Latest News, Changelog and the News tab.
-   Priority: remote JSON -> last successful cache -> built-in fallback.
+   `launcher-content/news.json` contains only structure. Visible strings are
+   inferred from news.<key>.* in the current locale dictionary.
 =================================================================== */
-const NEWS_CONTENT_CACHE_KEY = 'nv_launcher_news_content_v1';
+const NEWS_CONTENT_CACHE_KEY = 'nv_launcher_news_content_v3';
 const DEFAULT_NEWS_CONTENT = {
   entries: [
-    {
-      title_fr: 'NastyVerse Launcher 0.1.7',
-      title_en: 'NastyVerse Launcher 0.1.7',
-      category: 'Update',
-      image: 'news/launcher-015.webp',
-      date: '2026-09-26',
-      summary_fr: 'Le launcher centralise désormais ses actualités et son changelog dans un fichier JSON externe.',
-      summary_en: 'The launcher now manages its news and changelog from a single external JSON file.',
-      description_fr: 'Le panneau Dernières actualités, le Changelog et le nouvel onglet Actualités utilisent la même source distante.',
-      description_en: 'Latest News, Changelog, and the News tab use the same remote source.'
-    }
+    { key: 'launcher-017', category: 'Update', image: '', date: '2026-09-27' }
   ]
 };
 
 function normalizeNewsContent(raw) {
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.entries)) return null;
   const entries = raw.entries
-    .filter(entry => {
-      if (!entry || typeof entry !== 'object') return false;
-      const titleEn = typeof entry.title_en === 'string' ? entry.title_en.trim() : '';
-      const titleFr = typeof entry.title_fr === 'string' ? entry.title_fr.trim() : '';
-      const legacyTitle = typeof entry.title === 'string' ? entry.title.trim() : '';
-      return Boolean(titleEn || titleFr || legacyTitle);
-    })
-    .map(entry => {
-      const legacyTitle = typeof entry.title === 'string' ? entry.title.trim() : '';
-      return {
-        title_fr: typeof entry.title_fr === 'string' && entry.title_fr.trim() ? entry.title_fr.trim() : legacyTitle,
-        title_en: typeof entry.title_en === 'string' && entry.title_en.trim() ? entry.title_en.trim() : (legacyTitle || (typeof entry.title_fr === 'string' ? entry.title_fr.trim() : '')),
-        category: typeof entry.category === 'string' && entry.category.trim() ? entry.category.trim() : 'News',
-        image: typeof entry.image === 'string' ? entry.image.trim() : '',
-        date: typeof entry.date === 'string' ? entry.date.trim() : '',
-        summary_fr: typeof entry.summary_fr === 'string' ? entry.summary_fr : '',
-        summary_en: typeof entry.summary_en === 'string' ? entry.summary_en : '',
-        description_fr: typeof entry.description_fr === 'string' ? entry.description_fr : '',
-        description_en: typeof entry.description_en === 'string' ? entry.description_en : ''
-      };
-    });
+    .filter(entry => entry && typeof entry === 'object' && typeof entry.key === 'string' && entry.key.trim())
+    .map(entry => ({
+      key: entry.key.trim(),
+      category: typeof entry.category === 'string' && entry.category.trim() ? entry.category.trim() : 'News',
+      image: typeof entry.image === 'string' ? entry.image.trim() : '',
+      date: typeof entry.date === 'string' ? entry.date.trim() : ''
+    }));
   return entries.length ? { entries } : null;
 }
 
+function newsText(entry, field) {
+  return t(`news.${entry.key}.${field}`, currentLang);
+}
+
 function readCachedNewsContent() {
-  try {
-    return normalizeNewsContent(JSON.parse(localStorage.getItem(NEWS_CONTENT_CACHE_KEY) || 'null'));
-  } catch (error) {
-    return null;
-  }
+  try { return normalizeNewsContent(JSON.parse(localStorage.getItem(NEWS_CONTENT_CACHE_KEY) || 'null')); }
+  catch (error) { return null; }
 }
 
 let newsContent = readCachedNewsContent() || DEFAULT_NEWS_CONTENT;
-
-function localizedNewsValue(entry, field) {
-  const preferred = entry?.[`${field}_${currentLang}`];
-  if (typeof preferred === 'string' && preferred) return preferred;
-  const english = entry?.[`${field}_en`];
-  if (typeof english === 'string' && english) return english;
-  const french = entry?.[`${field}_fr`];
-  return typeof french === 'string' ? french : '';
-}
 
 function parseNewsDate(value) {
   if (!value) return 0;
@@ -343,12 +327,20 @@ function isUpdateEntry(entry) {
   return String(entry?.category || '').trim().toLowerCase() === 'update';
 }
 
+function browserLocale() {
+  if (currentLang.startsWith('fr')) return 'fr-FR';
+  if (currentLang.startsWith('en')) return 'en-US';
+  return currentLang;
+}
+
 function formatNewsDate(value) {
   const timestamp = parseNewsDate(value);
   if (!timestamp) return value || '';
-  return new Intl.DateTimeFormat(currentLang === 'fr' ? 'fr-FR' : 'en-US', {
-    year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'
-  }).format(new Date(timestamp));
+  try {
+    return new Intl.DateTimeFormat(browserLocale(), { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(timestamp));
+  } catch (error) {
+    return new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(timestamp));
+  }
 }
 
 function resolveLauncherContentImage(image) {
@@ -359,22 +351,26 @@ function resolveLauncherContentImage(image) {
 
 function escapeHtml(value) {
   return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
+    .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 }
 
 function newsThumb(entry) {
   const image = resolveLauncherContentImage(entry.image);
   if (image) return `<div class="thumb news-thumb"><img src="${escapeHtml(image)}" alt="" loading="lazy"></div>`;
-  const title = localizedNewsValue(entry, 'title');
+  const title = newsText(entry, 'title');
   return `<div class="thumb">${escapeHtml(title.slice(0, 1).toUpperCase())}</div>`;
 }
 
 function categoryClass(category) {
   return String(category || 'news').toLowerCase().replace(/[^a-z0-9_-]/g, '-') || 'news';
+}
+
+function categoryLabel(category) {
+  const raw = String(category || 'News').trim();
+  const key = `category.${raw.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+  const translated = t(key, currentLang);
+  return translated === key ? raw : translated;
 }
 
 async function refreshRemoteNewsContent() {
@@ -469,16 +465,20 @@ function goTo(id) {
    (see knowledge/14-roadmap.md, priority 6, in the agent briefing).
 =================================================================== */
 const CATALOG_HOME = [
-  { tag: "character", title: "Jade, Your New Roommate", desc: "A complice slice-of-life with conversations that evolve.", init: "J" },
-  { tag: "character", title: "Astra, Night Operative", desc: "A calm, sharp cyberpunk guide for late-night talks.", init: "A" },
-  { tag: "lorebook", title: "Neon District Archives", desc: "Notes on a high-tech world, its factions and secrets.", init: "N" },
-  { tag: "persona", title: "Midnight Creator", desc: "A refined persona for stylish creative roleplay.", init: "M" },
+  { tag: "character", title: "catalog.jade.title", desc: "catalog.jade.description", init: "J" },
+  { tag: "character", title: "catalog.astra.title", desc: "catalog.astra.description", init: "A" },
+  { tag: "lorebook", title: "catalog.neon.title", desc: "catalog.neon.description", init: "N" },
+  { tag: "persona", title: "catalog.midnight.title", desc: "catalog.midnight.description", init: "M" },
 ];
 const CATALOG_FULL = CATALOG_HOME.concat([
-  { tag: "character", title: "Rook, Old Friend", desc: "Warm, dry humor, a decade of shared history.", init: "R" },
-  { tag: "character", title: "Vex, Arena Champion", desc: "Competitive, sharp-tongued, loyal once earned.", init: "V" },
+  { tag: "character", title: "catalog.rook.title", desc: "catalog.rook.description", init: "R" },
+  { tag: "character", title: "catalog.vex.title", desc: "catalog.vex.description", init: "V" },
 ]);
-function tagLabel(tag) { return { update: "Update", content: "Content", character: "Character", lorebook: "Lorebook", persona: "Persona" }[tag] || tag; }
+function tagLabel(tag) {
+  const key = `category.${tag}`;
+  const translated = t(key, currentLang);
+  return translated === key ? tag : translated;
+}
 
 /* ===================================================================
    Page renderers
@@ -495,7 +495,7 @@ function renderHome() {
         <p id="home-slide-description"></p>
         <button class="cta" id="home-slide-button" hidden></button>
         <div class="dots" id="home-slide-dots" aria-label="Home carousel">
-          ${slides.map((slide, index) => `<button type="button" data-slide-index="${index}" data-slide-key="${slide.key.replace(/[^a-zA-Z0-9_-]/g, '')}" aria-label="Slide ${index + 1}"></button>`).join('')}
+          ${slides.map((slide, index) => `<button type="button" data-slide-index="${index}" data-slide-key="${slide.key.replace(/[^a-zA-Z0-9_-]/g, '')}" aria-label="${escapeHtml(tf('carousel.slide', { number: index + 1 }))}"></button>`).join('')}
         </div>
       </div>
       <div class="grid2">
@@ -504,8 +504,8 @@ function renderHome() {
           <div>${latestEntries.map(entry => `
             <button class="list-item news-list-item" type="button" data-news-target="${isUpdateEntry(entry) ? 'changelog' : 'news'}">
               ${newsThumb(entry)}<div class="list-item-copy">
-                <div class="item-top"><span class="date">${escapeHtml(formatNewsDate(entry.date))}</span><span class="tag ${categoryClass(entry.category)}">${escapeHtml(entry.category)}</span></div>
-                <div class="item-title">${escapeHtml(localizedNewsValue(entry, 'title'))}</div><div class="item-desc">${escapeHtml(localizedNewsValue(entry, 'summary'))}</div>
+                <div class="item-top"><span class="date">${escapeHtml(formatNewsDate(entry.date))}</span><span class="tag ${categoryClass(entry.category)}">${escapeHtml(categoryLabel(entry.category))}</span></div>
+                <div class="item-title">${escapeHtml(newsText(entry, 'title'))}</div><div class="item-desc">${escapeHtml(newsText(entry, 'summary'))}</div>
               </div>
             </button>`).join('')}</div>
         </div>
@@ -514,7 +514,7 @@ function renderHome() {
           <div>${CATALOG_HOME.map(c => `
             <div class="list-item"><div class="thumb">${c.init}</div><div>
               <div class="item-top"><span class="tag ${c.tag}">${tagLabel(c.tag)}</span></div>
-              <div class="item-title">${c.title}</div><div class="item-desc">${c.desc}</div>
+              <div class="item-title">${escapeHtml(contentText(c.title))}</div><div class="item-desc">${escapeHtml(contentText(c.desc))}</div>
             </div></div>`).join('')}</div>
         </div>
       </div>
@@ -544,8 +544,8 @@ function applyHomeSlide(index) {
   const button = document.getElementById('home-slide-button');
   if (!hero || !slogan || !description || !button) return;
 
-  slogan.textContent = localizedHomeValue(homeContent, 'slogan');
-  description.textContent = localizedHomeValue(slide, 'description');
+  slogan.textContent = t('slide.slogan', currentLang);
+  description.textContent = t(`slide.${slide.key}.description`, currentLang);
   hero.dataset.slideKey = slide.key;
 
   const image = resolveHomeImage(slide.image);
@@ -560,7 +560,7 @@ function applyHomeSlide(index) {
 
   button.hidden = !slide.button;
   if (slide.button) {
-    button.textContent = localizedHomeValue(slide, 'button_text');
+    button.textContent = t(`slide.${slide.key}.button`, currentLang);
     button.onclick = () => executeHomeAction(slide.action);
   } else {
     button.textContent = '';
@@ -605,9 +605,9 @@ function renderNews() {
           <article class="remote-entry">
             ${newsThumb(entry)}
             <div class="remote-entry-copy">
-              <div class="item-top"><span class="date">${escapeHtml(formatNewsDate(entry.date))}</span><span class="tag ${categoryClass(entry.category)}">${escapeHtml(entry.category)}</span></div>
-              <h3>${escapeHtml(localizedNewsValue(entry, 'title'))}</h3>
-              <p>${escapeHtml(localizedNewsValue(entry, 'description'))}</p>
+              <div class="item-top"><span class="date">${escapeHtml(formatNewsDate(entry.date))}</span><span class="tag ${categoryClass(entry.category)}">${escapeHtml(categoryLabel(entry.category))}</span></div>
+              <h3>${escapeHtml(newsText(entry, 'title'))}</h3>
+              <p>${escapeHtml(newsText(entry, 'description'))}</p>
             </div>
           </article>`).join('') : `<p class="remote-empty">${t('news.empty', currentLang)}</p>`}
       </div>
@@ -620,7 +620,7 @@ function renderCatalog() {
       <div class="section-head"><h2>${t('catalog.title', currentLang)}</h2></div>
       <div class="cat-grid">${CATALOG_FULL.map(c => `
         <div class="card"><div class="art"><span>${c.init}</span></div><div class="body">
-          <span class="tag ${c.tag}">${tagLabel(c.tag)}</span><h3>${c.title}</h3><p>${c.desc}</p>
+          <span class="tag ${c.tag}">${escapeHtml(tagLabel(c.tag))}</span><h3>${escapeHtml(contentText(c.title))}</h3><p>${escapeHtml(contentText(c.desc))}</p>
         </div></div>`).join('')}</div>
     </div>`;
 }
@@ -635,9 +635,9 @@ function renderChangelog() {
           <article class="remote-entry update-entry">
             ${newsThumb(entry)}
             <div class="remote-entry-copy">
-              <div class="item-top"><span class="date">${escapeHtml(formatNewsDate(entry.date))}</span><span class="tag update">${escapeHtml(entry.category)}</span></div>
-              <h3>${escapeHtml(localizedNewsValue(entry, 'title'))}</h3>
-              <p>${escapeHtml(localizedNewsValue(entry, 'description'))}</p>
+              <div class="item-top"><span class="date">${escapeHtml(formatNewsDate(entry.date))}</span><span class="tag update">${escapeHtml(categoryLabel(entry.category))}</span></div>
+              <h3>${escapeHtml(newsText(entry, 'title'))}</h3>
+              <p>${escapeHtml(newsText(entry, 'description'))}</p>
             </div>
           </article>`).join('') : `<p class="remote-empty">${t('changelog.empty', currentLang)}</p>`}
       </div>
@@ -651,7 +651,7 @@ function renderOptions() {
       <div class="settings-grid">
         <div class="field-card">
           <div class="info"><h3>${t('options.lang.title', currentLang)}</h3><p>${t('options.lang.hint', currentLang)}</p></div>
-          <div class="control"><select id="lang-select"><option value="en">English</option><option value="fr">Français (partial)</option></select></div>
+          <div class="control"><select id="lang-select">${availableLocales.map(locale => `<option value="${escapeHtml(locale)}">${escapeHtml(localeDisplayName(locale))}</option>`).join('')}</select></div>
         </div>
         <div class="field-card">
           <div class="info"><h3>${t('options.accent.title', currentLang)}</h3><p>${t('options.accent.hint', currentLang)}</p></div>
@@ -677,9 +677,12 @@ function renderOptions() {
 
   const sel = document.getElementById('lang-select');
   sel.value = currentLang;
-  sel.addEventListener('change', e => {
-    currentLang = e.target.value;
-    try { localStorage.setItem('nv_lang', currentLang); } catch (e2) {}
+  hydrateLocaleNames(sel);
+  sel.addEventListener('change', async e => {
+    const requested = normalizeLocale(e.target.value);
+    await loadTranslation(requested);
+    currentLang = translations[requested] ? requested : DEFAULT_LOCALE;
+    try { localStorage.setItem('nv_lang', currentLang); } catch (error) {}
     renderNav();
     goTo(document.querySelector('.tabs button.active')?.dataset.nav || 'options');
     if (launcherUpdateStatus?.available) renderLauncherUpdate(launcherUpdateStatus);
@@ -957,9 +960,14 @@ listen('installation-progress', event => {
 /* ===================================================================
    Boot
 =================================================================== */
-renderNav();
-goTo('home');
-startLauncherMusic();
-refreshRemoteHomeContent();
-refreshRemoteNewsContent();
-verifyAll();
+async function boot() {
+  startLauncherMusic();
+  await initializeI18n();
+  renderNav();
+  goTo('home');
+  refreshRemoteHomeContent();
+  refreshRemoteNewsContent();
+  verifyAll();
+}
+
+boot();

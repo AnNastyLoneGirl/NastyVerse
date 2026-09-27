@@ -11,11 +11,13 @@ Do not add another `app/src-tauri/` crate unless the project owner explicitly re
 
 ## Application version
 
-Current application payload version: **0.1.26**. The source of truth is `src/app-version.json`. This version is independent from the launcher/native host version.
+Current application payload version: **0.1.28**. The source of truth is `src/app-version.json`. This version is independent from the launcher/native host version.
 
 ## Current functional base
 
 The frontend now includes a full Character Library management surface: search/sort/filter/favorites/tags, rich character cards, avatar editing, personality/scenario/greetings/example messages, prompt overrides, creator metadata, duplication, JSON export, Character Card import from JSON/PNG/APNG/CHARX, and local conversation statistics. Conversations and character records are still persisted locally in the frontend for this base. Structured content will move to SQLite later. Character Card import currently runs entirely in the replaceable frontend so it stays compatible with existing launcher versions; V1/V2/V3 cards are normalized into the current internal character model. The Global Prompt area also provides SillyTavern-style Context presets/options, Instruction formatting, System/Post-History prompts and a single backend-aware prompt preview; Text Completion requests use this pipeline when the saved backend mode resolves to Text Completion. Instruction formatting includes the complete 38-preset set from the supplied SillyTavern source tree, ST-compatible preset JSON import/export, activation regexes, Context binding, names behavior, Story String/user/assistant/system sequences, first/last sequences, user filler messages and stop-string generation. Context formatting is likewise sourced from the 34 supplied SillyTavern presets; the editor uses a compact one-condition-per-line view with `\n` for emitted line breaks while persisting the canonical Story String.
+
+The Models configuration uses one compact manual connection panel for local backends and remote OpenAI-compatible providers. It supports KoboldCpp, llama.cpp, text-generation-webui, Ollama, OpenAI, OpenRouter, NanoGPT, Groq, DeepSeek, Mistral API, Together AI and Custom OpenAI-compatible endpoints. Provider model metadata is retained when available, including context length, NanoGPT Sub/Sub multiplier, pricing and Vision/Reasoning/Tools capabilities.
 
 ## Application i18n
 

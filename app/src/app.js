@@ -11,7 +11,7 @@ const invoke = TAURI?.core?.invoke
       console.log('[preview stub] invoke', cmd, args || '');
       if (cmd === 'get_model_status') return { loaded: false, backend: null, modelName: null, message: t('preview.browser') };
       if (cmd === 'load_backend_config') return null;
-      if (cmd === 'test_backend_connection') return { ok: true, message: t('preview.connection'), models: ['preview-model'] };
+      if (cmd === 'test_backend_connection') return { ok: true, message: t('preview.connection'), models: ['preview-model'], modelName: 'preview-model', modelDetails: [{ id: 'preview-model', name: 'Preview model', contextLength: 32768, priceLabel: null, subscriptionIncluded: true, subscriptionInputMultiplier: 2, vision: true, reasoning: true, tools: true }] };
       if (cmd === 'save_backend_config') return args?.config || null;
       if (cmd === 'chat_completion') return { content: t('preview.reply'), model: 'preview-model' };
       if (cmd === 'text_completion') return { content: t('preview.reply'), model: 'preview-model' };
@@ -239,12 +239,23 @@ const CONFIG_SECTIONS = [
 ];
 
 const BACKENDS = [
-  { id: 'koboldcpp', label: 'KoboldCpp', url: 'http://localhost:5001' },
-  { id: 'llamacpp', label: 'llama.cpp server', url: 'http://localhost:8080' },
-  { id: 'textgenwebui', label: 'text-generation-webui', url: 'http://localhost:5000' },
-  { id: 'ollama', label: 'Ollama', url: 'http://localhost:11434' },
-  { id: 'custom', label: 'Custom (OpenAI-compatible)', url: 'https://' },
+  { id: 'koboldcpp', label: 'KoboldCpp', url: 'http://localhost:5001', kind: 'local', apiKey: 'none', modelMode: 'reported' },
+  { id: 'llamacpp', label: 'llama.cpp server', url: 'http://localhost:8080', kind: 'local', apiKey: 'none', modelMode: 'optional-select' },
+  { id: 'textgenwebui', label: 'text-generation-webui', url: 'http://localhost:5000', kind: 'local', apiKey: 'optional', modelMode: 'free-reported' },
+  { id: 'ollama', label: 'Ollama', url: 'http://localhost:11434', kind: 'local', apiKey: 'optional', modelMode: 'required-select' },
+  { id: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', kind: 'api', apiKey: 'required', modelMode: 'required-select' },
+  { id: 'openrouter', label: 'OpenRouter', url: 'https://openrouter.ai/api/v1', kind: 'api', apiKey: 'required', modelMode: 'required-select' },
+  { id: 'nanogpt', label: 'NanoGPT', url: 'https://nano-gpt.com/api/v1', kind: 'api', apiKey: 'required', modelMode: 'required-select' },
+  { id: 'groq', label: 'Groq', url: 'https://api.groq.com/openai/v1', kind: 'api', apiKey: 'required', modelMode: 'required-select' },
+  { id: 'deepseek', label: 'DeepSeek', url: 'https://api.deepseek.com', kind: 'api', apiKey: 'required', modelMode: 'required-select' },
+  { id: 'mistralapi', label: 'Mistral API', url: 'https://api.mistral.ai/v1', kind: 'api', apiKey: 'required', modelMode: 'required-select' },
+  { id: 'together', label: 'Together AI', url: 'https://api.together.xyz/v1', kind: 'api', apiKey: 'required', modelMode: 'required-select' },
+  { id: 'custom', label: 'Custom (OpenAI-compatible)', url: 'https://', kind: 'api', apiKey: 'optional', modelMode: 'free-select' },
 ];
+
+function backendDefinition(backendType) {
+  return BACKENDS.find(backend => backend.id === backendType) || BACKENDS[0];
+}
 
 function defaultBackendApiMode(backendType) {
   return ['koboldcpp', 'llamacpp', 'textgenwebui'].includes(String(backendType || '').toLowerCase()) ? 'text' : 'chat';
@@ -533,6 +544,7 @@ const state = {
   sending: false,
   modelStatus: null,
   backendConfig: null,
+  backendDiscovery: null,
 };
 
 const pageRoot = document.getElementById('page-root');
@@ -2925,103 +2937,354 @@ function renderGeneralConfig() {
   hex.addEventListener('change', () => apply(hex.value.trim()));
 }
 
+function backendModelMode(backendType) {
+  return backendDefinition(backendType).modelMode || 'free-select';
+}
+
+function backendDiscoveryFor(backendType) {
+  return state.backendDiscovery?.backendType === backendType ? state.backendDiscovery : null;
+}
+
+function backendSavedModelFor(backendType) {
+  return state.backendConfig?.backendType === backendType ? String(state.backendConfig?.model || '') : '';
+}
+
+function backendReportedModelFor(backendType) {
+  const discovery = backendDiscoveryFor(backendType);
+  if (discovery?.modelName) return String(discovery.modelName);
+  if (state.modelStatus?.backend === backendType && state.modelStatus?.modelName) return String(state.modelStatus.modelName);
+  return '';
+}
+
+function formatContextLength(value) {
+  const tokens = Number(value);
+  if (!Number.isFinite(tokens) || tokens <= 0) return '';
+  let compact = '';
+  if (tokens >= 1_000_000 && tokens % 1_000_000 === 0) compact = `${tokens / 1_000_000}M`;
+  else if (tokens >= 1_048_576 && tokens % 1_048_576 === 0) compact = `${tokens / 1_048_576}M`;
+  else if (tokens >= 1_000 && tokens % 1_000 === 0) compact = `${tokens / 1_000}K`;
+  else if (tokens >= 1_024 && tokens % 1_024 === 0) compact = `${tokens / 1_024}K`;
+  else compact = new Intl.NumberFormat(intlLocale()).format(tokens);
+  return t('models.meta.context', { value: compact });
+}
+
+function modelDetailsFor(backendType) {
+  const details = backendDiscoveryFor(backendType)?.modelDetails || [];
+  return Array.isArray(details) ? details : [];
+}
+
+function modelInfoFor(backendType, modelId) {
+  if (!modelId) return null;
+  return modelDetailsFor(backendType).find(info => String(info?.id || '') === String(modelId)) || null;
+}
+
+function modelMetaParts(info) {
+  if (!info) return [];
+  const parts = [];
+  const context = formatContextLength(info.contextLength);
+  if (context) parts.push(context);
+  if (info.subscriptionIncluded === true) {
+    const multiplier = Number(info.subscriptionInputMultiplier || 1);
+    parts.push(multiplier !== 1 ? t('models.meta.subMultiplier', { multiplier }) : t('models.meta.sub'));
+  } else if (info.subscriptionIncluded === false && info.subscriptionNote) {
+    parts.push(t('models.meta.notSub'));
+  }
+  if (info.priceLabel) parts.push(String(info.priceLabel));
+  if (info.vision) parts.push(t('models.meta.vision'));
+  if (info.reasoning) parts.push(t('models.meta.reasoning'));
+  if (info.tools) parts.push(t('models.meta.tools'));
+  return parts;
+}
+
+function modelOptionLabel(backendType, modelId) {
+  const info = modelInfoFor(backendType, modelId);
+  const name = String(info?.name || modelId);
+  const meta = modelMetaParts(info);
+  return meta.length ? `${name} — ${meta.join(' · ')}` : name;
+}
+
+function renderSelectedModelSummary(backendType) {
+  const summary = document.getElementById('backend-model-summary');
+  if (!summary) return;
+  const model = document.getElementById('backend-model')?.value?.trim() || backendReportedModelFor(backendType);
+  if (!model) {
+    summary.hidden = true;
+    summary.innerHTML = '';
+    return;
+  }
+  const info = modelInfoFor(backendType, model);
+  const title = String(info?.name || model);
+  const meta = modelMetaParts(info);
+  const idLine = info?.name && info.name !== model ? `<span class="model-summary-id">${escapeHtml(model)}</span>` : '';
+  const chips = meta.length
+    ? `<div class="model-meta-chips">${meta.map(item => `<span>${escapeHtml(item)}</span>`).join('')}</div>`
+    : '';
+  summary.hidden = false;
+  summary.innerHTML = `<div class="model-summary-title"><strong>${escapeHtml(title)}</strong>${idLine}</div>${chips}`;
+}
+
+function bindModelSelection(backendType) {
+  document.getElementById('backend-model')?.addEventListener('change', async () => {
+    renderSelectedModelSummary(backendType);
+    try {
+      await saveBackendConfiguration({ quiet: true, refresh: false });
+    } catch (error) {
+      console.error(error);
+    }
+  });
+}
+
+function renderBackendModelControl(backendType) {
+  const host = document.getElementById('backend-model-control');
+  if (!host) return;
+  const mode = backendModelMode(backendType);
+  const discovery = backendDiscoveryFor(backendType);
+  const models = [...new Set((discovery?.models || []).map(String).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const savedModel = backendSavedModelFor(backendType);
+  const reportedModel = backendReportedModelFor(backendType);
+
+  if (mode === 'reported') {
+    host.innerHTML = `
+      <label class="connection-field">
+        <span>${escapeHtml(t('models.model'))}</span>
+        <input id="backend-model" value="${escapeHtml(reportedModel)}" placeholder="${escapeHtml(t('models.model.connectFirst'))}" readonly>
+      </label>
+      <div class="model-summary" id="backend-model-summary" hidden></div>`;
+    renderSelectedModelSummary(backendType);
+    return;
+  }
+
+  if (mode === 'optional-select') {
+    const selected = models.length ? (models.includes(savedModel) ? savedModel : '') : savedModel;
+    const extra = savedModel && !models.includes(savedModel) ? `<option value="${escapeHtml(savedModel)}" selected>${escapeHtml(savedModel)}</option>` : '';
+    host.innerHTML = `
+      <label class="connection-field">
+        <span>${escapeHtml(t('models.model'))}</span>
+        <select id="backend-model">
+          <option value="" ${selected ? '' : 'selected'}>${escapeHtml(t('models.model.currentlyLoaded'))}</option>
+          ${extra}
+          ${models.map(model => `<option value="${escapeHtml(model)}" ${selected === model ? 'selected' : ''}>${escapeHtml(modelOptionLabel(backendType, model))}</option>`).join('')}
+        </select>
+      </label>
+      <div class="model-summary" id="backend-model-summary" hidden></div>`;
+    bindModelSelection(backendType);
+    renderSelectedModelSummary(backendType);
+    return;
+  }
+
+  if (mode === 'required-select') {
+    const selected = models.includes(savedModel) ? savedModel : (models[0] || savedModel || '');
+    const options = models.length ? models : (savedModel ? [savedModel] : []);
+    host.innerHTML = `
+      <label class="connection-field">
+        <span>${escapeHtml(t('models.model'))}</span>
+        <select id="backend-model" ${options.length ? '' : 'disabled'}>
+          ${options.length
+            ? options.map(model => `<option value="${escapeHtml(model)}" ${selected === model ? 'selected' : ''}>${escapeHtml(modelOptionLabel(backendType, model))}</option>`).join('')
+            : `<option value="">${escapeHtml(t('models.model.connectFirst'))}</option>`}
+        </select>
+      </label>
+      <div class="model-summary" id="backend-model-summary" hidden></div>`;
+    bindModelSelection(backendType);
+    renderSelectedModelSummary(backendType);
+    return;
+  }
+
+  if (mode === 'free-reported') {
+    host.innerHTML = `
+      <label class="connection-field">
+        <span>${escapeHtml(t('models.model'))}</span>
+        <input id="backend-model" value="${escapeHtml(savedModel)}" placeholder="${escapeHtml(reportedModel || t('models.model.manual'))}">
+      </label>
+      <small class="field-hint">${escapeHtml(reportedModel ? t('models.model.reported', { model: reportedModel }) : t('models.model.connectFirst'))}</small>
+      <div class="model-summary" id="backend-model-summary" hidden></div>`;
+    bindModelSelection(backendType);
+    renderSelectedModelSummary(backendType);
+    return;
+  }
+
+  const manualValue = savedModel;
+  host.innerHTML = `
+    <label class="connection-field">
+      <span>${escapeHtml(t('models.model'))}</span>
+      <input id="backend-model" value="${escapeHtml(manualValue)}" placeholder="${escapeHtml(t('models.model.manual'))}" list="backend-model-options">
+      <datalist id="backend-model-options">
+        ${models.map(model => `<option value="${escapeHtml(model)}">${escapeHtml(modelOptionLabel(backendType, model))}</option>`).join('')}
+      </datalist>
+    </label>
+    <div class="model-summary" id="backend-model-summary" hidden></div>`;
+  bindModelSelection(backendType);
+  document.getElementById('backend-model')?.addEventListener('input', () => renderSelectedModelSummary(backendType));
+  renderSelectedModelSummary(backendType);
+}
+
+function updateProviderFields(backendType, { resetUrl = false } = {}) {
+  const provider = backendDefinition(backendType);
+  const endpointInput = document.getElementById('backend-url');
+  const apiKeyField = document.getElementById('backend-api-key-field');
+  const apiKeyInput = document.getElementById('backend-api-key');
+  if (endpointInput && resetUrl) endpointInput.value = provider.url;
+  if (apiKeyField) apiKeyField.hidden = provider.apiKey === 'none';
+  if (apiKeyInput) {
+    apiKeyInput.required = provider.apiKey === 'required';
+    apiKeyInput.placeholder = provider.apiKey === 'required'
+      ? t('models.apiKey.requiredPlaceholder')
+      : t('models.apiKey.placeholder');
+  }
+  const selectedMode = document.getElementById('backend-api-mode')?.value || 'auto';
+  const effective = selectedMode === 'auto' ? defaultBackendApiMode(backendType) : selectedMode;
+  const hint = document.getElementById('backend-api-mode-hint');
+  if (hint) hint.textContent = t('models.prompting.effective', { mode: t(`models.apiMode.${effective}`) });
+  renderBackendModelControl(backendType);
+}
+
 async function renderModelsConfig() {
   const body = document.getElementById('config-body');
   let saved = null;
   try { saved = await invoke('load_backend_config'); } catch (error) { toast(String(error), 'error'); }
   state.backendConfig = saved;
   const selected = saved?.backendType || 'koboldcpp';
+  const selectedProvider = backendDefinition(selected);
 
   body.innerHTML = `
-    <div class="config-page-head"><div><h2>${escapeHtml(t('config.models'))}</h2><p>${escapeHtml(t('models.desc'))}</p></div><button class="btn btn-primary" id="save-backend">${escapeHtml(t('models.save'))}</button></div>
-    <div class="field-card field-card-stack">
-      <div class="info"><h4>${escapeHtml(t('models.title'))}</h4><p>${escapeHtml(t('models.desc'))}</p></div>
-      <div class="backend-list">
-        ${BACKENDS.map(backend => `
-          <div class="backend-row ${backend.id === selected ? 'selected' : ''}" data-backend-row="${backend.id}">
-            <input type="radio" name="backend" value="${backend.id}" id="backend-${backend.id}" ${backend.id === selected ? 'checked' : ''}>
-            <label for="backend-${backend.id}">${escapeHtml(backend.label)}</label>
-            <input class="backend-url" data-backend-url="${backend.id}" value="${escapeHtml(backend.id === selected && saved?.url ? saved.url : backend.url)}" ${backend.id === selected ? '' : 'disabled'}>
-            <button class="test-btn" data-test="${backend.id}" ${backend.id === selected ? '' : 'disabled'}>${escapeHtml(t('models.test'))}</button>
-          </div>`).join('')}
+    <div class="config-page-head"><div><h2>${escapeHtml(t('config.models'))}</h2><p>${escapeHtml(t('models.desc'))}</p></div></div>
+    <div class="field-card field-card-stack model-connection-card">
+      <div class="info"><h4>${escapeHtml(t('models.connection'))}</h4><p>${escapeHtml(t('models.connection.desc'))}</p></div>
+      <div class="model-connection-form">
+        <label class="connection-field">
+          <span>${escapeHtml(t('models.provider'))}</span>
+          <select id="backend-provider">
+            ${BACKENDS.map(backend => `<option value="${escapeHtml(backend.id)}" ${backend.id === selected ? 'selected' : ''}>${escapeHtml(backend.label)}</option>`).join('')}
+          </select>
+        </label>
+        <label class="connection-field">
+          <span>${escapeHtml(t('models.endpoint'))}</span>
+          <input id="backend-url" value="${escapeHtml(saved?.url || selectedProvider.url)}" placeholder="${escapeHtml(selectedProvider.url)}">
+        </label>
+        <label class="connection-field" id="backend-api-key-field" ${selectedProvider.apiKey === 'none' ? 'hidden' : ''}>
+          <span>${escapeHtml(t('models.apiKey'))}</span>
+          <input id="backend-api-key" type="password" value="${escapeHtml(saved?.apiKey || '')}" autocomplete="off" placeholder="${escapeHtml(selectedProvider.apiKey === 'required' ? t('models.apiKey.requiredPlaceholder') : t('models.apiKey.placeholder'))}">
+        </label>
+        <div class="model-control-stack" id="backend-model-control"></div>
+        <label class="connection-field">
+          <span>${escapeHtml(t('models.prompting'))}</span>
+          <select id="backend-api-mode">
+            <option value="auto" ${(saved?.apiMode || 'auto') === 'auto' ? 'selected' : ''}>${escapeHtml(t('models.prompting.auto'))}</option>
+            <option value="chat" ${saved?.apiMode === 'chat' ? 'selected' : ''}>${escapeHtml(t('models.apiMode.chat'))}</option>
+            <option value="text" ${saved?.apiMode === 'text' ? 'selected' : ''}>${escapeHtml(t('models.apiMode.text'))}</option>
+          </select>
+          <small class="field-hint" id="backend-api-mode-hint"></small>
+        </label>
+        <div class="connection-actions">
+          <button class="btn btn-primary" id="connect-backend">${escapeHtml(t('models.connect'))}</button>
+          <div class="connection-result" id="connection-result">${escapeHtml(t('models.notTested'))}</div>
+        </div>
       </div>
-      <div class="connection-result" id="connection-result">${escapeHtml(t('models.notTested'))}</div>
-    </div>
-    <div class="field-card"><div class="info"><h4>${escapeHtml(t('models.model'))}</h4><p>${escapeHtml(t('models.model.desc'))}</p></div><div class="control model-control"><input id="backend-model" list="backend-model-list" value="${escapeHtml(saved?.model || '')}" placeholder="${escapeHtml(t('models.model.placeholder'))}"><datalist id="backend-model-list"></datalist></div></div>
-    <div class="field-card"><div class="info"><h4>${escapeHtml(t('models.apiMode'))}</h4><p>${escapeHtml(t('models.apiMode.desc'))}</p></div><div class="control model-control"><select id="backend-api-mode"><option value="auto" ${(saved?.apiMode || 'auto') === 'auto' ? 'selected' : ''}>${escapeHtml(t('models.apiMode.auto'))}</option><option value="chat" ${saved?.apiMode === 'chat' ? 'selected' : ''}>${escapeHtml(t('models.apiMode.chat'))}</option><option value="text" ${saved?.apiMode === 'text' ? 'selected' : ''}>${escapeHtml(t('models.apiMode.text'))}</option></select><small class="field-hint" id="backend-api-mode-hint"></small></div></div>
-    <div class="field-card"><div class="info"><h4>${escapeHtml(t('models.apiKey'))}</h4><p>${escapeHtml(t('models.apiKey.desc'))}</p></div><div class="control model-control"><input id="backend-api-key" type="password" value="${escapeHtml(saved?.apiKey || '')}" placeholder="${escapeHtml(t('models.apiKey.placeholder'))}"></div></div>`;
+    </div>`;
 
-  const updateModeHint = () => {
-    const backendType = document.querySelector('input[name=backend]:checked')?.value || 'koboldcpp';
-    const selectedMode = document.getElementById('backend-api-mode')?.value || 'auto';
-    const effective = selectedMode === 'auto' ? defaultBackendApiMode(backendType) : selectedMode;
-    const hint = document.getElementById('backend-api-mode-hint');
-    if (hint) hint.textContent = t('models.apiMode.effective', { mode: t(`models.apiMode.${effective}`) });
-  };
-  const selectBackend = id => {
-    body.querySelectorAll('[data-backend-row]').forEach(row => row.classList.toggle('selected', row.dataset.backendRow === id));
-    body.querySelectorAll('input[name=backend]').forEach(radio => radio.checked = radio.value === id);
-    body.querySelectorAll('.backend-url').forEach(input => input.disabled = input.dataset.backendUrl !== id);
-    body.querySelectorAll('[data-test]').forEach(button => button.disabled = button.dataset.test !== id);
-    updateModeHint();
-  };
-  body.querySelectorAll('input[name=backend]').forEach(radio => radio.addEventListener('change', () => selectBackend(radio.value)));
-  body.querySelectorAll('[data-backend-row]').forEach(row => row.addEventListener('click', event => {
-    if (event.target.matches('input, button')) return;
-    selectBackend(row.dataset.backendRow);
-  }));
-  body.querySelectorAll('[data-test]').forEach(button => button.addEventListener('click', () => testBackend(button.dataset.test)));
-  document.getElementById('backend-api-mode').addEventListener('change', updateModeHint);
-  updateModeHint();
-  document.getElementById('save-backend').addEventListener('click', saveBackendConfiguration);
+  const providerSelect = document.getElementById('backend-provider');
+  providerSelect.addEventListener('change', () => {
+    const previous = state.backendDiscovery?.backendType;
+    const backendType = providerSelect.value;
+    if (previous !== backendType) state.backendDiscovery = null;
+    const apiKeyInput = document.getElementById('backend-api-key');
+    const apiModeSelect = document.getElementById('backend-api-mode');
+    if (apiKeyInput) apiKeyInput.value = '';
+    if (apiModeSelect) apiModeSelect.value = 'auto';
+    updateProviderFields(backendType, { resetUrl: true });
+  });
+  document.getElementById('backend-api-mode').addEventListener('change', () => updateProviderFields(providerSelect.value));
+  document.getElementById('connect-backend').addEventListener('click', () => testBackend(providerSelect.value));
+  updateProviderFields(selected);
 }
 
 function currentBackendDraft() {
-  const backendType = document.querySelector('input[name=backend]:checked')?.value || 'koboldcpp';
+  const backendType = document.getElementById('backend-provider')?.value || 'koboldcpp';
+  const mode = backendModelMode(backendType);
+  const model = mode === 'reported' ? null : (document.getElementById('backend-model')?.value.trim() || null);
   return {
     backendType,
-    url: document.querySelector(`[data-backend-url="${backendType}"]`)?.value.trim() || '',
-    model: document.getElementById('backend-model')?.value.trim() || null,
+    url: document.getElementById('backend-url')?.value.trim() || backendDefinition(backendType).url,
+    model,
     apiKey: document.getElementById('backend-api-key')?.value.trim() || null,
     apiMode: document.getElementById('backend-api-mode')?.value || 'auto',
   };
 }
 
-async function testBackend(backendType) {
-  const button = document.querySelector(`[data-test="${backendType}"]`);
+async function testBackend(backendType, { quiet = false } = {}) {
+  const button = document.getElementById('connect-backend');
   const resultBox = document.getElementById('connection-result');
   const draft = currentBackendDraft();
-  button.disabled = true;
-  button.textContent = t('models.testing');
-  resultBox.className = 'connection-result is-testing';
-  resultBox.textContent = t('models.testing');
+  const provider = backendDefinition(draft.backendType);
+  if (provider.apiKey === 'required' && !draft.apiKey) {
+    if (resultBox) {
+      resultBox.className = 'connection-result is-error';
+      resultBox.textContent = t('models.apiKey.missing');
+    }
+    if (!quiet) toast(t('models.apiKey.missing'), 'error');
+    return null;
+  }
+  if (button) {
+    button.disabled = true;
+    button.textContent = t('models.connecting');
+  }
+  if (resultBox) {
+    resultBox.className = 'connection-result is-testing';
+    resultBox.textContent = t('models.connecting');
+  }
   try {
-    const result = await invoke('test_backend_connection', { backendType: draft.backendType, url: draft.url, apiKey: draft.apiKey });
-    resultBox.className = 'connection-result is-ok';
-    resultBox.textContent = result.models?.length ? t('models.connectedModels', { count: result.models.length }) : t('models.connectedNoModels');
-    const list = document.getElementById('backend-model-list');
-    list.innerHTML = (result.models || []).map(model => `<option value="${escapeHtml(model)}"></option>`).join('');
-    const modelInput = document.getElementById('backend-model');
-    if (!modelInput.value && result.models?.length) modelInput.value = result.models[0];
+    const result = await invoke('test_backend_connection', {
+      backendType: draft.backendType,
+      url: draft.url,
+      apiKey: draft.apiKey,
+    });
+    state.backendDiscovery = {
+      backendType,
+      models: result.models || [],
+      modelName: result.modelName || result.models?.[0] || null,
+      modelDetails: result.modelDetails || [],
+    };
+    state.backendConfig = draft;
+    renderBackendModelControl(backendType);
+    const connectedDraft = currentBackendDraft();
+    const saved = await invoke('save_backend_config', { config: connectedDraft });
+    state.backendConfig = saved || connectedDraft;
+    const selectedWins = backendModelMode(backendType) !== 'reported' && connectedDraft.model;
+    const displayModel = selectedWins ? connectedDraft.model : (result.modelName || result.models?.[0] || null);
+    if (resultBox) {
+      resultBox.className = 'connection-result is-ok';
+      resultBox.textContent = displayModel
+        ? t('models.connectedModel', { model: displayModel })
+        : result.models?.length
+          ? t('models.connectedModels', { count: result.models.length })
+          : t('models.connectedNoModels');
+    }
+    renderSelectedModelSummary(backendType);
+    if (!quiet) toast(t('models.connected'), 'success');
+    await refreshModelStatus();
+    return result;
   } catch (error) {
-    resultBox.className = 'connection-result is-error';
-    resultBox.textContent = String(error);
+    if (resultBox) {
+      resultBox.className = 'connection-result is-error';
+      resultBox.textContent = String(error);
+    }
+    if (!quiet) toast(String(error), 'error');
+    return null;
   } finally {
-    button.disabled = false;
-    button.textContent = t('models.test');
+    if (button) {
+      button.disabled = false;
+      button.textContent = t('models.connect');
+    }
   }
 }
 
-async function saveBackendConfiguration() {
-  try {
-    const config = currentBackendDraft();
-    const saved = await invoke('save_backend_config', { config });
-    state.backendConfig = saved || config;
-    toast(t('models.saved'), 'success');
-    await refreshModelStatus();
-  } catch (error) {
-    toast(String(error), 'error');
-  }
+async function saveBackendConfiguration({ quiet = false, refresh = true } = {}) {
+  const config = currentBackendDraft();
+  const saved = await invoke('save_backend_config', { config });
+  state.backendConfig = saved || config;
+  if (!quiet) toast(t('models.saved'), 'success');
+  if (refresh) await refreshModelStatus();
+  return state.backendConfig;
 }
 
 

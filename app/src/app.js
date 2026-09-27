@@ -9,11 +9,11 @@ const invoke = TAURI?.core?.invoke
   ? TAURI.core.invoke
   : async (cmd, args) => {
       console.log('[preview stub] invoke', cmd, args || '');
-      if (cmd === 'get_model_status') return { loaded: false, backend: null, modelName: null, message: 'Browser preview' };
+      if (cmd === 'get_model_status') return { loaded: false, backend: null, modelName: null, message: t('preview.browser') };
       if (cmd === 'load_backend_config') return null;
-      if (cmd === 'test_backend_connection') return { ok: true, message: 'Preview connection successful.', models: ['preview-model'] };
+      if (cmd === 'test_backend_connection') return { ok: true, message: t('preview.connection'), models: ['preview-model'] };
       if (cmd === 'save_backend_config') return args?.config || null;
-      if (cmd === 'chat_completion') return { content: 'This is a browser-preview reply. Run NastyVerse through the launcher to use a real backend.', model: 'preview-model' };
+      if (cmd === 'chat_completion') return { content: t('preview.reply'), model: 'preview-model' };
       return null;
     };
 
@@ -27,190 +27,128 @@ const STORAGE = {
   ui: 'nv_app_ui_settings',
 };
 
-const TRANSLATIONS = {
-  en: {
-    'nav.chat': 'Chat', 'nav.library': 'Library',
-    'status.none': 'No model loaded', 'status.connected': 'Connected',
-    'chat.none.title': 'No conversation open',
-    'chat.none.body': 'Pick a character from your library to start talking, or connect an inference backend first.',
-    'chat.none.button': 'Open Library', 'chat.placeholder': 'Write a message…', 'chat.send': 'Send',
-    'chat.clear': 'Clear conversation', 'chat.library': 'Library', 'chat.generating': 'Generating…',
-    'library.eyebrow': 'The foundations of your stories', 'library.title': 'Your library.',
-    'library.subtitle': 'Characters to meet, worlds to explore and identities to embody.',
-    'library.import': 'Import', 'library.create': 'Create a character', 'library.search': 'Search…',
-    'library.characters': 'Characters', 'library.lorebooks': 'Lorebooks', 'library.personas': 'Personas',
-    'library.empty.title': 'Your first character starts here.',
-    'library.empty.body': 'Define a personality, first message and context. Then open a chat from the character card.',
-    'library.openChat': 'Start chat', 'library.edit': 'Edit', 'library.delete': 'Delete',
-    'library.soon.title': 'This library section comes next.',
-    'library.soon.body': 'The base is ready; real Lorebook and Persona storage will be added in the next passes.',
-    'config.title': 'Configuration', 'config.general': 'General', 'config.models': 'Models',
-    'config.params': 'Model parameters', 'config.ui': 'User Interface', 'config.save': 'Save',
-    'general.language': 'Language', 'general.language.desc': 'Changes the application interface immediately.',
-    'general.accent': 'Accent color', 'general.accent.desc': 'Overrides the primary accent used by interactive controls.',
-    'models.title': 'Inference backend', 'models.desc': 'NastyVerse does not run a model itself. Connect an existing local server or compatible API.',
-    'models.apiKey': 'API key', 'models.apiKey.desc': 'Optional. Required only by endpoints that use bearer authentication.',
-    'models.model': 'Model', 'models.model.desc': 'Test the connection to discover available models, then choose the one used for chat.',
-    'models.test': 'Test', 'models.testing': 'Testing…', 'models.save': 'Save backend',
-    'models.saved': 'Backend configuration saved.', 'models.notTested': 'Not tested yet.',
-    'params.temperature': 'Temperature', 'params.temperature.desc': 'Higher values make responses more varied.',
-    'params.topP': 'Top P', 'params.topP.desc': 'Controls nucleus sampling diversity.',
-    'params.maxTokens': 'Max response tokens', 'params.maxTokens.desc': 'Maximum number of tokens requested from the backend.',
-    'ui.scale': 'Interface scale', 'ui.scale.desc': 'Adjusts the overall UI text size.',
-    'ui.density': 'Compact messages', 'ui.density.desc': 'Reduces vertical spacing in conversations.',
-    'common.cancel': 'Cancel', 'common.save': 'Save', 'common.close': 'Close',
-    'character.new': 'Create a character', 'character.edit': 'Edit character', 'character.name': 'Name',
-    'character.description': 'Description', 'character.scenario': 'Scenario', 'character.firstMessage': 'First message',
-    'character.systemPrompt': 'System prompt', 'character.required': 'Character name is required.',
-    'toast.importSoon': 'Character Card import will be added in the next Library pass.',
-  },
-  fr: {
-    'nav.chat': 'Chat', 'nav.library': 'Bibliothèque',
-    'status.none': 'Aucun modèle chargé', 'status.connected': 'Connecté',
-    'chat.none.title': 'Aucune conversation ouverte',
-    'chat.none.body': 'Choisissez un personnage dans votre bibliothèque pour commencer, ou connectez d’abord un backend d’inférence.',
-    'chat.none.button': 'Ouvrir la bibliothèque', 'chat.placeholder': 'Écrire un message…', 'chat.send': 'Envoyer',
-    'chat.clear': 'Effacer la conversation', 'chat.library': 'Bibliothèque', 'chat.generating': 'Génération…',
-    'library.eyebrow': 'Les fondations de vos histoires', 'library.title': 'Votre bibliothèque.',
-    'library.subtitle': 'Des personnages à rencontrer, des mondes à explorer et des identités à incarner.',
-    'library.import': 'Importer', 'library.create': 'Créer un personnage', 'library.search': 'Rechercher…',
-    'library.characters': 'Personnages', 'library.lorebooks': 'Lorebooks', 'library.personas': 'Personas',
-    'library.empty.title': 'Votre premier personnage commence ici.',
-    'library.empty.body': 'Définissez sa personnalité, son premier message et son contexte, puis lancez une discussion depuis sa carte.',
-    'library.openChat': 'Discuter', 'library.edit': 'Modifier', 'library.delete': 'Supprimer',
-    'library.soon.title': 'Cette section arrive ensuite.',
-    'library.soon.body': 'La base est prête ; le stockage réel des Lorebooks et Personas sera ajouté lors des prochaines passes.',
-    'config.title': 'Configuration', 'config.general': 'Général', 'config.models': 'Modèles',
-    'config.params': 'Paramètres du modèle', 'config.ui': 'Interface', 'config.save': 'Enregistrer',
-    'general.language': 'Langue', 'general.language.desc': 'Modifie immédiatement la langue de l’application.',
-    'general.accent': 'Couleur d’accent', 'general.accent.desc': 'Remplace l’accent principal utilisé par les contrôles interactifs.',
-    'models.title': 'Backend d’inférence', 'models.desc': 'NastyVerse n’exécute pas lui-même de modèle. Connectez un serveur local existant ou une API compatible.',
-    'models.apiKey': 'Clé API', 'models.apiKey.desc': 'Optionnelle. Nécessaire uniquement pour les endpoints utilisant une authentification Bearer.',
-    'models.model': 'Modèle', 'models.model.desc': 'Testez la connexion pour découvrir les modèles disponibles, puis choisissez celui utilisé pour le chat.',
-    'models.test': 'Tester', 'models.testing': 'Test…', 'models.save': 'Enregistrer le backend',
-    'models.saved': 'Configuration du backend enregistrée.', 'models.notTested': 'Pas encore testé.',
-    'params.temperature': 'Température', 'params.temperature.desc': 'Une valeur élevée rend les réponses plus variées.',
-    'params.topP': 'Top P', 'params.topP.desc': 'Contrôle la diversité de l’échantillonnage nucleus.',
-    'params.maxTokens': 'Tokens max de réponse', 'params.maxTokens.desc': 'Nombre maximal de tokens demandé au backend.',
-    'ui.scale': 'Échelle de l’interface', 'ui.scale.desc': 'Ajuste la taille générale des textes.',
-    'ui.density': 'Messages compacts', 'ui.density.desc': 'Réduit l’espacement vertical des conversations.',
-    'common.cancel': 'Annuler', 'common.save': 'Enregistrer', 'common.close': 'Fermer',
-    'character.new': 'Créer un personnage', 'character.edit': 'Modifier le personnage', 'character.name': 'Nom',
-    'character.description': 'Description', 'character.scenario': 'Scénario', 'character.firstMessage': 'Premier message',
-    'character.systemPrompt': 'Prompt système', 'character.required': 'Le nom du personnage est obligatoire.',
-    'toast.importSoon': 'L’import des Character Cards sera ajouté lors de la prochaine passe Library.',
-  },
+const I18N_FALLBACK_MANIFEST = {
+  default: 'en-en',
+  languages: [
+    { code: 'en-en', label: 'English', file: 'en-en.json' },
+    { code: 'fr-fr', label: 'Français', file: 'fr-fr.json' },
+  ],
 };
 
+let languageManifest = I18N_FALLBACK_MANIFEST;
+let fallbackTranslations = {};
+let currentTranslations = {};
 
-Object.assign(TRANSLATIONS.en, {
-  'library.importJson': 'Import JSON',
-  'library.create': 'Create character',
-  'library.search': 'Search characters, tags, creators…',
-  'library.sort': 'Sort',
-  'library.sort.nameAsc': 'Name A–Z',
-  'library.sort.nameDesc': 'Name Z–A',
-  'library.sort.newest': 'Newest',
-  'library.sort.oldest': 'Oldest',
-  'library.sort.recent': 'Recently updated',
-  'library.sort.chats': 'Most chats',
-  'library.sort.favorites': 'Favorites first',
-  'library.filters': 'Filters',
-  'library.allCharacters': 'All characters',
-  'library.favorites': 'Favorites',
-  'library.tags': 'Tags',
-  'library.clearFilters': 'Clear filters',
-  'library.noTags': 'No tags yet',
-  'library.results': 'characters',
-  'library.noResults.title': 'No characters match these filters.',
-  'library.noResults.body': 'Try clearing the search or filters.',
-  'library.empty.title': 'Create your first character.',
-  'library.empty.body': 'Build a personality, scenario and first message, then start a conversation.',
-  'library.updated': 'Updated',
-  'library.chats': 'Chats',
-  'library.tokens': 'Approx. tokens',
-  'library.duplicate': 'Duplicate',
-  'library.export': 'Export JSON',
-  'library.favorite': 'Favorite',
-  'library.unfavorite': 'Remove favorite',
-  'library.imported': 'Character imported.',
-  'library.importInvalid': 'This JSON is not a recognized character card.',
-  'library.importUnsupported': 'PNG and CHARX import will be added with the native Character Card parser.',
-  'library.avatarTooLarge': 'Avatar must be smaller than 2 MB.',
-  'library.exported': 'Character JSON exported.',
-  'character.identity': 'Identity',
-  'character.avatar': 'Choose avatar',
-  'character.avatarHelp': 'PNG, JPG or WebP. Stored locally for this base.',
-  'character.removeAvatar': 'Remove avatar',
-  'character.personality': 'Personality',
-  'character.altGreetings': 'Alternative greetings',
-  'character.altGreetingsHelp': 'Separate greetings with a line containing only ---',
-  'character.examples': 'Example messages',
-  'character.prompting': 'Prompting',
-  'character.postHistory': 'Post-history instructions',
-  'character.metadata': 'Creator metadata',
-  'character.creator': 'Creator',
-  'character.version': 'Character version',
-  'character.creatorNotes': 'Creator notes',
-  'character.tags': 'Tags',
-  'character.tagsHelp': 'Comma-separated',
-  'character.favorite': 'Favorite character',
-  'character.deleteConfirm': 'Delete this character and its local chat history?',
-});
-Object.assign(TRANSLATIONS.fr, {
-  'library.importJson': 'Importer JSON',
-  'library.create': 'Créer un personnage',
-  'library.search': 'Rechercher personnages, tags, créateurs…',
-  'library.sort': 'Trier',
-  'library.sort.nameAsc': 'Nom A–Z',
-  'library.sort.nameDesc': 'Nom Z–A',
-  'library.sort.newest': 'Plus récents',
-  'library.sort.oldest': 'Plus anciens',
-  'library.sort.recent': 'Modifiés récemment',
-  'library.sort.chats': 'Plus de discussions',
-  'library.sort.favorites': 'Favoris en premier',
-  'library.filters': 'Filtres',
-  'library.allCharacters': 'Tous les personnages',
-  'library.favorites': 'Favoris',
-  'library.tags': 'Tags',
-  'library.clearFilters': 'Effacer les filtres',
-  'library.noTags': 'Aucun tag',
-  'library.results': 'personnages',
-  'library.noResults.title': 'Aucun personnage ne correspond aux filtres.',
-  'library.noResults.body': 'Essayez de supprimer la recherche ou les filtres.',
-  'library.empty.title': 'Créez votre premier personnage.',
-  'library.empty.body': 'Définissez sa personnalité, son scénario et son premier message, puis lancez une discussion.',
-  'library.updated': 'Modifié',
-  'library.chats': 'Discussions',
-  'library.tokens': 'Tokens approx.',
-  'library.duplicate': 'Dupliquer',
-  'library.export': 'Exporter JSON',
-  'library.favorite': 'Favori',
-  'library.unfavorite': 'Retirer des favoris',
-  'library.imported': 'Personnage importé.',
-  'library.importInvalid': 'Ce JSON n’est pas une carte de personnage reconnue.',
-  'library.importUnsupported': 'L’import PNG et CHARX arrivera avec le parseur natif Character Card.',
-  'library.avatarTooLarge': 'L’avatar doit faire moins de 2 Mo.',
-  'library.exported': 'JSON du personnage exporté.',
-  'character.identity': 'Identité',
-  'character.avatar': 'Choisir un avatar',
-  'character.avatarHelp': 'PNG, JPG ou WebP. Stocké localement pour cette base.',
-  'character.removeAvatar': 'Retirer l’avatar',
-  'character.personality': 'Personnalité',
-  'character.altGreetings': 'Salutations alternatives',
-  'character.altGreetingsHelp': 'Séparez les salutations par une ligne contenant uniquement ---',
-  'character.examples': 'Messages d’exemple',
-  'character.prompting': 'Prompting',
-  'character.postHistory': 'Instructions post-historique',
-  'character.metadata': 'Métadonnées créateur',
-  'character.creator': 'Créateur',
-  'character.version': 'Version du personnage',
-  'character.creatorNotes': 'Notes du créateur',
-  'character.tags': 'Tags',
-  'character.tagsHelp': 'Séparés par des virgules',
-  'character.favorite': 'Personnage favori',
-  'character.deleteConfirm': 'Supprimer ce personnage et son historique local ?',
-});
+function normalizeLocaleCode(value) {
+  const raw = String(value || '').trim().toLowerCase().replaceAll('_', '-');
+  if (raw === 'en') return 'en-en';
+  if (raw === 'fr') return 'fr-fr';
+  return raw || 'en-en';
+}
+
+async function fetchJsonResource(path) {
+  const response = await fetch(path, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`HTTP ${response.status} for ${path}`);
+  return response.json();
+}
+
+async function loadLanguageManifest() {
+  try {
+    const manifest = await fetchJsonResource('i18n/languages.json');
+    if (!Array.isArray(manifest?.languages) || !manifest.languages.length) throw new Error('Invalid language manifest');
+    languageManifest = manifest;
+  } catch (error) {
+    console.warn('[i18n] Falling back to bundled language manifest.', error);
+    languageManifest = I18N_FALLBACK_MANIFEST;
+  }
+  languageManifest.default = normalizeLocaleCode(languageManifest.default || 'en-en');
+}
+
+function languageDefinition(code) {
+  const normalized = normalizeLocaleCode(code);
+  return languageManifest.languages.find(language => normalizeLocaleCode(language.code) === normalized) || null;
+}
+
+async function loadTranslationFile(code) {
+  const language = languageDefinition(code);
+  if (!language) throw new Error(`Unknown language: ${code}`);
+  const file = language.file || `${normalizeLocaleCode(language.code)}.json`;
+  const data = await fetchJsonResource(`i18n/${file}`);
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error(`Invalid translation file: ${file}`);
+  return data;
+}
+
+async function initI18n() {
+  await loadLanguageManifest();
+  try {
+    fallbackTranslations = await loadTranslationFile(languageManifest.default);
+  } catch (error) {
+    console.error('[i18n] Failed to load default language.', error);
+    fallbackTranslations = {};
+  }
+
+  const requested = normalizeLocaleCode(localStorage.getItem(STORAGE.locale) || languageManifest.default);
+  state.locale = languageDefinition(requested) ? requested : languageManifest.default;
+  if (state.locale === languageManifest.default) {
+    currentTranslations = fallbackTranslations;
+  } else {
+    try {
+      currentTranslations = await loadTranslationFile(state.locale);
+    } catch (error) {
+      console.warn('[i18n] Failed to load selected language, using fallback.', error);
+      state.locale = languageManifest.default;
+      currentTranslations = fallbackTranslations;
+    }
+  }
+  localStorage.setItem(STORAGE.locale, state.locale);
+  applyDocumentLanguage();
+  applyChromeI18n();
+}
+
+async function setLocale(code) {
+  const normalized = normalizeLocaleCode(code);
+  const target = languageDefinition(normalized) ? normalized : languageManifest.default;
+  state.locale = target;
+  if (target === languageManifest.default) {
+    currentTranslations = fallbackTranslations;
+  } else {
+    currentTranslations = await loadTranslationFile(target);
+  }
+  localStorage.setItem(STORAGE.locale, state.locale);
+  applyDocumentLanguage();
+  applyChromeI18n();
+}
+
+function t(key, replacements = {}) {
+  let value = currentTranslations[key] ?? fallbackTranslations[key] ?? key;
+  for (const [name, replacement] of Object.entries(replacements)) {
+    value = String(value).replaceAll(`{${name}}`, String(replacement));
+  }
+  return String(value);
+}
+
+function applyDocumentLanguage() {
+  document.documentElement.lang = state.locale.split('-')[0] || 'en';
+}
+
+function applyChromeI18n() {
+  const controls = [
+    ['btn-min', 'window.minimize'],
+    ['btn-max', 'window.maximize'],
+    ['btn-close', 'window.close'],
+  ];
+  controls.forEach(([id, key]) => {
+    const element = document.getElementById(id);
+    if (!element) return;
+    element.title = t(key);
+    element.setAttribute('aria-label', t(key));
+  });
+}
+
+function intlLocale() {
+  if (state.locale === 'en-en') return 'en-US';
+  return state.locale;
+}
 
 const NAV_ITEMS = [
   { id: 'chat', labelKey: 'nav.chat', icon: '<path d="M4 5h16v10H8l-4 4V5z"/>' },
@@ -236,7 +174,7 @@ const DEFAULT_PARAMS = { temperature: 0.8, topP: 0.95, maxTokens: 512 };
 const DEFAULT_UI = { scale: 100, compactMessages: false };
 
 const state = {
-  locale: localStorage.getItem(STORAGE.locale) || 'en',
+  locale: normalizeLocaleCode(localStorage.getItem(STORAGE.locale) || 'en-en'),
   currentPage: 'chat',
   libraryTab: 'characters',
   activeCharacterId: localStorage.getItem(STORAGE.activeCharacter) || null,
@@ -247,10 +185,6 @@ const state = {
 const pageRoot = document.getElementById('page-root');
 const sectionLabel = document.getElementById('section-label');
 const navbar = document.getElementById('navbar');
-
-function t(key) {
-  return TRANSLATIONS[state.locale]?.[key] ?? TRANSLATIONS.en[key] ?? key;
-}
 
 function readJson(key, fallback) {
   try {
@@ -424,7 +358,7 @@ function renderChat() {
         <div class="chat-character-avatar">${escapeHtml(character.name.slice(0, 1).toUpperCase())}</div>
         <div class="chat-character-meta">
           <strong>${escapeHtml(character.name)}</strong>
-          <span>${escapeHtml(character.description || 'NastyVerse character')}</span>
+          <span>${escapeHtml(character.description || t('chat.characterFallback'))}</span>
         </div>
         <div class="chat-header-actions">
           <button class="btn btn-ghost btn-small" id="chat-library">${escapeHtml(t('chat.library'))}</button>
@@ -434,7 +368,7 @@ function renderChat() {
       <div class="messages" id="messages">
         ${messages.map(message => `
           <article class="message message-${message.role}">
-            <div class="message-role">${message.role === 'user' ? 'You' : escapeHtml(character.name)}</div>
+            <div class="message-role">${message.role === 'user' ? escapeHtml(t('chat.you')) : escapeHtml(character.name)}</div>
             <div class="message-bubble">${escapeHtml(message.content).replaceAll('\n', '<br>')}</div>
           </article>`).join('')}
         ${state.sending ? `<article class="message message-assistant"><div class="message-role">${escapeHtml(character.name)}</div><div class="message-bubble message-thinking"><span></span><span></span><span></span>${escapeHtml(t('chat.generating'))}</div></article>` : ''}
@@ -568,7 +502,7 @@ function characterApproxTokens(character) {
 
 function characterDate(timestamp) {
   try {
-    return new Intl.DateTimeFormat(state.locale === 'fr' ? 'fr-FR' : 'en-US', {
+    return new Intl.DateTimeFormat(intlLocale(), {
       year: 'numeric', month: 'short', day: 'numeric'
     }).format(new Date(timestamp));
   } catch {
@@ -724,10 +658,10 @@ function renderCharacterCards(characters, totalCount) {
       </div>
       <div class="character-card-info">
         <div class="character-card-titleline">
-          <div><h3>${escapeHtml(character.name)}</h3>${character.creator ? `<span class="character-creator">by ${escapeHtml(character.creator)}</span>` : ''}</div>
+          <div><h3>${escapeHtml(character.name)}</h3>${character.creator ? `<span class="character-creator">${escapeHtml(t('library.by'))} ${escapeHtml(character.creator)}</span>` : ''}</div>
           <button class="character-more" data-edit="${character.id}">•••</button>
         </div>
-        <p class="character-summary">${escapeHtml(character.description || character.personality || 'No description yet.')}</p>
+        <p class="character-summary">${escapeHtml(character.description || character.personality || t('library.noDescription'))}</p>
         <div class="character-tags">${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}${(character.tags || []).length > 3 ? `<span>+${character.tags.length - 3}</span>` : ''}</div>
         <div class="character-card-stats">
           <span><strong>${characterChatCount(character.id)}</strong> ${escapeHtml(t('library.chats'))}</span>
@@ -764,88 +698,99 @@ function bindCharacterCardActions(root) {
 function openCharacterEditor(characterId = null) {
   const existing = characterId ? getNormalizedCharacters().find(item => item.id === characterId) : null;
   const character = existing || normalizeCharacter({ name: '' });
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-backdrop';
-  overlay.innerHTML = `
-    <form class="modal character-editor-modal" id="character-form">
-      <div class="modal-head character-editor-head">
-        <div><span class="modal-kicker">NastyVerse Character</span><h2>${escapeHtml(t(existing ? 'character.edit' : 'character.new'))}</h2></div>
-        <button type="button" class="modal-close" id="modal-close">×</button>
+
+  state.currentPage = 'library';
+  state.libraryTab = 'characters';
+  sectionLabel.textContent = t(existing ? 'character.edit' : 'character.new');
+  renderNavbar();
+
+  pageRoot.innerHTML = `
+    <div class="page active character-editor-page-shell">
+      <div class="character-editor-pagebar">
+        <button type="button" class="character-editor-back" id="character-editor-back">← ${escapeHtml(t('character.back'))}</button>
+        <div class="character-editor-page-heading">
+          <span class="modal-kicker">${escapeHtml(t('character.kicker'))}</span>
+          <h1>${escapeHtml(t(existing ? 'character.editor.titleEdit' : 'character.editor.titleNew'))}</h1>
+          <p>${escapeHtml(t(existing ? 'character.editor.subtitleEdit' : 'character.editor.subtitleNew'))}</p>
+        </div>
       </div>
-      <div class="character-editor-layout">
-        <aside class="character-editor-aside">
-          <div id="character-avatar-preview">${characterAvatar(character, 'character-editor-avatar')}</div>
-          <label class="avatar-upload-button"><input type="file" id="character-avatar-file" accept="image/png,image/jpeg,image/webp" hidden>${escapeHtml(t('character.avatar'))}</label>
-          <button type="button" class="avatar-remove" id="character-avatar-remove">${escapeHtml(t('character.removeAvatar'))}</button>
-          <p class="avatar-help">${escapeHtml(t('character.avatarHelp'))}</p>
-          <div class="editor-mini-stats">
-            <div><strong>${characterChatCount(character.id)}</strong><span>${escapeHtml(t('library.chats'))}</span></div>
-            <div><strong>${characterApproxTokens(character)}</strong><span>${escapeHtml(t('library.tokens'))}</span></div>
+
+      <form class="character-editor-page-form" id="character-form">
+        <div class="character-editor-layout">
+          <aside class="character-editor-aside">
+            <div id="character-avatar-preview">${characterAvatar(character, 'character-editor-avatar')}</div>
+            <label class="avatar-upload-button"><input type="file" id="character-avatar-file" accept="image/png,image/jpeg,image/webp" hidden>${escapeHtml(t('character.avatar'))}</label>
+            <button type="button" class="avatar-remove" id="character-avatar-remove">${escapeHtml(t('character.removeAvatar'))}</button>
+            <p class="avatar-help">${escapeHtml(t('character.avatarHelp'))}</p>
+            <div class="editor-mini-stats">
+              <div><strong>${characterChatCount(character.id)}</strong><span>${escapeHtml(t('library.chats'))}</span></div>
+              <div><strong>${characterApproxTokens(character)}</strong><span>${escapeHtml(t('library.tokens'))}</span></div>
+            </div>
+            <label class="favorite-check"><input type="checkbox" name="favorite" ${character.favorite ? 'checked' : ''}><span>★ ${escapeHtml(t('character.favorite'))}</span></label>
+          </aside>
+
+          <div class="character-editor-fields">
+            <section class="editor-section">
+              <div class="editor-section-title">${escapeHtml(t('character.identity'))}</div>
+              <div class="editor-grid-2">
+                <label class="form-field"><span>${escapeHtml(t('character.name'))}</span><input name="name" maxlength="80" value="${escapeHtml(character.name)}" required></label>
+                <label class="form-field"><span>${escapeHtml(t('character.tags'))}</span><input name="tags" value="${escapeHtml((character.tags || []).join(', '))}" placeholder="${escapeHtml(t('character.tagsHelp'))}"></label>
+              </div>
+              <label class="form-field"><span>${escapeHtml(t('character.description'))}</span><textarea name="description" rows="3">${escapeHtml(character.description)}</textarea></label>
+              <label class="form-field"><span>${escapeHtml(t('character.personality'))}</span><textarea name="personality" rows="4">${escapeHtml(character.personality)}</textarea></label>
+              <label class="form-field"><span>${escapeHtml(t('character.scenario'))}</span><textarea name="scenario" rows="3">${escapeHtml(character.scenario)}</textarea></label>
+            </section>
+
+            <section class="editor-section">
+              <div class="editor-section-title">${escapeHtml(t('character.firstMessage'))}</div>
+              <label class="form-field"><textarea name="firstMessage" rows="5">${escapeHtml(character.firstMessage)}</textarea></label>
+              <label class="form-field"><span>${escapeHtml(t('character.altGreetings'))}</span><textarea name="alternateGreetings" rows="5" placeholder="${escapeHtml(t('character.altGreetingsHelp'))}">${escapeHtml((character.alternateGreetings || []).join('\n---\n'))}</textarea></label>
+              <label class="form-field"><span>${escapeHtml(t('character.examples'))}</span><textarea name="exampleMessages" rows="6">${escapeHtml(character.exampleMessages)}</textarea></label>
+            </section>
+
+            <details class="editor-section editor-details">
+              <summary>${escapeHtml(t('character.prompting'))}</summary>
+              <label class="form-field"><span>${escapeHtml(t('character.systemPrompt'))}</span><textarea name="systemPrompt" rows="5">${escapeHtml(character.systemPrompt)}</textarea></label>
+              <label class="form-field"><span>${escapeHtml(t('character.postHistory'))}</span><textarea name="postHistoryInstructions" rows="4">${escapeHtml(character.postHistoryInstructions)}</textarea></label>
+            </details>
+
+            <details class="editor-section editor-details">
+              <summary>${escapeHtml(t('character.metadata'))}</summary>
+              <div class="editor-grid-2">
+                <label class="form-field"><span>${escapeHtml(t('character.creator'))}</span><input name="creator" value="${escapeHtml(character.creator)}"></label>
+                <label class="form-field"><span>${escapeHtml(t('character.version'))}</span><input name="characterVersion" value="${escapeHtml(character.characterVersion)}"></label>
+              </div>
+              <label class="form-field"><span>${escapeHtml(t('character.creatorNotes'))}</span><textarea name="creatorNotes" rows="4">${escapeHtml(character.creatorNotes)}</textarea></label>
+            </details>
           </div>
-          <label class="favorite-check"><input type="checkbox" name="favorite" ${character.favorite ? 'checked' : ''}><span>★ ${escapeHtml(t('character.favorite'))}</span></label>
-        </aside>
-
-        <div class="character-editor-fields">
-          <section class="editor-section">
-            <div class="editor-section-title">${escapeHtml(t('character.identity'))}</div>
-            <div class="editor-grid-2">
-              <label class="form-field"><span>${escapeHtml(t('character.name'))}</span><input name="name" maxlength="80" value="${escapeHtml(character.name)}" required></label>
-              <label class="form-field"><span>${escapeHtml(t('character.tags'))}</span><input name="tags" value="${escapeHtml((character.tags || []).join(', '))}" placeholder="${escapeHtml(t('character.tagsHelp'))}"></label>
-            </div>
-            <label class="form-field"><span>${escapeHtml(t('character.description'))}</span><textarea name="description" rows="3">${escapeHtml(character.description)}</textarea></label>
-            <label class="form-field"><span>${escapeHtml(t('character.personality'))}</span><textarea name="personality" rows="4">${escapeHtml(character.personality)}</textarea></label>
-            <label class="form-field"><span>${escapeHtml(t('character.scenario'))}</span><textarea name="scenario" rows="3">${escapeHtml(character.scenario)}</textarea></label>
-          </section>
-
-          <section class="editor-section">
-            <div class="editor-section-title">${escapeHtml(t('character.firstMessage'))}</div>
-            <label class="form-field"><textarea name="firstMessage" rows="5">${escapeHtml(character.firstMessage)}</textarea></label>
-            <label class="form-field"><span>${escapeHtml(t('character.altGreetings'))}</span><textarea name="alternateGreetings" rows="5" placeholder="${escapeHtml(t('character.altGreetingsHelp'))}">${escapeHtml((character.alternateGreetings || []).join('\n---\n'))}</textarea></label>
-            <label class="form-field"><span>${escapeHtml(t('character.examples'))}</span><textarea name="exampleMessages" rows="6">${escapeHtml(character.exampleMessages)}</textarea></label>
-          </section>
-
-          <details class="editor-section editor-details">
-            <summary>${escapeHtml(t('character.prompting'))}</summary>
-            <label class="form-field"><span>${escapeHtml(t('character.systemPrompt'))}</span><textarea name="systemPrompt" rows="5">${escapeHtml(character.systemPrompt)}</textarea></label>
-            <label class="form-field"><span>${escapeHtml(t('character.postHistory'))}</span><textarea name="postHistoryInstructions" rows="4">${escapeHtml(character.postHistoryInstructions)}</textarea></label>
-          </details>
-
-          <details class="editor-section editor-details">
-            <summary>${escapeHtml(t('character.metadata'))}</summary>
-            <div class="editor-grid-2">
-              <label class="form-field"><span>${escapeHtml(t('character.creator'))}</span><input name="creator" value="${escapeHtml(character.creator)}"></label>
-              <label class="form-field"><span>${escapeHtml(t('character.version'))}</span><input name="characterVersion" value="${escapeHtml(character.characterVersion)}"></label>
-            </div>
-            <label class="form-field"><span>${escapeHtml(t('character.creatorNotes'))}</span><textarea name="creatorNotes" rows="4">${escapeHtml(character.creatorNotes)}</textarea></label>
-          </details>
         </div>
-      </div>
-      <input type="hidden" name="avatar" id="character-avatar-value" value="${escapeHtml(character.avatar)}">
-      <div class="modal-actions character-editor-actions">
-        ${existing ? `<div class="editor-actions-left">
-          <button type="button" class="btn btn-ghost" id="character-duplicate">${escapeHtml(t('library.duplicate'))}</button>
-          <button type="button" class="btn btn-ghost" id="character-export">${escapeHtml(t('library.export'))}</button>
-          <button type="button" class="btn btn-danger" id="character-delete">${escapeHtml(t('library.delete'))}</button>
-        </div>` : '<div></div>'}
-        <div class="editor-actions-right">
-          <button type="button" class="btn btn-ghost" id="modal-cancel">${escapeHtml(t('common.cancel'))}</button>
-          <button class="btn btn-primary" type="submit">${escapeHtml(t('common.save'))}</button>
+        <input type="hidden" name="avatar" id="character-avatar-value" value="${escapeHtml(character.avatar)}">
+        <div class="character-editor-actions character-editor-page-actions">
+          ${existing ? `<div class="editor-actions-left">
+            <button type="button" class="btn btn-ghost" id="character-duplicate">${escapeHtml(t('library.duplicate'))}</button>
+            <button type="button" class="btn btn-ghost" id="character-export">${escapeHtml(t('library.export'))}</button>
+            <button type="button" class="btn btn-danger" id="character-delete">${escapeHtml(t('library.delete'))}</button>
+          </div>` : '<div></div>'}
+          <div class="editor-actions-right">
+            <button class="btn btn-primary" type="submit">${escapeHtml(t(existing ? 'character.editor.save' : 'character.editor.create'))}</button>
+          </div>
         </div>
-      </div>
-    </form>`;
-  document.body.appendChild(overlay);
+      </form>
+    </div>`;
 
-  const close = () => overlay.remove();
-  document.getElementById('modal-close').addEventListener('click', close);
-  document.getElementById('modal-cancel').addEventListener('click', close);
-  overlay.addEventListener('mousedown', event => { if (event.target === overlay) close(); });
+  const backToLibrary = () => renderLibrary('characters');
+  document.getElementById('character-editor-back').addEventListener('click', backToLibrary);
 
   const avatarInput = document.getElementById('character-avatar-file');
   const avatarValue = document.getElementById('character-avatar-value');
   avatarInput.addEventListener('change', () => {
     const file = avatarInput.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { avatarInput.value = ''; toast(t('library.avatarTooLarge'), 'error'); return; }
+    if (file.size > 2 * 1024 * 1024) {
+      avatarInput.value = '';
+      toast(t('library.avatarTooLarge'), 'error');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       avatarValue.value = String(reader.result || '');
@@ -853,6 +798,7 @@ function openCharacterEditor(characterId = null) {
     };
     reader.readAsDataURL(file);
   });
+
   document.getElementById('character-avatar-remove').addEventListener('click', () => {
     avatarValue.value = '';
     document.getElementById('character-avatar-preview').innerHTML = `<div class="character-editor-avatar character-avatar-fallback">${escapeHtml((character.name || '?').slice(0, 1).toUpperCase())}</div>`;
@@ -890,18 +836,21 @@ function openCharacterEditor(characterId = null) {
     const index = characters.findIndex(item => item.id === record.id);
     if (index >= 0) characters[index] = record; else characters.push(record);
     saveCharacters(characters);
-    close();
-    renderCharacterLibrary();
+    renderLibrary('characters');
   });
 
-  document.getElementById('character-duplicate')?.addEventListener('click', () => { close(); duplicateCharacter(existing.id); });
+  document.getElementById('character-duplicate')?.addEventListener('click', () => {
+    duplicateCharacter(existing.id);
+    renderLibrary('characters');
+  });
   document.getElementById('character-export')?.addEventListener('click', () => exportCharacterJson(existing.id));
   document.getElementById('character-delete')?.addEventListener('click', () => {
     if (!confirm(t('character.deleteConfirm'))) return;
-    close(); deleteCharacter(existing.id, true);
+    deleteCharacter(existing.id, true);
+    renderLibrary('characters');
   });
 
-  overlay.querySelector('input[name=name]').focus();
+  pageRoot.querySelector('input[name=name]')?.focus();
 }
 
 function toggleCharacterFavorite(id) {
@@ -918,7 +867,7 @@ function duplicateCharacter(id) {
   const source = getNormalizedCharacters().find(character => character.id === id);
   if (!source) return;
   const characters = getNormalizedCharacters();
-  characters.push(normalizeCharacter({ ...source, id: uid(), name: `${source.name} Copy`, favorite: false, createdAt: Date.now(), updatedAt: Date.now() }));
+  characters.push(normalizeCharacter({ ...source, id: uid(), name: `${source.name} ${t('character.duplicateSuffix')}`, favorite: false, createdAt: Date.now(), updatedAt: Date.now() }));
   saveCharacters(characters);
   renderCharacterLibrary();
 }
@@ -1042,15 +991,19 @@ function renderGeneralConfig() {
   const body = document.getElementById('config-body');
   const accent = localStorage.getItem(STORAGE.accent) || '#B24BFF';
   body.innerHTML = `
-    <div class="config-page-head"><div><h2>${escapeHtml(t('config.general'))}</h2><p>Application-level preferences.</p></div></div>
-    <div class="field-card"><div class="info"><h4>${escapeHtml(t('general.language'))}</h4><p>${escapeHtml(t('general.language.desc'))}</p></div><div class="control"><select id="app-language"><option value="en" ${state.locale === 'en' ? 'selected' : ''}>English</option><option value="fr" ${state.locale === 'fr' ? 'selected' : ''}>Français</option></select></div></div>
+    <div class="config-page-head"><div><h2>${escapeHtml(t('config.general'))}</h2><p>${escapeHtml(t('config.general.desc'))}</p></div></div>
+    <div class="field-card"><div class="info"><h4>${escapeHtml(t('general.language'))}</h4><p>${escapeHtml(t('general.language.desc'))}</p></div><div class="control"><select id="app-language">${languageManifest.languages.map(language => `<option value="${escapeHtml(normalizeLocaleCode(language.code))}" ${state.locale === normalizeLocaleCode(language.code) ? 'selected' : ''}>${escapeHtml(language.label || language.code)}</option>`).join('')}</select></div></div>
     <div class="field-card"><div class="info"><h4>${escapeHtml(t('general.accent'))}</h4><p>${escapeHtml(t('general.accent.desc'))}</p></div><div class="control"><input id="accent-color" type="color" value="${escapeHtml(accent)}"><input id="accent-hex" class="hexinput" value="${escapeHtml(accent)}" maxlength="7"></div></div>`;
 
-  document.getElementById('app-language').addEventListener('change', event => {
-    state.locale = event.target.value;
-    localStorage.setItem(STORAGE.locale, state.locale);
-    renderConfiguration('general');
-    refreshModelStatus();
+  document.getElementById('app-language').addEventListener('change', async event => {
+    try {
+      await setLocale(event.target.value);
+      renderConfiguration('general');
+      await refreshModelStatus();
+    } catch (error) {
+      console.error(error);
+      toast(String(error), 'error');
+    }
   });
   const color = document.getElementById('accent-color');
   const hex = document.getElementById('accent-hex');
@@ -1086,8 +1039,8 @@ async function renderModelsConfig() {
       </div>
       <div class="connection-result" id="connection-result">${escapeHtml(t('models.notTested'))}</div>
     </div>
-    <div class="field-card"><div class="info"><h4>${escapeHtml(t('models.model'))}</h4><p>${escapeHtml(t('models.model.desc'))}</p></div><div class="control model-control"><input id="backend-model" list="backend-model-list" value="${escapeHtml(saved?.model || '')}" placeholder="Model name"><datalist id="backend-model-list"></datalist></div></div>
-    <div class="field-card"><div class="info"><h4>${escapeHtml(t('models.apiKey'))}</h4><p>${escapeHtml(t('models.apiKey.desc'))}</p></div><div class="control model-control"><input id="backend-api-key" type="password" value="${escapeHtml(saved?.apiKey || '')}" placeholder="Optional bearer token"></div></div>`;
+    <div class="field-card"><div class="info"><h4>${escapeHtml(t('models.model'))}</h4><p>${escapeHtml(t('models.model.desc'))}</p></div><div class="control model-control"><input id="backend-model" list="backend-model-list" value="${escapeHtml(saved?.model || '')}" placeholder="${escapeHtml(t('models.model.placeholder'))}"><datalist id="backend-model-list"></datalist></div></div>
+    <div class="field-card"><div class="info"><h4>${escapeHtml(t('models.apiKey'))}</h4><p>${escapeHtml(t('models.apiKey.desc'))}</p></div><div class="control model-control"><input id="backend-api-key" type="password" value="${escapeHtml(saved?.apiKey || '')}" placeholder="${escapeHtml(t('models.apiKey.placeholder'))}"></div></div>`;
 
   const selectBackend = id => {
     body.querySelectorAll('[data-backend-row]').forEach(row => row.classList.toggle('selected', row.dataset.backendRow === id));
@@ -1154,7 +1107,7 @@ function renderParamsConfig() {
   const body = document.getElementById('config-body');
   const params = getGenerationParams();
   body.innerHTML = `
-    <div class="config-page-head"><div><h2>${escapeHtml(t('config.params'))}</h2><p>Defaults sent with every generation request.</p></div><button class="btn btn-primary" id="save-params">${escapeHtml(t('config.save'))}</button></div>
+    <div class="config-page-head"><div><h2>${escapeHtml(t('config.params'))}</h2><p>${escapeHtml(t('params.page.desc'))}</p></div><button class="btn btn-primary" id="save-params">${escapeHtml(t('config.save'))}</button></div>
     ${numberField('temperature', t('params.temperature'), t('params.temperature.desc'), params.temperature, 0, 2, 0.05)}
     ${numberField('topP', t('params.topP'), t('params.topP.desc'), params.topP, 0.05, 1, 0.05)}
     ${numberField('maxTokens', t('params.maxTokens'), t('params.maxTokens.desc'), params.maxTokens, 16, 32768, 16)} `;
@@ -1177,7 +1130,7 @@ function renderUiConfig() {
   const body = document.getElementById('config-body');
   const settings = { ...DEFAULT_UI, ...readJson(STORAGE.ui, {}) };
   body.innerHTML = `
-    <div class="config-page-head"><div><h2>${escapeHtml(t('config.ui'))}</h2><p>Local presentation preferences.</p></div><button class="btn btn-primary" id="save-ui">${escapeHtml(t('config.save'))}</button></div>
+    <div class="config-page-head"><div><h2>${escapeHtml(t('config.ui'))}</h2><p>${escapeHtml(t('ui.page.desc'))}</p></div><button class="btn btn-primary" id="save-ui">${escapeHtml(t('config.save'))}</button></div>
     <div class="field-card"><div class="info"><h4>${escapeHtml(t('ui.scale'))}</h4><p>${escapeHtml(t('ui.scale.desc'))}</p></div><div class="control range-control"><input id="ui-scale" type="range" min="85" max="120" value="${settings.scale}"><span id="ui-scale-value">${settings.scale}%</span></div></div>
     <div class="field-card"><div class="info"><h4>${escapeHtml(t('ui.density'))}</h4><p>${escapeHtml(t('ui.density.desc'))}</p></div><div class="control"><label class="switch"><input id="ui-compact" type="checkbox" ${settings.compactMessages ? 'checked' : ''}><span></span></label></div></div>`;
   const scale = document.getElementById('ui-scale');
@@ -1198,7 +1151,7 @@ async function refreshModelStatus() {
   const text = document.getElementById('model-status-text');
   pill.classList.remove('is-loaded', 'is-loading');
   pill.classList.add('is-loading');
-  text.textContent = 'Checking…';
+  text.textContent = t('status.checking');
   try {
     const status = await invoke('get_model_status');
     state.modelStatus = status;
@@ -1222,8 +1175,20 @@ async function refreshModelStatus() {
    Boot
 =================================================================== */
 
-applyAccent();
-applyUiSettings();
-renderNavbar();
-goTo('chat');
-refreshModelStatus();
+async function bootstrap() {
+  applyAccent();
+  applyUiSettings();
+  await initI18n();
+  renderNavbar();
+  goTo('chat');
+  await refreshModelStatus();
+}
+
+bootstrap().catch(error => {
+  console.error('[boot] NastyVerse failed to initialize.', error);
+  fallbackTranslations = fallbackTranslations || {};
+  currentTranslations = fallbackTranslations;
+  renderNavbar();
+  goTo('chat');
+  refreshModelStatus();
+});

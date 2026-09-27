@@ -143,3 +143,79 @@ input,textarea,select{font:inherit}input,textarea,select{background:var(--panel-
 .modal-backdrop{position:fixed;inset:0;z-index:100;background:rgba(6,3,12,.78);backdrop-filter:blur(8px);display:grid;place-items:center;padding:24px}.modal{width:min(620px,100%);max-height:calc(100vh - 48px);overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:0 26px 80px rgba(0,0,0,.45)}.modal-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px}.modal-head h2{margin:3px 0 0;font-size:20px}.modal-kicker{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--magenta);font-weight:800}.modal-close{width:32px;height:32px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);color:var(--text-dim);font-size:20px;cursor:pointer}.form-field{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}.form-field>span{font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em}.form-field input,.form-field textarea{padding:10px 11px;resize:vertical}.modal-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:20px}.toast-root{position:fixed;right:20px;bottom:20px;z-index:200;display:flex;flex-direction:column;gap:8px;pointer-events:none}.toast{max-width:420px;padding:11px 14px;border-radius:9px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);font-size:12px;box-shadow:0 14px 40px rgba(0,0,0,.34);opacity:0;transform:translateY(8px);transition:.2s}.toast.show{opacity:1;transform:none}.toast-success{border-color:rgba(63,191,158,.4)}.toast-error{border-color:rgba(225,75,107,.5);color:#ffd8e0}
 
 @media (max-width:960px){.page{padding:32px 28px}.config-layout{grid-template-columns:190px minmax(0,1fr)}.config-body{padding:26px}.backend-row label{width:130px}.chat-header-actions .btn{font-size:0}.chat-header-actions .btn:after{content:'•••';font-size:12px}.model-control input{width:220px}}
+
+/* ===== Full-page character editor ===== */
+.character-editor-page-shell{
+  height:100%;
+  min-height:0;
+  padding:0;
+  overflow:hidden;
+  background:var(--void);
+}
+.character-editor-pagebar{
+  display:flex;
+  align-items:flex-start;
+  gap:22px;
+  padding:18px 24px;
+  border-bottom:1px solid var(--line);
+  background:var(--panel);
+}
+.character-editor-back{
+  flex:none;
+  margin-top:2px;
+  border:1px solid var(--line);
+  border-radius:9px;
+  background:var(--panel-2);
+  color:var(--text-dim);
+  padding:9px 12px;
+  font-size:11px;
+  font-weight:700;
+  cursor:pointer;
+  transition:border-color .16s,color .16s,background .16s;
+}
+.character-editor-back:hover{
+  border-color:var(--violet-2);
+  color:var(--text);
+  background:var(--panel);
+}
+.character-editor-page-heading{min-width:0}
+.character-editor-page-heading h1{
+  margin:3px 0 5px;
+  font-family:'Cinzel Decorative',serif;
+  font-size:22px;
+  line-height:1.2;
+}
+.character-editor-page-heading p{
+  margin:0;
+  color:var(--text-faint);
+  font-size:11.5px;
+  line-height:1.45;
+}
+.character-editor-page-form{
+  height:calc(100% - 88px);
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  background:var(--panel);
+}
+.character-editor-page-form .character-editor-layout{
+  flex:1;
+  min-height:0;
+}
+.character-editor-page-form .character-editor-aside,
+.character-editor-page-form .character-editor-fields{
+  min-height:0;
+}
+.character-editor-page-actions{
+  flex:none;
+  margin:0;
+}
+
+@media (max-width:900px){
+  .character-editor-pagebar{padding:14px 16px;gap:12px}
+  .character-editor-page-heading h1{font-size:18px}
+  .character-editor-page-form{height:calc(100% - 82px)}
+  .character-editor-page-form .character-editor-layout{overflow-y:auto}
+  .character-editor-page-form .character-editor-aside,
+  .character-editor-page-form .character-editor-fields{overflow:visible}
+}

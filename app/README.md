@@ -16,3 +16,7 @@ Current application payload version: **0.1.0**. The source of truth is `src/app-
 ## Current functional base
 
 The frontend now includes a full Character Library management surface: search/sort/filter/favorites/tags, rich character cards, avatar editing, personality/scenario/greetings/example messages, prompt overrides, creator metadata, duplication, JSON import/export, and local conversation statistics. Conversations and character records are still persisted locally in the frontend for this base. Structured content will move to SQLite and PNG/CHARX import will move to the native V3-unified Character Card parser in later passes.
+
+## Application i18n
+
+The application UI translations live in `app/src/i18n/`. `languages.json` lists available languages; each language has its own JSON dictionary (for example `en-en.json` and `fr-fr.json`). Adding a language requires adding its dictionary and one entry to `languages.json`; English remains the fallback.

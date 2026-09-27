@@ -106,7 +106,7 @@
   "character.removeAvatar": "Remove avatar",
   "character.personality": "Personality",
   "character.altGreetings": "Alternative greetings",
-  "character.altGreetingsHelp": "Separate greetings with a line containing only ---",
+  "character.altGreetingsHelp": "Add as many alternate opening messages as you want. One greeting per entry.",
   "character.examples": "Example messages",
   "character.prompting": "Prompting",
   "character.postHistory": "Post-history instructions",
@@ -149,5 +149,8 @@
   "character.editor.save": "Save character",
   "character.editor.create": "Create character",
   "chat.you": "You",
-  "chat.characterFallback": "NastyVerse character"
+  "chat.characterFallback": "NastyVerse character",
+  "character.story": "Story",
+  "character.addGreeting": "Add greeting",
+  "character.removeGreeting": "Remove greeting"
 }

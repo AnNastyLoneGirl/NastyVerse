@@ -319,7 +319,6 @@ function chatSystemPrompt(character) {
   if (character.description?.trim()) blocks.push(`Character description:\n${character.description.trim()}`);
   if (character.personality?.trim()) blocks.push(`Personality:\n${character.personality.trim()}`);
   if (character.scenario?.trim()) blocks.push(`Scenario:\n${character.scenario.trim()}`);
-  if (character.exampleMessages?.trim()) blocks.push(`Example messages:\n${character.exampleMessages.trim()}`);
   if (character.postHistoryInstructions?.trim()) blocks.push(`Post-history instructions:\n${character.postHistoryInstructions.trim()}`);
   return blocks.join('\n\n');
 }
@@ -701,18 +700,22 @@ function openCharacterEditor(characterId = null) {
 
   state.currentPage = 'library';
   state.libraryTab = 'characters';
-  sectionLabel.textContent = t(existing ? 'character.edit' : 'character.new');
+  sectionLabel.textContent = t('library.characters');
   renderNavbar();
+
+  const greetingRows = (character.alternateGreetings || []).map((greeting, index) => `
+    <div class="alternate-greeting-row" data-greeting-row>
+      <div class="alternate-greeting-head">
+        <span>${escapeHtml(t('character.altGreetings'))} ${index + 1}</span>
+        <button type="button" class="card-mini-action" data-remove-greeting title="${escapeHtml(t('character.removeGreeting'))}">×</button>
+      </div>
+      <textarea name="alternateGreeting" rows="4">${escapeHtml(greeting)}</textarea>
+    </div>`).join('');
 
   pageRoot.innerHTML = `
     <div class="page active character-editor-page-shell">
-      <div class="character-editor-pagebar">
+      <div class="character-editor-topbar">
         <button type="button" class="character-editor-back" id="character-editor-back">← ${escapeHtml(t('character.back'))}</button>
-        <div class="character-editor-page-heading">
-          <span class="modal-kicker">${escapeHtml(t('character.kicker'))}</span>
-          <h1>${escapeHtml(t(existing ? 'character.editor.titleEdit' : 'character.editor.titleNew'))}</h1>
-          <p>${escapeHtml(t(existing ? 'character.editor.subtitleEdit' : 'character.editor.subtitleNew'))}</p>
-        </div>
       </div>
 
       <form class="character-editor-page-form" id="character-form">
@@ -729,57 +732,72 @@ function openCharacterEditor(characterId = null) {
             <label class="favorite-check"><input type="checkbox" name="favorite" ${character.favorite ? 'checked' : ''}><span>★ ${escapeHtml(t('character.favorite'))}</span></label>
           </aside>
 
-          <div class="character-editor-fields">
-            <section class="editor-section">
-              <div class="editor-section-title">${escapeHtml(t('character.identity'))}</div>
-              <div class="editor-grid-2">
+          <div class="character-editor-main">
+            <div class="character-editor-tabs" role="tablist">
+              <button type="button" class="character-editor-tab active" data-editor-tab="identity">${escapeHtml(t('character.identity'))}</button>
+              <button type="button" class="character-editor-tab" data-editor-tab="story">${escapeHtml(t('character.story'))}</button>
+              <button type="button" class="character-editor-tab" data-editor-tab="prompting">${escapeHtml(t('character.prompting'))}</button>
+              <button type="button" class="character-editor-tab" data-editor-tab="metadata">${escapeHtml(t('character.metadata'))}</button>
+            </div>
+
+            <div class="character-editor-fields">
+              <section class="character-editor-panel active" data-editor-panel="identity">
                 <label class="form-field"><span>${escapeHtml(t('character.name'))}</span><input name="name" maxlength="80" value="${escapeHtml(character.name)}" required></label>
-                <label class="form-field"><span>${escapeHtml(t('character.tags'))}</span><input name="tags" value="${escapeHtml((character.tags || []).join(', '))}" placeholder="${escapeHtml(t('character.tagsHelp'))}"></label>
-              </div>
-              <label class="form-field"><span>${escapeHtml(t('character.description'))}</span><textarea name="description" rows="3">${escapeHtml(character.description)}</textarea></label>
-              <label class="form-field"><span>${escapeHtml(t('character.personality'))}</span><textarea name="personality" rows="4">${escapeHtml(character.personality)}</textarea></label>
-              <label class="form-field"><span>${escapeHtml(t('character.scenario'))}</span><textarea name="scenario" rows="3">${escapeHtml(character.scenario)}</textarea></label>
-            </section>
+                <label class="form-field"><span>${escapeHtml(t('character.description'))}</span><textarea name="description" rows="7">${escapeHtml(character.description)}</textarea></label>
+                <label class="form-field"><span>${escapeHtml(t('character.personality'))}</span><textarea name="personality" rows="8">${escapeHtml(character.personality)}</textarea></label>
+              </section>
 
-            <section class="editor-section">
-              <div class="editor-section-title">${escapeHtml(t('character.firstMessage'))}</div>
-              <label class="form-field"><textarea name="firstMessage" rows="5">${escapeHtml(character.firstMessage)}</textarea></label>
-              <label class="form-field"><span>${escapeHtml(t('character.altGreetings'))}</span><textarea name="alternateGreetings" rows="5" placeholder="${escapeHtml(t('character.altGreetingsHelp'))}">${escapeHtml((character.alternateGreetings || []).join('\n---\n'))}</textarea></label>
-              <label class="form-field"><span>${escapeHtml(t('character.examples'))}</span><textarea name="exampleMessages" rows="6">${escapeHtml(character.exampleMessages)}</textarea></label>
-            </section>
+              <section class="character-editor-panel" data-editor-panel="story">
+                <label class="form-field"><span>${escapeHtml(t('character.scenario'))}</span><textarea name="scenario" rows="6">${escapeHtml(character.scenario)}</textarea></label>
+                <label class="form-field"><span>${escapeHtml(t('character.firstMessage'))}</span><textarea name="firstMessage" rows="7">${escapeHtml(character.firstMessage)}</textarea></label>
+                <div class="alternate-greetings-block">
+                  <div class="alternate-greetings-title">
+                    <div>
+                      <strong>${escapeHtml(t('character.altGreetings'))}</strong>
+                      <span>${escapeHtml(t('character.altGreetingsHelp'))}</span>
+                    </div>
+                    <button type="button" class="btn btn-ghost btn-small" id="add-alternate-greeting">+ ${escapeHtml(t('character.addGreeting'))}</button>
+                  </div>
+                  <div class="alternate-greetings-list" id="alternate-greetings-list">${greetingRows}</div>
+                </div>
+              </section>
 
-            <details class="editor-section editor-details">
-              <summary>${escapeHtml(t('character.prompting'))}</summary>
-              <label class="form-field"><span>${escapeHtml(t('character.systemPrompt'))}</span><textarea name="systemPrompt" rows="5">${escapeHtml(character.systemPrompt)}</textarea></label>
-              <label class="form-field"><span>${escapeHtml(t('character.postHistory'))}</span><textarea name="postHistoryInstructions" rows="4">${escapeHtml(character.postHistoryInstructions)}</textarea></label>
-            </details>
+              <section class="character-editor-panel" data-editor-panel="prompting">
+                <label class="form-field"><span>${escapeHtml(t('character.systemPrompt'))}</span><textarea name="systemPrompt" rows="8">${escapeHtml(character.systemPrompt)}</textarea></label>
+                <label class="form-field"><span>${escapeHtml(t('character.postHistory'))}</span><textarea name="postHistoryInstructions" rows="7">${escapeHtml(character.postHistoryInstructions)}</textarea></label>
+              </section>
 
-            <details class="editor-section editor-details">
-              <summary>${escapeHtml(t('character.metadata'))}</summary>
-              <div class="editor-grid-2">
-                <label class="form-field"><span>${escapeHtml(t('character.creator'))}</span><input name="creator" value="${escapeHtml(character.creator)}"></label>
-                <label class="form-field"><span>${escapeHtml(t('character.version'))}</span><input name="characterVersion" value="${escapeHtml(character.characterVersion)}"></label>
-              </div>
-              <label class="form-field"><span>${escapeHtml(t('character.creatorNotes'))}</span><textarea name="creatorNotes" rows="4">${escapeHtml(character.creatorNotes)}</textarea></label>
-            </details>
+              <section class="character-editor-panel" data-editor-panel="metadata">
+                <div class="editor-grid-2">
+                  <label class="form-field"><span>${escapeHtml(t('character.creator'))}</span><input name="creator" value="${escapeHtml(character.creator)}"></label>
+                  <label class="form-field"><span>${escapeHtml(t('character.version'))}</span><input name="characterVersion" value="${escapeHtml(character.characterVersion)}"></label>
+                </div>
+                <label class="form-field"><span>${escapeHtml(t('character.creatorNotes'))}</span><textarea name="creatorNotes" rows="8">${escapeHtml(character.creatorNotes)}</textarea></label>
+              </section>
+            </div>
           </div>
         </div>
         <input type="hidden" name="avatar" id="character-avatar-value" value="${escapeHtml(character.avatar)}">
         <div class="character-editor-actions character-editor-page-actions">
-          ${existing ? `<div class="editor-actions-left">
+          ${existing ? `
             <button type="button" class="btn btn-ghost" id="character-duplicate">${escapeHtml(t('library.duplicate'))}</button>
             <button type="button" class="btn btn-ghost" id="character-export">${escapeHtml(t('library.export'))}</button>
-            <button type="button" class="btn btn-danger" id="character-delete">${escapeHtml(t('library.delete'))}</button>
-          </div>` : '<div></div>'}
-          <div class="editor-actions-right">
-            <button class="btn btn-primary" type="submit">${escapeHtml(t(existing ? 'character.editor.save' : 'character.editor.create'))}</button>
-          </div>
+            <button type="button" class="btn btn-danger" id="character-delete">${escapeHtml(t('library.delete'))}</button>` : ''}
+          <button class="btn btn-primary" type="submit">${escapeHtml(t(existing ? 'character.editor.save' : 'character.editor.create'))}</button>
         </div>
       </form>
     </div>`;
 
   const backToLibrary = () => renderLibrary('characters');
   document.getElementById('character-editor-back').addEventListener('click', backToLibrary);
+
+  const editorTabs = [...pageRoot.querySelectorAll('[data-editor-tab]')];
+  const editorPanels = [...pageRoot.querySelectorAll('[data-editor-panel]')];
+  editorTabs.forEach(button => button.addEventListener('click', () => {
+    const target = button.dataset.editorTab;
+    editorTabs.forEach(tab => tab.classList.toggle('active', tab === button));
+    editorPanels.forEach(panel => panel.classList.toggle('active', panel.dataset.editorPanel === target));
+  }));
 
   const avatarInput = document.getElementById('character-avatar-file');
   const avatarValue = document.getElementById('character-avatar-value');
@@ -804,6 +822,36 @@ function openCharacterEditor(characterId = null) {
     document.getElementById('character-avatar-preview').innerHTML = `<div class="character-editor-avatar character-avatar-fallback">${escapeHtml((character.name || '?').slice(0, 1).toUpperCase())}</div>`;
   });
 
+  const greetingsList = document.getElementById('alternate-greetings-list');
+  const refreshGreetingNumbers = () => {
+    [...greetingsList.querySelectorAll('[data-greeting-row]')].forEach((row, index) => {
+      const label = row.querySelector('.alternate-greeting-head span');
+      if (label) label.textContent = `${t('character.altGreetings')} ${index + 1}`;
+    });
+  };
+  const bindGreetingRemove = row => {
+    row.querySelector('[data-remove-greeting]')?.addEventListener('click', () => {
+      row.remove();
+      refreshGreetingNumbers();
+    });
+  };
+  [...greetingsList.querySelectorAll('[data-greeting-row]')].forEach(bindGreetingRemove);
+  document.getElementById('add-alternate-greeting').addEventListener('click', () => {
+    const row = document.createElement('div');
+    row.className = 'alternate-greeting-row';
+    row.dataset.greetingRow = '';
+    row.innerHTML = `
+      <div class="alternate-greeting-head">
+        <span></span>
+        <button type="button" class="card-mini-action" data-remove-greeting title="${escapeHtml(t('character.removeGreeting'))}">×</button>
+      </div>
+      <textarea name="alternateGreeting" rows="4"></textarea>`;
+    greetingsList.appendChild(row);
+    bindGreetingRemove(row);
+    refreshGreetingNumbers();
+    row.querySelector('textarea')?.focus();
+  });
+
   document.getElementById('character-form').addEventListener('submit', event => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -820,14 +868,14 @@ function openCharacterEditor(characterId = null) {
       personality: String(data.get('personality') || '').trim(),
       scenario: String(data.get('scenario') || '').trim(),
       firstMessage: String(data.get('firstMessage') || '').trim(),
-      alternateGreetings: String(data.get('alternateGreetings') || '').split(/\n\s*---\s*\n/g).map(v => v.trim()).filter(Boolean),
-      exampleMessages: String(data.get('exampleMessages') || '').trim(),
+      alternateGreetings: data.getAll('alternateGreeting').map(value => String(value).trim()).filter(Boolean),
+      exampleMessages: existing?.exampleMessages || character.exampleMessages || '',
       systemPrompt: String(data.get('systemPrompt') || '').trim(),
       postHistoryInstructions: String(data.get('postHistoryInstructions') || '').trim(),
       creator: String(data.get('creator') || '').trim(),
       characterVersion: String(data.get('characterVersion') || '').trim(),
       creatorNotes: String(data.get('creatorNotes') || '').trim(),
-      tags: String(data.get('tags') || '').split(',').map(v => v.trim()).filter(Boolean),
+      tags: existing?.tags || character.tags || [],
       favorite: data.get('favorite') === 'on',
       createdAt: existing?.createdAt || Date.now(),
       updatedAt: Date.now(),

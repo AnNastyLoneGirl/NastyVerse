@@ -106,7 +106,7 @@
   "character.removeAvatar": "Retirer l’avatar",
   "character.personality": "Personnalité",
   "character.altGreetings": "Salutations alternatives",
-  "character.altGreetingsHelp": "Séparez les salutations par une ligne contenant uniquement ---",
+  "character.altGreetingsHelp": "Ajoutez autant de premiers messages alternatifs que vous le souhaitez. Un greeting par entrée.",
   "character.examples": "Messages d’exemple",
   "character.prompting": "Prompting",
   "character.postHistory": "Instructions post-historique",
@@ -149,5 +149,8 @@
   "character.editor.save": "Enregistrer le personnage",
   "character.editor.create": "Créer le personnage",
   "chat.you": "Vous",
-  "chat.characterFallback": "Personnage NastyVerse"
+  "chat.characterFallback": "Personnage NastyVerse",
+  "character.story": "Histoire",
+  "character.addGreeting": "Ajouter un greeting",
+  "character.removeGreeting": "Supprimer le greeting"
 }

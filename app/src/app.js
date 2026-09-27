@@ -25,6 +25,7 @@ const STORAGE = {
   conversations: 'nv_app_conversations_v1',
   activeCharacter: 'nv_app_active_character',
   ui: 'nv_app_ui_settings',
+  contextTemplate: 'nv_app_context_template',
 };
 
 const I18N_FALLBACK_MANIFEST = {
@@ -158,6 +159,7 @@ const NAV_ITEMS = [
 const CONFIG_SECTIONS = [
   { id: 'general', labelKey: 'config.general' },
   { id: 'models', labelKey: 'config.models' },
+  { id: 'global-prompt', labelKey: 'config.globalPrompt' },
   { id: 'model-params', labelKey: 'config.params' },
   { id: 'ui', labelKey: 'config.ui' },
 ];
@@ -172,6 +174,27 @@ const BACKENDS = [
 
 const DEFAULT_PARAMS = { temperature: 0.8, topP: 0.95, maxTokens: 512 };
 const DEFAULT_UI = { scale: 100, compactMessages: false };
+const DEFAULT_CONTEXT_TEMPLATE = `You are {{char}}. Stay in character and respond naturally.
+
+{{#if system}}{{system}}
+
+{{/if}}{{#if description}}Description:
+{{description}}
+
+{{/if}}{{#if personality}}Personality:
+{{personality}}
+
+{{/if}}{{#if scenario}}Scenario:
+{{scenario}}
+{{/if}}{{#if persona}}
+User persona:
+{{persona}}
+{{/if}}{{#if loreBefore}}
+World information:
+{{loreBefore}}
+{{/if}}{{#if loreAfter}}
+{{loreAfter}}
+{{/if}}`;
 
 const state = {
   locale: normalizeLocaleCode(localStorage.getItem(STORAGE.locale) || 'en-en'),
@@ -343,6 +366,72 @@ function saveConversations(conversations) {
 
 function getGenerationParams() {
   return { ...DEFAULT_PARAMS, ...readJson(STORAGE.params, {}) };
+}
+
+function getContextTemplate() {
+  const saved = localStorage.getItem(STORAGE.contextTemplate);
+  return saved === null ? DEFAULT_CONTEXT_TEMPLATE : saved;
+}
+
+function contextTemplateValues(character) {
+  const loreBefore = '';
+  const loreAfter = '';
+  return {
+    anchorBefore: '',
+    anchorAfter: '',
+    description: character.description || '',
+    scenario: character.scenario || '',
+    personality: character.personality || '',
+    system: character.systemPrompt || '',
+    persona: '',
+    char: character.name || '',
+    user: 'User',
+    wiBefore: loreBefore,
+    loreBefore,
+    wiAfter: loreAfter,
+    loreAfter,
+    mesExamples: character.exampleMessages || '',
+    mesExamplesRaw: character.exampleMessages || '',
+  };
+}
+
+function renderContextTemplate(template, values) {
+  let output = String(template || '');
+  for (let pass = 0; pass < 8; pass += 1) {
+    const next = output.replace(/\{\{#if\s+([a-zA-Z0-9_]+)\s*\}\}([\s\S]*?)\{\{\/if\}\}/g, (_, key, block) => {
+      return String(values[key] || '').trim() ? block : '';
+    });
+    if (next === output) break;
+    output = next;
+  }
+  output = output.replace(/\n?\s*\{\{trim\}\}\s*\n?/g, '');
+  output = output.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) => String(values[key] ?? ''));
+  return output.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function renderCharacterContext(character) {
+  return renderContextTemplate(getContextTemplate(), contextTemplateValues(character));
+}
+
+function estimateTokens(text) {
+  const content = String(text || '').trim();
+  return content ? Math.ceil(content.length / 3.5) : 0;
+}
+
+function characterTokenCounts(character) {
+  const context = renderCharacterContext(character);
+  const postHistory = String(character.postHistoryInstructions || '').trim();
+  const permanentText = [context, postHistory].filter(Boolean).join('\n\n');
+  const nonPermanentText = [
+    character.firstMessage,
+    ...(character.alternateGreetings || []),
+    character.exampleMessages,
+  ].filter(value => String(value || '').trim()).join('\n\n');
+  const totalText = [permanentText, nonPermanentText].filter(Boolean).join('\n\n');
+  return {
+    permanent: estimateTokens(permanentText),
+    total: estimateTokens(totalText),
+  };
 }
 
 function applyUiSettings() {
@@ -837,13 +926,9 @@ function ensureConversation(character) {
 }
 
 function chatSystemPrompt(character) {
-  if (character.systemPrompt?.trim()) return character.systemPrompt.trim();
-  const blocks = [`You are ${character.name}. Stay in character and respond naturally.`];
-  if (character.description?.trim()) blocks.push(`Character description:\n${character.description.trim()}`);
-  if (character.personality?.trim()) blocks.push(`Personality:\n${character.personality.trim()}`);
-  if (character.scenario?.trim()) blocks.push(`Scenario:\n${character.scenario.trim()}`);
-  if (character.postHistoryInstructions?.trim()) blocks.push(`Post-history instructions:\n${character.postHistoryInstructions.trim()}`);
-  return blocks.join('\n\n');
+  const context = renderCharacterContext(character);
+  const postHistory = String(character.postHistoryInstructions || '').trim();
+  return [context, postHistory].filter(Boolean).join('\n\n');
 }
 
 function scrollChatToBottom() {
@@ -1014,12 +1099,7 @@ function characterChatCount(id) {
 }
 
 function characterApproxTokens(character) {
-  const text = [
-    character.description, character.personality, character.scenario, character.firstMessage,
-    ...(character.alternateGreetings || []), character.exampleMessages, character.systemPrompt,
-    character.postHistoryInstructions, character.creatorNotes
-  ].filter(Boolean).join('\n');
-  return Math.round(text.length / 4);
+  return characterTokenCounts(character).total;
 }
 
 function characterDate(timestamp) {
@@ -1230,6 +1310,8 @@ function openCharacterEditor(characterId = null) {
   sectionLabel.textContent = t('library.characters');
   renderNavbar();
 
+  const initialTokenCounts = characterTokenCounts(character);
+
   const greetingRows = (character.alternateGreetings || []).map((greeting, index) => `
     <div class="alternate-greeting-row" data-greeting-row>
       <div class="alternate-greeting-head">
@@ -1243,6 +1325,10 @@ function openCharacterEditor(characterId = null) {
     <div class="page active character-editor-page-shell">
       <div class="character-editor-topbar">
         <button type="button" class="character-editor-back" id="character-editor-back">← ${escapeHtml(t('character.back'))}</button>
+        <div class="character-editor-token-stats" aria-live="polite">
+          <div class="character-editor-token-stat"><span>${escapeHtml(t('character.tokens.permanent'))}</span><strong id="character-permanent-tokens">${initialTokenCounts.permanent}</strong></div>
+          <div class="character-editor-token-stat"><span>${escapeHtml(t('character.tokens.total'))}</span><strong id="character-total-tokens">${initialTokenCounts.total}</strong></div>
+        </div>
       </div>
 
       <form class="character-editor-page-form" id="character-form">
@@ -1258,10 +1344,6 @@ function openCharacterEditor(characterId = null) {
                 <div class="character-tag-suggestions" id="character-tag-suggestions" hidden></div>
               </div>
               <div class="character-tag-list" id="character-tag-list"></div>
-            </div>
-            <div class="editor-mini-stats">
-              <div><strong>${characterChatCount(character.id)}</strong><span>${escapeHtml(t('library.chats'))}</span></div>
-              <div><strong>${characterApproxTokens(character)}</strong><span>${escapeHtml(t('library.tokens'))}</span></div>
             </div>
             <label class="favorite-check"><input type="checkbox" name="favorite" ${character.favorite ? 'checked' : ''}><span>★ ${escapeHtml(t('character.favorite'))}</span></label>
           </aside>
@@ -1332,6 +1414,31 @@ function openCharacterEditor(characterId = null) {
     editorTabs.forEach(tab => tab.classList.toggle('active', tab === button));
     editorPanels.forEach(panel => panel.classList.toggle('active', panel.dataset.editorPanel === target));
   }));
+
+  const characterForm = document.getElementById('character-form');
+  const permanentTokenValue = document.getElementById('character-permanent-tokens');
+  const totalTokenValue = document.getElementById('character-total-tokens');
+  const characterDraftForTokens = () => {
+    const data = new FormData(characterForm);
+    return normalizeCharacter({
+      ...character,
+      name: String(data.get('name') || ''),
+      description: String(data.get('description') || ''),
+      personality: String(data.get('personality') || ''),
+      scenario: String(data.get('scenario') || ''),
+      firstMessage: String(data.get('firstMessage') || ''),
+      alternateGreetings: data.getAll('alternateGreeting').map(value => String(value).trim()).filter(Boolean),
+      systemPrompt: String(data.get('systemPrompt') || ''),
+      postHistoryInstructions: String(data.get('postHistoryInstructions') || ''),
+      exampleMessages: character.exampleMessages || '',
+    });
+  };
+  const refreshCharacterTokenCounts = () => {
+    const counts = characterTokenCounts(characterDraftForTokens());
+    permanentTokenValue.textContent = String(counts.permanent);
+    totalTokenValue.textContent = String(counts.total);
+  };
+  characterForm.addEventListener('input', refreshCharacterTokenCounts);
 
   const avatarInput = document.getElementById('character-avatar-file');
   const avatarValue = document.getElementById('character-avatar-value');
@@ -1499,6 +1606,7 @@ function openCharacterEditor(characterId = null) {
     row.querySelector('[data-remove-greeting]')?.addEventListener('click', () => {
       row.remove();
       refreshGreetingNumbers();
+      refreshCharacterTokenCounts();
     });
   };
   [...greetingsList.querySelectorAll('[data-greeting-row]')].forEach(bindGreetingRemove);
@@ -1515,6 +1623,7 @@ function openCharacterEditor(characterId = null) {
     greetingsList.appendChild(row);
     bindGreetingRemove(row);
     refreshGreetingNumbers();
+    refreshCharacterTokenCounts();
     row.querySelector('textarea')?.focus();
   });
 
@@ -2023,6 +2132,7 @@ async function renderConfiguration(section = 'general') {
 
   if (section === 'general') renderGeneralConfig();
   else if (section === 'models') await renderModelsConfig();
+  else if (section === 'global-prompt') renderGlobalPromptConfig();
   else if (section === 'model-params') renderParamsConfig();
   else renderUiConfig();
 }
@@ -2141,6 +2251,38 @@ async function saveBackendConfiguration() {
   } catch (error) {
     toast(String(error), 'error');
   }
+}
+
+function renderGlobalPromptConfig() {
+  const body = document.getElementById('config-body');
+  const template = getContextTemplate();
+  body.innerHTML = `
+    <div class="field-card field-card-stack global-prompt-card">
+      <div class="info">
+        <h4>${escapeHtml(t('globalPrompt.contextTemplate'))}</h4>
+        <p>${escapeHtml(t('globalPrompt.contextTemplate.desc'))}</p>
+      </div>
+      <textarea id="context-template-editor" class="context-template-editor" spellcheck="false">${escapeHtml(template)}</textarea>
+      <div class="context-template-help">
+        <strong>${escapeHtml(t('globalPrompt.available'))}</strong>
+        <div class="context-template-macros"><code>{{char}}</code><code>{{user}}</code><code>{{description}}</code><code>{{personality}}</code><code>{{scenario}}</code><code>{{system}}</code><code>{{persona}}</code><code>{{loreBefore}}</code><code>{{loreAfter}}</code><code>{{anchorBefore}}</code><code>{{anchorAfter}}</code><code>{{mesExamples}}</code></div>
+      </div>
+      <div class="global-prompt-actions">
+        <button type="button" class="btn btn-ghost" id="reset-context-template">${escapeHtml(t('globalPrompt.reset'))}</button>
+        <button type="button" class="btn btn-primary" id="save-context-template">${escapeHtml(t('config.save'))}</button>
+      </div>
+    </div>`;
+
+  const editor = document.getElementById('context-template-editor');
+  document.getElementById('save-context-template').addEventListener('click', () => {
+    localStorage.setItem(STORAGE.contextTemplate, editor.value);
+    toast(t('globalPrompt.saved'), 'success');
+  });
+  document.getElementById('reset-context-template').addEventListener('click', () => {
+    editor.value = DEFAULT_CONTEXT_TEMPLATE;
+    localStorage.setItem(STORAGE.contextTemplate, DEFAULT_CONTEXT_TEMPLATE);
+    toast(t('globalPrompt.resetDone'), 'success');
+  });
 }
 
 function renderParamsConfig() {

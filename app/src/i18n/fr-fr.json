@@ -168,5 +168,14 @@
   "library.importFailed": "{count} fichier(s) n’ont pas pu être importés. Formats pris en charge : JSON, PNG, APNG et CHARX.",
   "character.tagsPlaceholder": "Saisir un tag…",
   "character.removeTag": "Retirer le tag",
-  "character.noTags": "Aucun tag pour le moment"
+  "character.noTags": "Aucun tag pour le moment",
+  "config.globalPrompt": "Global Prompt",
+  "globalPrompt.contextTemplate": "Context Template",
+  "globalPrompt.contextTemplate.desc": "Contrôle la manière dont les informations permanentes du personnage sont assemblées avant l’historique du chat. Les placeholders absents ne sont pas envoyés dans le prompt.",
+  "globalPrompt.available": "Placeholders disponibles",
+  "globalPrompt.reset": "Réinitialiser",
+  "globalPrompt.saved": "Context Template enregistré.",
+  "globalPrompt.resetDone": "Context Template par défaut restauré.",
+  "character.tokens.permanent": "Tokens permanents",
+  "character.tokens.total": "Tokens totaux"
 }

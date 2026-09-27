@@ -168,5 +168,14 @@
   "library.importFailed": "{count} file(s) could not be imported. Supported formats: JSON, PNG, APNG and CHARX.",
   "character.tagsPlaceholder": "Type a tag…",
   "character.removeTag": "Remove tag",
-  "character.noTags": "No tags yet"
+  "character.noTags": "No tags yet",
+  "config.globalPrompt": "Global Prompt",
+  "globalPrompt.contextTemplate": "Context Template",
+  "globalPrompt.contextTemplate.desc": "Controls how permanent character information is assembled before chat history. Missing placeholders are not included in the prompt.",
+  "globalPrompt.available": "Available placeholders",
+  "globalPrompt.reset": "Reset default",
+  "globalPrompt.saved": "Context Template saved.",
+  "globalPrompt.resetDone": "Default Context Template restored.",
+  "character.tokens.permanent": "Permanent Tokens",
+  "character.tokens.total": "Total Tokens"
 }

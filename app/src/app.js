@@ -30,6 +30,8 @@ const STORAGE = {
   globalSystemPrompt: 'nv_app_global_system_prompt',
   globalPostHistory: 'nv_app_global_post_history',
   globalPromptTab: 'nv_app_global_prompt_tab',
+  contextPresets: 'nv_app_context_presets_v1',
+  promptPreviewCharacter: 'nv_app_prompt_preview_character',
 };
 
 const I18N_FALLBACK_MANIFEST = {
@@ -44,6 +46,8 @@ let languageManifest = I18N_FALLBACK_MANIFEST;
 let fallbackTranslations = {};
 let currentTranslations = {};
 
+let contextPresetFactory = { default: 'Default', presets: [] };
+
 function normalizeLocaleCode(value) {
   const raw = String(value || '').trim().toLowerCase().replaceAll('_', '-');
   if (raw === 'en') return 'en-en';
@@ -55,6 +59,22 @@ async function fetchJsonResource(path) {
   const response = await fetch(path, { cache: 'no-store' });
   if (!response.ok) throw new Error(`HTTP ${response.status} for ${path}`);
   return response.json();
+}
+
+async function loadContextPresetFactory() {
+  try {
+    const data = await fetchJsonResource('presets/context-presets.json');
+    if (!Array.isArray(data?.presets) || !data.presets.length) throw new Error('Invalid context preset library');
+    contextPresetFactory = {
+      default: String(data.default || 'Default'),
+      presets: data.presets
+        .filter(preset => preset && typeof preset.name === 'string' && typeof preset.story_string === 'string')
+        .map(preset => ({ name: preset.name, storyString: preset.story_string })),
+    };
+  } catch (error) {
+    console.warn('[prompt] Falling back to the built-in Default context preset.', error);
+    contextPresetFactory = { default: 'Default', presets: [{ name: 'Default', storyString: DEFAULT_CONTEXT_TEMPLATE }] };
+  }
 }
 
 async function loadLanguageManifest() {
@@ -183,7 +203,18 @@ const BACKENDS = [
 
 const DEFAULT_PARAMS = { temperature: 0.8, topP: 0.95, maxTokens: 512 };
 const DEFAULT_UI = { scale: 100, compactMessages: false };
-const DEFAULT_CONTEXT_TEMPLATE = `{{#if system}}{{system}}
+const DEFAULT_CONTEXT_TEMPLATE = `{{#if anchorBefore}}{{anchorBefore}}
+{{/if}}{{#if system}}{{system}}
+{{/if}}{{#if wiBefore}}{{wiBefore}}
+{{/if}}{{#if description}}{{description}}
+{{/if}}{{#if personality}}{{personality}}
+{{/if}}{{#if scenario}}{{scenario}}
+{{/if}}{{#if wiAfter}}{{wiAfter}}
+{{/if}}{{#if persona}}{{persona}}
+{{/if}}{{#if anchorAfter}}{{anchorAfter}}
+{{/if}}{{trim}}`;
+
+const LEGACY_CONTEXT_TEMPLATE_019 = `{{#if system}}{{system}}
 
 {{/if}}{{#if description}}Description:
 {{description}}
@@ -413,14 +444,80 @@ function getGenerationParams() {
   return { ...DEFAULT_PARAMS, ...readJson(STORAGE.params, {}) };
 }
 
-function getContextTemplate() {
-  const saved = localStorage.getItem(STORAGE.contextTemplate);
-  if (saved === null) return DEFAULT_CONTEXT_TEMPLATE;
-  if (saved === LEGACY_CONTEXT_TEMPLATE_015) {
-    localStorage.setItem(STORAGE.contextTemplate, DEFAULT_CONTEXT_TEMPLATE);
-    return DEFAULT_CONTEXT_TEMPLATE;
+function defaultContextPresetName() {
+  return contextPresetFactory.presets.some(preset => preset.name === contextPresetFactory.default)
+    ? contextPresetFactory.default
+    : (contextPresetFactory.presets[0]?.name || 'Default');
+}
+
+function getContextPresetState() {
+  const saved = readJson(STORAGE.contextPresets, null);
+  if (saved && typeof saved === 'object' && Array.isArray(saved.custom) && saved.overrides && typeof saved.overrides === 'object') {
+    const availableNames = new Set([
+      ...contextPresetFactory.presets.map(preset => preset.name),
+      ...saved.custom.map(preset => preset.name),
+    ]);
+    if (!availableNames.has(saved.active)) saved.active = defaultContextPresetName();
+    return saved;
   }
-  return saved;
+
+  const legacy = localStorage.getItem(STORAGE.contextTemplate);
+  const state = { active: defaultContextPresetName(), custom: [], overrides: {} };
+  if (legacy && legacy !== LEGACY_CONTEXT_TEMPLATE_015 && legacy !== LEGACY_CONTEXT_TEMPLATE_019 && legacy !== DEFAULT_CONTEXT_TEMPLATE) {
+    state.overrides[state.active] = legacy;
+  }
+  writeJson(STORAGE.contextPresets, state);
+  localStorage.setItem(STORAGE.contextTemplate, resolveContextPresetTemplate(state.active, state));
+  return state;
+}
+
+function saveContextPresetState(state) {
+  writeJson(STORAGE.contextPresets, state);
+}
+
+function contextPresetFactoryEntry(name) {
+  return contextPresetFactory.presets.find(preset => preset.name === name) || null;
+}
+
+function contextPresetCustomEntry(name, state = getContextPresetState()) {
+  return state.custom.find(preset => preset.name === name) || null;
+}
+
+function resolveContextPresetTemplate(name, state = getContextPresetState()) {
+  const custom = contextPresetCustomEntry(name, state);
+  if (custom) return String(custom.storyString || '');
+  const factory = contextPresetFactoryEntry(name);
+  if (factory) return String(state.overrides?.[name] ?? factory.storyString ?? DEFAULT_CONTEXT_TEMPLATE);
+  const fallback = contextPresetFactoryEntry(defaultContextPresetName());
+  return String(fallback?.storyString || DEFAULT_CONTEXT_TEMPLATE);
+}
+
+function allContextPresets(state = getContextPresetState()) {
+  const builtIns = contextPresetFactory.presets.map(preset => ({
+    name: preset.name,
+    storyString: resolveContextPresetTemplate(preset.name, state),
+    builtIn: true,
+    modified: Object.prototype.hasOwnProperty.call(state.overrides || {}, preset.name),
+  }));
+  const custom = state.custom.map(preset => ({ ...preset, builtIn: false, modified: true }));
+  return [...builtIns, ...custom];
+}
+
+function setActiveContextPreset(name) {
+  const state = getContextPresetState();
+  const exists = allContextPresets(state).some(preset => preset.name === name);
+  state.active = exists ? name : defaultContextPresetName();
+  saveContextPresetState(state);
+  const template = resolveContextPresetTemplate(state.active, state);
+  localStorage.setItem(STORAGE.contextTemplate, template);
+  return template;
+}
+
+function getContextTemplate() {
+  const state = getContextPresetState();
+  const template = resolveContextPresetTemplate(state.active, state);
+  localStorage.setItem(STORAGE.contextTemplate, template);
+  return template;
 }
 
 function getGlobalSystemPrompt() {
@@ -2370,7 +2467,7 @@ const CONTEXT_TEMPLATE_PLACEHOLDERS = [
 ];
 
 const SYSTEM_PROMPT_PLACEHOLDERS = CONTEXT_TEMPLATE_PLACEHOLDERS.filter(item => ['char', 'user', 'description', 'personality', 'scenario', 'persona'].includes(item.key));
-const GLOBAL_PROMPT_TABS = ['context', 'instruction', 'system'];
+const GLOBAL_PROMPT_TABS = ['context', 'instruction', 'system', 'preview'];
 
 function insertContextTemplateSnippet(editor, snippet) {
   const start = Number.isInteger(editor.selectionStart) ? editor.selectionStart : editor.value.length;
@@ -2461,7 +2558,38 @@ function bindPromptPlaceholderButtons(root) {
   root.addEventListener('scroll', hideTooltip, { passive: true });
 }
 
+function contextPresetToolbar(state) {
+  const presets = allContextPresets(state);
+  const activePreset = presets.find(preset => preset.name === state.active) || presets[0];
+  return `<div class="context-preset-toolbar">
+    <label class="form-field context-preset-select-field">
+      <span>${escapeHtml(t('globalPrompt.presets.label'))}</span>
+      <select id="context-preset-select">
+        ${presets.map(preset => `<option value="${escapeHtml(preset.name)}" ${preset.name === activePreset?.name ? 'selected' : ''}>${escapeHtml(preset.name)}${preset.modified ? ' •' : ''}</option>`).join('')}
+      </select>
+    </label>
+    <div class="context-preset-actions">
+      <button type="button" class="btn btn-ghost btn-small" id="context-preset-save">${escapeHtml(t('globalPrompt.presets.save'))}</button>
+      <button type="button" class="btn btn-ghost btn-small" id="context-preset-new">${escapeHtml(t('globalPrompt.presets.new'))}</button>
+      <button type="button" class="btn btn-ghost btn-small" id="context-preset-rename">${escapeHtml(t('globalPrompt.presets.rename'))}</button>
+      <button type="button" class="btn btn-ghost btn-small" id="context-preset-restore" ${activePreset?.builtIn ? '' : 'disabled'}>${escapeHtml(t('globalPrompt.presets.restore'))}</button>
+      <button type="button" class="btn btn-danger btn-small" id="context-preset-delete" ${activePreset?.builtIn ? 'disabled' : ''}>${escapeHtml(t('globalPrompt.presets.delete'))}</button>
+    </div>
+  </div>`;
+}
+
+function promptForContextPresetName(messageKey, current = '') {
+  const value = window.prompt(t(messageKey), current);
+  return value === null ? null : String(value).trim();
+}
+
+function contextPresetNameExists(name, state = getContextPresetState(), exceptName = null) {
+  const lower = String(name || '').toLocaleLowerCase();
+  return allContextPresets(state).some(preset => preset.name !== exceptName && preset.name.toLocaleLowerCase() === lower);
+}
+
 function renderContextPromptTab(body) {
+  const state = getContextPresetState();
   const template = getContextTemplate();
   body.innerHTML = `${globalPromptTabs('context')}
     <div class="field-card field-card-stack global-prompt-card">
@@ -2469,23 +2597,182 @@ function renderContextPromptTab(body) {
         <h4>${escapeHtml(t('globalPrompt.contextTemplate'))}</h4>
         <p>${escapeHtml(t('globalPrompt.contextTemplate.desc'))}</p>
       </div>
+      ${contextPresetToolbar(state)}
       <textarea id="context-template-editor" class="context-template-editor" spellcheck="false">${escapeHtml(template)}</textarea>
       ${promptPlaceholderButtons(CONTEXT_TEMPLATE_PLACEHOLDERS, 'context-template-editor')}
-      <div class="global-prompt-actions">
-        <button type="button" class="btn btn-ghost" id="reset-context-template">${escapeHtml(t('globalPrompt.reset'))}</button>
-        <button type="button" class="btn btn-primary" id="save-context-template">${escapeHtml(t('config.save'))}</button>
-      </div>
     </div>`;
   bindPromptPlaceholderButtons(body);
   const editor = document.getElementById('context-template-editor');
-  document.getElementById('save-context-template').addEventListener('click', () => {
-    localStorage.setItem(STORAGE.contextTemplate, editor.value);
-    toast(t('globalPrompt.context.saved'), 'success');
+  const select = document.getElementById('context-preset-select');
+
+  select.addEventListener('change', () => {
+    setActiveContextPreset(select.value);
+    renderGlobalPromptConfig('context');
   });
-  document.getElementById('reset-context-template').addEventListener('click', () => {
-    editor.value = DEFAULT_CONTEXT_TEMPLATE;
-    localStorage.setItem(STORAGE.contextTemplate, DEFAULT_CONTEXT_TEMPLATE);
-    toast(t('globalPrompt.context.resetDone'), 'success');
+
+  document.getElementById('context-preset-save').addEventListener('click', () => {
+    const current = getContextPresetState();
+    const custom = contextPresetCustomEntry(current.active, current);
+    if (custom) custom.storyString = editor.value;
+    else current.overrides[current.active] = editor.value;
+    saveContextPresetState(current);
+    localStorage.setItem(STORAGE.contextTemplate, editor.value);
+    renderGlobalPromptConfig('context');
+    toast(t('globalPrompt.presets.saved'), 'success');
+  });
+
+  document.getElementById('context-preset-new').addEventListener('click', () => {
+    const current = getContextPresetState();
+    const name = promptForContextPresetName('globalPrompt.presets.newPrompt');
+    if (!name) return;
+    if (contextPresetNameExists(name, current)) return toast(t('globalPrompt.presets.nameExists'), 'error');
+    current.custom.push({ name, storyString: editor.value });
+    current.active = name;
+    saveContextPresetState(current);
+    localStorage.setItem(STORAGE.contextTemplate, editor.value);
+    renderGlobalPromptConfig('context');
+    toast(t('globalPrompt.presets.created'), 'success');
+  });
+
+  document.getElementById('context-preset-rename').addEventListener('click', () => {
+    const current = getContextPresetState();
+    const oldName = current.active;
+    const name = promptForContextPresetName('globalPrompt.presets.renamePrompt', oldName);
+    if (!name || name === oldName) return;
+    if (contextPresetNameExists(name, current, oldName)) return toast(t('globalPrompt.presets.nameExists'), 'error');
+    const custom = contextPresetCustomEntry(oldName, current);
+    if (custom) {
+      custom.name = name;
+      current.active = name;
+    } else {
+      current.custom.push({ name, storyString: editor.value });
+      current.active = name;
+    }
+    saveContextPresetState(current);
+    localStorage.setItem(STORAGE.contextTemplate, editor.value);
+    renderGlobalPromptConfig('context');
+    toast(t('globalPrompt.presets.renamed'), 'success');
+  });
+
+  document.getElementById('context-preset-restore').addEventListener('click', () => {
+    const current = getContextPresetState();
+    const factory = contextPresetFactoryEntry(current.active);
+    if (!factory) return;
+    if (!window.confirm(t('globalPrompt.presets.restoreConfirm', { name: current.active }))) return;
+    delete current.overrides[current.active];
+    saveContextPresetState(current);
+    localStorage.setItem(STORAGE.contextTemplate, factory.storyString);
+    renderGlobalPromptConfig('context');
+    toast(t('globalPrompt.presets.restored'), 'success');
+  });
+
+  document.getElementById('context-preset-delete').addEventListener('click', () => {
+    const current = getContextPresetState();
+    const custom = contextPresetCustomEntry(current.active, current);
+    if (!custom) return;
+    if (!window.confirm(t('globalPrompt.presets.deleteConfirm', { name: current.active }))) return;
+    current.custom = current.custom.filter(preset => preset.name !== current.active);
+    current.active = defaultContextPresetName();
+    saveContextPresetState(current);
+    localStorage.setItem(STORAGE.contextTemplate, resolveContextPresetTemplate(current.active, current));
+    renderGlobalPromptConfig('context');
+    toast(t('globalPrompt.presets.deleted'), 'success');
+  });
+}
+
+function instructionPreviewMessage(role, content, character, template) {
+  if (!String(content || '').trim()) return '';
+  const includeName = template.includeNames === 'always';
+  const roleName = role === 'user' ? 'User' : role === 'assistant' ? character.name : '';
+  const prefix = role === 'user' ? template.userPrefix : role === 'assistant' ? template.assistantPrefix : template.systemPrefix;
+  const suffix = role === 'user' ? template.userSuffix : role === 'assistant' ? template.assistantSuffix : template.systemSuffix;
+  const namedContent = includeName && roleName ? `${roleName}: ${content}` : content;
+  return `${prefix || ''}${namedContent}${suffix || ''}`;
+}
+
+function buildPromptPreview(character) {
+  const renderedContext = renderCharacterContext(character);
+  const postHistory = effectivePostHistoryInstructions(character);
+  const currentPayload = [
+    { role: 'system', content: [renderedContext, postHistory].filter(Boolean).join('\n\n') },
+  ];
+  if (character.firstMessage?.trim()) currentPayload.push({ role: 'assistant', content: character.firstMessage.trim() });
+  currentPayload.push({ role: 'user', content: t('globalPrompt.preview.sampleUser') });
+
+  const instruction = getInstructionTemplate();
+  const separator = instruction.wrapWithNewline ? '\n' : '';
+  const textCompletionParts = [
+    `${instruction.storyPrefix || ''}${renderedContext}${instruction.storySuffix || ''}`,
+  ];
+  if (character.firstMessage?.trim()) textCompletionParts.push(instructionPreviewMessage('assistant', character.firstMessage.trim(), character, instruction));
+  textCompletionParts.push(instructionPreviewMessage('user', t('globalPrompt.preview.sampleUser'), character, instruction));
+  if (postHistory) textCompletionParts.push(instructionPreviewMessage('system', postHistory, character, instruction));
+  textCompletionParts.push(`${instruction.assistantPrefix || ''}${instruction.includeNames === 'always' ? `${character.name}: ` : ''}`);
+
+  return {
+    renderedContext,
+    postHistory,
+    chatPayload: currentPayload,
+    textCompletion: textCompletionParts.filter(Boolean).join(separator),
+    tokenCounts: characterTokenCounts(character),
+    contextSource: String(character.contextTemplate || '').trim() ? 'character' : 'global',
+    systemSource: String(character.systemPrompt || '').trim() ? 'character' : 'global',
+    postHistorySource: String(character.postHistoryInstructions || '').trim() ? 'character' : 'global',
+  };
+}
+
+function promptPreviewSourceLabel(source) {
+  return t(source === 'character' ? 'globalPrompt.preview.source.character' : 'globalPrompt.preview.source.global');
+}
+
+function renderPromptPreviewTab(body) {
+  const characters = getNormalizedCharacters();
+  const saved = localStorage.getItem(STORAGE.promptPreviewCharacter);
+  const selected = characters.find(character => character.id === saved)
+    || characters.find(character => character.id === state.activeCharacterId)
+    || characters[0]
+    || null;
+
+  body.innerHTML = `${globalPromptTabs('preview')}
+    <div class="field-card field-card-stack global-prompt-card prompt-preview-card">
+      <div class="info"><h4>${escapeHtml(t('globalPrompt.preview.title'))}</h4><p>${escapeHtml(t('globalPrompt.preview.desc'))}</p></div>
+      ${characters.length ? `<label class="form-field prompt-preview-character"><span>${escapeHtml(t('globalPrompt.preview.character'))}</span><select id="prompt-preview-character">${characters.map(character => `<option value="${escapeHtml(character.id)}" ${character.id === selected?.id ? 'selected' : ''}>${escapeHtml(character.name)}</option>`).join('')}</select></label>` : ''}
+      <div id="prompt-preview-content"></div>
+    </div>`;
+
+  const content = document.getElementById('prompt-preview-content');
+  const draw = character => {
+    if (!character) {
+      content.innerHTML = `<div class="empty-state prompt-preview-empty"><h3>${escapeHtml(t('globalPrompt.preview.emptyTitle'))}</h3><p>${escapeHtml(t('globalPrompt.preview.emptyBody'))}</p></div>`;
+      return;
+    }
+    const preview = buildPromptPreview(character);
+    content.innerHTML = `
+      <div class="prompt-preview-meta">
+        <span>${escapeHtml(t('globalPrompt.preview.contextSource'))}: <strong>${escapeHtml(promptPreviewSourceLabel(preview.contextSource))}</strong></span>
+        <span>${escapeHtml(t('globalPrompt.preview.systemSource'))}: <strong>${escapeHtml(promptPreviewSourceLabel(preview.systemSource))}</strong></span>
+        <span>${escapeHtml(t('globalPrompt.preview.postHistorySource'))}: <strong>${escapeHtml(promptPreviewSourceLabel(preview.postHistorySource))}</strong></span>
+        <span>${escapeHtml(t('character.tokens.permanent'))}: <strong>${preview.tokenCounts.permanent}</strong></span>
+        <span>${escapeHtml(t('character.tokens.total'))}: <strong>${preview.tokenCounts.total}</strong></span>
+      </div>
+      <section class="prompt-preview-section">
+        <h5>${escapeHtml(t('globalPrompt.preview.renderedContext'))}</h5>
+        <pre>${escapeHtml([preview.renderedContext, preview.postHistory].filter(Boolean).join('\n\n'))}</pre>
+      </section>
+      <section class="prompt-preview-section">
+        <h5>${escapeHtml(t('globalPrompt.preview.chatPayload'))}</h5>
+        <pre>${escapeHtml(JSON.stringify(preview.chatPayload, null, 2))}</pre>
+      </section>
+      <section class="prompt-preview-section">
+        <h5>${escapeHtml(t('globalPrompt.preview.textCompletion'))}</h5>
+        <pre>${escapeHtml(preview.textCompletion)}</pre>
+      </section>`;
+  };
+  draw(selected);
+  document.getElementById('prompt-preview-character')?.addEventListener('change', event => {
+    const character = characters.find(item => item.id === event.target.value) || null;
+    if (character) localStorage.setItem(STORAGE.promptPreviewCharacter, character.id);
+    draw(character);
   });
 }
 
@@ -2573,6 +2860,7 @@ function renderGlobalPromptConfig(tab = null) {
   localStorage.setItem(STORAGE.globalPromptTab, active);
   if (active === 'instruction') renderInstructionPromptTab(body);
   else if (active === 'system') renderSystemPromptTab(body);
+  else if (active === 'preview') renderPromptPreviewTab(body);
   else renderContextPromptTab(body);
   body.querySelectorAll('[data-global-prompt-tab]').forEach(button => button.addEventListener('click', () => renderGlobalPromptConfig(button.dataset.globalPromptTab)));
 }
@@ -2653,6 +2941,7 @@ async function bootstrap() {
   applyAccent();
   applyUiSettings();
   await initI18n();
+  await loadContextPresetFactory();
   try {
     await loadAvatarAssets();
     await migrateInlineCharacterAvatars();

@@ -823,3 +823,77 @@ input,textarea,select{font:inherit}input,textarea,select{background:var(--panel-
   .instruction-options-grid,
   .instruction-sequence-grid{grid-template-columns:1fr}
 }
+
+/* ===== Global Prompt presets / preview ===== */
+.context-preset-toolbar{
+  display:grid;
+  grid-template-columns:minmax(220px,1fr) auto;
+  gap:12px;
+  align-items:end;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:var(--panel-2);
+}
+.context-preset-select-field{margin:0}
+.context-preset-select-field select{width:100%}
+.context-preset-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+  gap:7px;
+}
+.context-preset-actions .btn:disabled{
+  opacity:.42;
+  cursor:not-allowed;
+}
+.prompt-preview-character{max-width:420px;margin:0}
+.prompt-preview-meta{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:2px;
+}
+.prompt-preview-meta span{
+  padding:7px 10px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:var(--panel-2);
+  color:var(--text-faint);
+  font-size:10px;
+}
+.prompt-preview-meta strong{color:var(--text-dim)}
+.prompt-preview-section{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.prompt-preview-section h5{
+  margin:0;
+  color:var(--text-dim);
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+}
+.prompt-preview-section pre{
+  margin:0;
+  max-height:340px;
+  overflow:auto;
+  padding:14px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:var(--panel-2);
+  color:var(--text);
+  font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  font-size:11px;
+  line-height:1.55;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+}
+.prompt-preview-empty{min-height:220px}
+
+@media (max-width:900px){
+  .context-preset-toolbar{grid-template-columns:1fr}
+  .context-preset-actions{justify-content:flex-start}
+}

@@ -85,6 +85,25 @@ No installer is generated.
 For an official public release, push a matching `launcher-vX.Y.Z` tag. GitHub Actions builds the raw executable, signs it using the repository secrets, and publishes the EXE plus `.sig` to GitHub Releases.
 
 
+## Application base 0.1.9
+
+The native host now exposes the minimum backend commands required by the application runtime:
+
+- persist/load backend type, URL, selected model and optional bearer API key;
+- test KoboldCpp, llama.cpp server, text-generation-webui, Ollama and generic OpenAI-compatible endpoints;
+- report the real model/backend status in the application titlebar;
+- perform a non-streaming chat completion through the configured backend.
+
+The replaceable `app/src/**` frontend now provides a functional first product base:
+
+- character creation/edit/delete stored locally in the WebView profile (temporary until SQLite/Character Card storage);
+- persistent per-character conversations;
+- working chat composer and complete-response generation;
+- functional Configuration → Models, Model parameters, General and User Interface sections;
+- English/French application UI base.
+
+Streaming, Character Card import (V1/V2/V3/CHARX), Lorebooks, Personas and SQLite remain later passes.
+
 ## Remote Home carousel
 
 The Home hero/carousel is driven by `launcher-content/home.json` on GitHub `main`. Updating that JSON (or images referenced by it) does **not** require rebuilding the launcher. The launcher uses the last successful JSON as a local cache and falls back to a bundled default when GitHub is unavailable.

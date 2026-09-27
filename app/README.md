@@ -7,3 +7,8 @@ The only desktop executable is `NastyVerse-Launcher.exe`. The launcher is also t
 The launcher compares these files directly with the repository's `main` branch and downloads only files whose Git blob SHA differs locally. `shared/tokens.css` is installed as `tokens.css` beside `index.html` so the shared design tokens remain the single source of truth.
 
 Do not add another `app/src-tauri/` crate unless the project owner explicitly reverses the single-host architecture decision.
+
+
+## Current functional base
+
+The frontend can create simple characters, persist conversations locally, configure an inference backend through native host commands, and send non-streaming chat-completion requests. This is deliberately an intermediate persistence layer: structured content will move to SQLite and the Library will move to the V3-unified Character Card model in later passes.

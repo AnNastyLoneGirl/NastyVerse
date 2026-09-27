@@ -148,6 +148,11 @@ function applyChromeI18n() {
     element.title = t(key);
     element.setAttribute('aria-label', t(key));
   });
+  if (configurationShortcut) {
+    configurationShortcut.textContent = t('config.title');
+    configurationShortcut.title = t('config.title');
+    configurationShortcut.setAttribute('aria-label', t('config.title'));
+  }
 }
 
 function intlLocale() {
@@ -246,7 +251,7 @@ const state = {
 };
 
 const pageRoot = document.getElementById('page-root');
-const sectionLabel = document.getElementById('section-label');
+const configurationShortcut = document.getElementById('configuration-shortcut');
 const navbar = document.getElementById('navbar');
 
 function readJson(key, fallback) {
@@ -991,6 +996,7 @@ document.getElementById('btn-close').addEventListener('click', () => invoke('win
 document.getElementById('btn-max').addEventListener('click', () => invoke('window_toggle_maximize'));
 
 document.getElementById('model-status').addEventListener('click', () => goTo('configuration', { section: 'models' }));
+configurationShortcut?.addEventListener('click', () => goTo('configuration', { section: 'general' }));
 
 /* ===================================================================
    Chat
@@ -1027,7 +1033,6 @@ function scrollChatToBottom() {
 
 function renderChat() {
   state.currentPage = 'chat';
-  sectionLabel.textContent = t('nav.chat');
   renderNavbar();
   const character = activeCharacter();
 
@@ -1209,7 +1214,6 @@ function characterAvatar(character, className) {
 function renderLibrary(tab = 'characters') {
   state.currentPage = 'library';
   state.libraryTab = tab;
-  sectionLabel.textContent = t('nav.library');
   renderNavbar();
   const characters = getNormalizedCharacters();
 
@@ -1395,7 +1399,6 @@ function openCharacterEditor(characterId = null) {
 
   state.currentPage = 'library';
   state.libraryTab = 'characters';
-  sectionLabel.textContent = t('library.characters');
   renderNavbar();
 
   const initialTokenCounts = characterTokenCounts(character);
@@ -2216,7 +2219,6 @@ async function deleteCharacter(id, confirmed = false) {
 
 async function renderConfiguration(section = 'general') {
   state.currentPage = 'configuration';
-  sectionLabel.textContent = t('config.title');
   renderNavbar();
   pageRoot.innerHTML = `
     <div class="config-layout">

@@ -102,7 +102,7 @@
   "library.exported": "Character JSON exported.",
   "character.identity": "Identity",
   "character.avatar": "Choose avatar",
-  "character.avatarHelp": "PNG, JPG or WebP. Stored locally for this base.",
+  "character.avatarHelp": "PNG, JPG or WebP. No import size limit. The final avatar is cropped to 2:3, resized automatically up to 512×768, and stored locally for this base.",
   "character.removeAvatar": "Remove avatar",
   "character.personality": "Personality",
   "character.altGreetings": "Alternative greetings",
@@ -152,5 +152,10 @@
   "chat.characterFallback": "NastyVerse character",
   "character.story": "Story",
   "character.addGreeting": "Add greeting",
-  "character.removeGreeting": "Remove greeting"
+  "character.removeGreeting": "Remove greeting",
+  "character.cropTitle": "Crop avatar",
+  "character.cropHelp": "Drag the image and adjust the zoom to choose a 2:3 portrait crop.",
+  "character.cropZoom": "Zoom",
+  "character.cropApply": "Use crop",
+  "character.cropLoadError": "Unable to load this image for cropping."
 }

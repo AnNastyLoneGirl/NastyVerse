@@ -258,6 +258,184 @@ function toast(message, type = 'info') {
   }, 3400);
 }
 
+
+
+async function openAvatarCropper(file) {
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error(t('character.cropLoadError')));
+      img.src = objectUrl;
+    });
+
+    return await new Promise(resolve => {
+      const cropWidth = 280;
+      const cropHeight = 420;
+      const naturalWidth = image.naturalWidth || image.width;
+      const naturalHeight = image.naturalHeight || image.height;
+
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop avatar-crop-backdrop';
+      backdrop.innerHTML = `
+        <div class="modal avatar-crop-modal" role="dialog" aria-modal="true" aria-labelledby="avatar-crop-title">
+          <div class="modal-head avatar-crop-head">
+            <div>
+              <div class="modal-kicker">${escapeHtml(t('character.avatar'))}</div>
+              <h2 id="avatar-crop-title">${escapeHtml(t('character.cropTitle'))}</h2>
+              <p class="avatar-crop-copy">${escapeHtml(t('character.cropHelp'))}</p>
+            </div>
+            <button type="button" class="modal-close" data-avatar-crop-cancel aria-label="${escapeHtml(t('common.cancel'))}">×</button>
+          </div>
+          <div class="avatar-crop-stage-wrap">
+            <div class="avatar-crop-stage" id="avatar-crop-stage">
+              <img id="avatar-crop-image" alt="">
+              <div class="avatar-crop-frame" aria-hidden="true"></div>
+            </div>
+          </div>
+          <div class="avatar-crop-controls">
+            <label class="form-field avatar-crop-zoom-field">
+              <span>${escapeHtml(t('character.cropZoom'))}</span>
+              <input type="range" id="avatar-crop-zoom" min="100" max="400" step="1" value="100">
+            </label>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" data-avatar-crop-cancel>${escapeHtml(t('common.cancel'))}</button>
+            <button type="button" class="btn btn-primary" id="avatar-crop-confirm">${escapeHtml(t('character.cropApply'))}</button>
+          </div>
+        </div>`;
+      document.body.appendChild(backdrop);
+
+      const stage = backdrop.querySelector('#avatar-crop-stage');
+      const cropImage = backdrop.querySelector('#avatar-crop-image');
+      const zoomInput = backdrop.querySelector('#avatar-crop-zoom');
+      cropImage.src = objectUrl;
+
+      let scale = Math.max(cropWidth / naturalWidth, cropHeight / naturalHeight);
+      const minScale = scale;
+      const maxScale = minScale * 4;
+      let offsetX = (cropWidth - naturalWidth * scale) / 2;
+      let offsetY = (cropHeight - naturalHeight * scale) / 2;
+      let dragging = false;
+      let startX = 0;
+      let startY = 0;
+      let startOffsetX = 0;
+      let startOffsetY = 0;
+      let closed = false;
+
+      const syncZoomInput = () => {
+        const percentage = Math.max(100, Math.min(400, Math.round((scale / minScale) * 100)));
+        zoomInput.value = String(percentage);
+      };
+
+      const clampOffsets = () => {
+        const displayWidth = naturalWidth * scale;
+        const displayHeight = naturalHeight * scale;
+        const minX = Math.min(0, cropWidth - displayWidth);
+        const minY = Math.min(0, cropHeight - displayHeight);
+        offsetX = Math.min(0, Math.max(minX, offsetX));
+        offsetY = Math.min(0, Math.max(minY, offsetY));
+      };
+
+      const render = () => {
+        clampOffsets();
+        cropImage.style.width = `${naturalWidth * scale}px`;
+        cropImage.style.height = `${naturalHeight * scale}px`;
+        cropImage.style.left = `${offsetX}px`;
+        cropImage.style.top = `${offsetY}px`;
+      };
+
+      const applyScale = nextScale => {
+        const previousScale = scale;
+        const centerX = cropWidth / 2;
+        const centerY = cropHeight / 2;
+        const anchorX = (centerX - offsetX) / previousScale;
+        const anchorY = (centerY - offsetY) / previousScale;
+        scale = Math.max(minScale, Math.min(maxScale, nextScale));
+        offsetX = centerX - anchorX * scale;
+        offsetY = centerY - anchorY * scale;
+        syncZoomInput();
+        render();
+      };
+
+      const onKeyDown = event => {
+        if (event.key === 'Escape') close(null);
+      };
+
+      const close = result => {
+        if (closed) return;
+        closed = true;
+        document.removeEventListener('keydown', onKeyDown);
+        backdrop.remove();
+        resolve(result);
+      };
+
+      document.addEventListener('keydown', onKeyDown);
+      backdrop.addEventListener('click', event => {
+        if (event.target === backdrop) close(null);
+      });
+      backdrop.querySelectorAll('[data-avatar-crop-cancel]').forEach(button => {
+        button.addEventListener('click', () => close(null));
+      });
+
+      stage.addEventListener('pointerdown', event => {
+        if (event.button !== 0) return;
+        dragging = true;
+        startX = event.clientX;
+        startY = event.clientY;
+        startOffsetX = offsetX;
+        startOffsetY = offsetY;
+        stage.setPointerCapture?.(event.pointerId);
+      });
+      stage.addEventListener('pointermove', event => {
+        if (!dragging) return;
+        offsetX = startOffsetX + (event.clientX - startX);
+        offsetY = startOffsetY + (event.clientY - startY);
+        render();
+      });
+      const stopDragging = event => {
+        dragging = false;
+        try { stage.releasePointerCapture?.(event.pointerId); } catch (_) {}
+      };
+      stage.addEventListener('pointerup', stopDragging);
+      stage.addEventListener('pointercancel', stopDragging);
+
+      zoomInput.addEventListener('input', () => {
+        const nextScale = minScale * (Number(zoomInput.value || 100) / 100);
+        applyScale(nextScale);
+      });
+      stage.addEventListener('wheel', event => {
+        event.preventDefault();
+        const delta = event.deltaY < 0 ? 1.08 : 0.92;
+        applyScale(scale * delta);
+      }, { passive: false });
+
+      backdrop.querySelector('#avatar-crop-confirm').addEventListener('click', () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 768;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return close(null);
+
+        const sourceX = Math.max(0, -offsetX / scale);
+        const sourceY = Math.max(0, -offsetY / scale);
+        const sourceWidth = cropWidth / scale;
+        const sourceHeight = cropHeight / scale;
+
+        ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
+        close(canvas.toDataURL('image/webp', 0.92));
+      });
+
+      syncZoomInput();
+      render();
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 function renderNavbar() {
   navbar.innerHTML = NAV_ITEMS.map(item => `
     <button class="nav-btn ${state.currentPage === item.id ? 'active' : ''}" data-nav="${item.id}">
@@ -795,25 +973,38 @@ function openCharacterEditor(characterId = null) {
 
   const avatarInput = document.getElementById('character-avatar-file');
   const avatarValue = document.getElementById('character-avatar-value');
-  avatarInput.addEventListener('change', () => {
+  const characterNameInput = pageRoot.querySelector('input[name="name"]');
+  const refreshAvatarPreview = value => {
+    const fallbackName = String(characterNameInput?.value || character.name || '?').trim() || '?';
+    document.getElementById('character-avatar-preview').innerHTML = value
+      ? `<div class="character-editor-avatar"><img src="${escapeHtml(value)}" alt=""></div>`
+      : `<div class="character-editor-avatar character-avatar-fallback">${escapeHtml(fallbackName.slice(0, 1).toUpperCase())}</div>`;
+  };
+
+  avatarInput.addEventListener('change', async () => {
     const file = avatarInput.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
+    try {
+      const croppedAvatar = await openAvatarCropper(file);
+      if (croppedAvatar) {
+        avatarValue.value = String(croppedAvatar || '');
+        refreshAvatarPreview(avatarValue.value);
+      }
+    } catch (error) {
+      console.error(error);
+      toast(error?.message || String(error), 'error');
+    } finally {
       avatarInput.value = '';
-      toast(t('library.avatarTooLarge'), 'error');
-      return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      avatarValue.value = String(reader.result || '');
-      document.getElementById('character-avatar-preview').innerHTML = `<div class="character-editor-avatar"><img src="${escapeHtml(avatarValue.value)}" alt=""></div>`;
-    };
-    reader.readAsDataURL(file);
+  });
+
+  characterNameInput?.addEventListener('input', () => {
+    if (!avatarValue.value) refreshAvatarPreview('');
   });
 
   document.getElementById('character-avatar-remove').addEventListener('click', () => {
     avatarValue.value = '';
-    document.getElementById('character-avatar-preview').innerHTML = `<div class="character-editor-avatar character-avatar-fallback">${escapeHtml((character.name || '?').slice(0, 1).toUpperCase())}</div>`;
+    refreshAvatarPreview('');
   });
 
   const greetingsList = document.getElementById('alternate-greetings-list');

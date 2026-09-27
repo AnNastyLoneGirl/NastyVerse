@@ -102,7 +102,7 @@
   "library.exported": "JSON du personnage exporté.",
   "character.identity": "Identité",
   "character.avatar": "Choisir un avatar",
-  "character.avatarHelp": "PNG, JPG ou WebP. Stocké localement pour cette base.",
+  "character.avatarHelp": "PNG, JPG ou WebP. Aucune limite de taille à l’import. L’avatar final est recadré en 2:3, redimensionné automatiquement au maximum en 512×768, puis stocké localement pour cette base.",
   "character.removeAvatar": "Retirer l’avatar",
   "character.personality": "Personnalité",
   "character.altGreetings": "Salutations alternatives",
@@ -152,5 +152,10 @@
   "chat.characterFallback": "Personnage NastyVerse",
   "character.story": "Histoire",
   "character.addGreeting": "Ajouter un greeting",
-  "character.removeGreeting": "Supprimer le greeting"
+  "character.removeGreeting": "Supprimer le greeting",
+  "character.cropTitle": "Recadrer l’avatar",
+  "character.cropHelp": "Déplacez l’image et ajustez le zoom pour choisir un recadrage portrait en 2:3.",
+  "character.cropZoom": "Zoom",
+  "character.cropApply": "Utiliser ce cadrage",
+  "character.cropLoadError": "Impossible de charger cette image pour le recadrage."
 }

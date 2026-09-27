@@ -165,5 +165,8 @@
   "character.cropEncodeError": "Unable to encode the cropped avatar.",
   "character.avatarSaveError": "Unable to save this avatar. Try again with another image.",
   "library.importedMany": "{count} characters imported.",
-  "library.importFailed": "{count} file(s) could not be imported. Supported formats: JSON, PNG, APNG and CHARX."
+  "library.importFailed": "{count} file(s) could not be imported. Supported formats: JSON, PNG, APNG and CHARX.",
+  "character.tagsPlaceholder": "Type a tag…",
+  "character.removeTag": "Remove tag",
+  "character.noTags": "No tags yet"
 }

@@ -1251,7 +1251,14 @@ function openCharacterEditor(characterId = null) {
             <div id="character-avatar-preview">${characterAvatar(character, 'character-editor-avatar')}</div>
             <label class="avatar-upload-button"><input type="file" id="character-avatar-file" accept="image/png,image/apng,image/jpeg,image/webp,.apng" hidden>${escapeHtml(t('character.avatar'))}</label>
             <button type="button" class="avatar-remove" id="character-avatar-remove">${escapeHtml(t('character.removeAvatar'))}</button>
-            <p class="avatar-help">${escapeHtml(t('character.avatarHelp'))}</p>
+            <div class="character-tag-editor">
+              <label for="character-tag-input">${escapeHtml(t('character.tags'))}</label>
+              <div class="character-tag-input-shell">
+                <input type="text" id="character-tag-input" autocomplete="off" spellcheck="false" placeholder="${escapeHtml(t('character.tagsPlaceholder'))}">
+                <div class="character-tag-suggestions" id="character-tag-suggestions" hidden></div>
+              </div>
+              <div class="character-tag-list" id="character-tag-list"></div>
+            </div>
             <div class="editor-mini-stats">
               <div><strong>${characterChatCount(character.id)}</strong><span>${escapeHtml(t('library.chats'))}</span></div>
               <div><strong>${characterApproxTokens(character)}</strong><span>${escapeHtml(t('library.tokens'))}</span></div>
@@ -1363,6 +1370,124 @@ function openCharacterEditor(characterId = null) {
     refreshAvatarPreview('');
   });
 
+  const tagInput = document.getElementById('character-tag-input');
+  const tagList = document.getElementById('character-tag-list');
+  const tagSuggestions = document.getElementById('character-tag-suggestions');
+  const cleanTag = value => String(value || '').trim().replace(/\s+/g, ' ').slice(0, 64);
+  const tagKey = value => cleanTag(value).toLocaleLowerCase();
+  const knownTagMap = new Map();
+  getNormalizedCharacters().forEach(item => {
+    (item.tags || []).forEach(tag => {
+      const cleaned = cleanTag(tag);
+      if (cleaned && !knownTagMap.has(tagKey(cleaned))) knownTagMap.set(tagKey(cleaned), cleaned);
+    });
+  });
+  let selectedTags = [];
+  (character.tags || []).forEach(tag => {
+    const cleaned = cleanTag(tag);
+    if (cleaned && !selectedTags.some(existingTag => tagKey(existingTag) === tagKey(cleaned))) selectedTags.push(cleaned);
+  });
+  let visibleTagSuggestions = [];
+  let activeTagSuggestion = -1;
+
+  const hideTagSuggestions = () => {
+    visibleTagSuggestions = [];
+    activeTagSuggestion = -1;
+    tagSuggestions.hidden = true;
+    tagSuggestions.innerHTML = '';
+  };
+
+  const renderSelectedTags = () => {
+    tagList.innerHTML = selectedTags.length
+      ? selectedTags.map((tag, index) => `
+          <button type="button" class="character-tag-chip" data-remove-tag="${index}" title="${escapeHtml(t('character.removeTag'))}">
+            <span>${escapeHtml(tag)}</span><b aria-hidden="true">×</b>
+          </button>`).join('')
+      : `<span class="character-tag-empty">${escapeHtml(t('character.noTags'))}</span>`;
+    tagList.querySelectorAll('[data-remove-tag]').forEach(button => {
+      button.addEventListener('click', () => {
+        selectedTags.splice(Number(button.dataset.removeTag), 1);
+        renderSelectedTags();
+        renderTagSuggestions();
+      });
+    });
+  };
+
+  const renderTagSuggestions = () => {
+    const query = cleanTag(tagInput.value);
+    if (!query) return hideTagSuggestions();
+    const queryKey = tagKey(query);
+    const selectedKeys = new Set(selectedTags.map(tagKey));
+    visibleTagSuggestions = [...knownTagMap.values()]
+      .filter(tag => !selectedKeys.has(tagKey(tag)) && tagKey(tag).includes(queryKey))
+      .sort((a, b) => {
+        const aStarts = tagKey(a).startsWith(queryKey) ? 0 : 1;
+        const bStarts = tagKey(b).startsWith(queryKey) ? 0 : 1;
+        return aStarts - bStarts || a.localeCompare(b, undefined, { sensitivity: 'base' });
+      })
+      .slice(0, 7);
+    activeTagSuggestion = visibleTagSuggestions.length ? 0 : -1;
+    if (!visibleTagSuggestions.length) return hideTagSuggestions();
+    tagSuggestions.hidden = false;
+    tagSuggestions.innerHTML = visibleTagSuggestions.map((tag, index) => `
+      <button type="button" class="character-tag-suggestion ${index === activeTagSuggestion ? 'active' : ''}" data-tag-suggestion="${index}">
+        ${escapeHtml(tag)}
+      </button>`).join('');
+    tagSuggestions.querySelectorAll('[data-tag-suggestion]').forEach(button => {
+      button.addEventListener('mousedown', event => event.preventDefault());
+      button.addEventListener('click', () => addTag(visibleTagSuggestions[Number(button.dataset.tagSuggestion)]));
+    });
+  };
+
+  const addTag = rawTag => {
+    const cleaned = cleanTag(rawTag);
+    if (!cleaned) return;
+    const key = tagKey(cleaned);
+    const canonical = knownTagMap.get(key) || cleaned;
+    if (!selectedTags.some(tag => tagKey(tag) === key)) selectedTags.push(canonical);
+    if (!knownTagMap.has(key)) knownTagMap.set(key, canonical);
+    tagInput.value = '';
+    hideTagSuggestions();
+    renderSelectedTags();
+  };
+
+  tagInput.addEventListener('input', renderTagSuggestions);
+  tagInput.addEventListener('focus', renderTagSuggestions);
+  tagInput.addEventListener('blur', () => setTimeout(hideTagSuggestions, 120));
+  tagInput.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown' && visibleTagSuggestions.length) {
+      event.preventDefault();
+      activeTagSuggestion = (activeTagSuggestion + 1) % visibleTagSuggestions.length;
+      const buttons = [...tagSuggestions.querySelectorAll('[data-tag-suggestion]')];
+      buttons.forEach((button, index) => button.classList.toggle('active', index === activeTagSuggestion));
+      buttons[activeTagSuggestion]?.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    if (event.key === 'ArrowUp' && visibleTagSuggestions.length) {
+      event.preventDefault();
+      activeTagSuggestion = (activeTagSuggestion - 1 + visibleTagSuggestions.length) % visibleTagSuggestions.length;
+      const buttons = [...tagSuggestions.querySelectorAll('[data-tag-suggestion]')];
+      buttons.forEach((button, index) => button.classList.toggle('active', index === activeTagSuggestion));
+      buttons[activeTagSuggestion]?.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    if (event.key === 'Escape') {
+      hideTagSuggestions();
+      return;
+    }
+    if (event.key === 'Backspace' && !tagInput.value && selectedTags.length) {
+      selectedTags.pop();
+      renderSelectedTags();
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ',') {
+      event.preventDefault();
+      const suggestion = visibleTagSuggestions[activeTagSuggestion >= 0 ? activeTagSuggestion : 0];
+      addTag(suggestion || tagInput.value.replace(/,$/, ''));
+    }
+  });
+  renderSelectedTags();
+
   const greetingsList = document.getElementById('alternate-greetings-list');
   const refreshGreetingNumbers = () => {
     [...greetingsList.querySelectorAll('[data-greeting-row]')].forEach((row, index) => {
@@ -1425,7 +1550,7 @@ function openCharacterEditor(characterId = null) {
       creator: String(data.get('creator') || '').trim(),
       characterVersion: String(data.get('characterVersion') || '').trim(),
       creatorNotes: String(data.get('creatorNotes') || '').trim(),
-      tags: existing?.tags || character.tags || [],
+      tags: selectedTags.slice(),
       favorite: data.get('favorite') === 'on',
       createdAt: existing?.createdAt || Date.now(),
       updatedAt: Date.now(),

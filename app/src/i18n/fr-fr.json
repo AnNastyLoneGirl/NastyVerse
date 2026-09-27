@@ -165,5 +165,8 @@
   "character.cropEncodeError": "Impossible d’encoder l’avatar recadré.",
   "character.avatarSaveError": "Impossible d’enregistrer cet avatar. Réessayez avec une autre image.",
   "library.importedMany": "{count} personnages importés.",
-  "library.importFailed": "{count} fichier(s) n’ont pas pu être importés. Formats pris en charge : JSON, PNG, APNG et CHARX."
+  "library.importFailed": "{count} fichier(s) n’ont pas pu être importés. Formats pris en charge : JSON, PNG, APNG et CHARX.",
+  "character.tagsPlaceholder": "Saisir un tag…",
+  "character.removeTag": "Retirer le tag",
+  "character.noTags": "Aucun tag pour le moment"
 }

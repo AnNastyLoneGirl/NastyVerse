@@ -191,6 +191,7 @@
   "globalPrompt.placeholder.anchorBefore": "Ancre réservée insérée avant le contexte lorsqu’un preset ou une extension en fournit une.",
   "globalPrompt.placeholder.anchorAfter": "Ancre réservée insérée après le contexte lorsqu’un preset ou une extension en fournit une.",
   "globalPrompt.placeholder.mesExamples": "Messages d’exemple du personnage lorsqu’ils existent dans une carte importée.",
+  "globalPrompt.placeholder.trim": "Supprime les espaces et retours à la ligne superflus autour de cet emplacement dans le contexte rendu. Utile en fin de template pour éviter les lignes vides parasites.",
   "globalPrompt.tab.context": "Modèle de contexte",
   "globalPrompt.tab.instruction": "Modèle d’instruction",
   "globalPrompt.tab.system": "System Prompt",

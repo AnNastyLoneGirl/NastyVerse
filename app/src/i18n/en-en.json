@@ -191,6 +191,7 @@
   "globalPrompt.placeholder.anchorBefore": "Reserved anchor inserted before context when a prompt preset or extension provides one.",
   "globalPrompt.placeholder.anchorAfter": "Reserved anchor inserted after context when a prompt preset or extension provides one.",
   "globalPrompt.placeholder.mesExamples": "Character example messages, when present in an imported card.",
+  "globalPrompt.placeholder.trim": "Trims surrounding whitespace at this point in the rendered context. Useful at the end of a template to avoid stray blank lines.",
   "globalPrompt.tab.context": "Context Template",
   "globalPrompt.tab.instruction": "Instruction Template",
   "globalPrompt.tab.system": "System Prompt",

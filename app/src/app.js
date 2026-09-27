@@ -205,11 +205,11 @@ const DEFAULT_PARAMS = { temperature: 0.8, topP: 0.95, maxTokens: 512 };
 const DEFAULT_UI = { scale: 100, compactMessages: false };
 const DEFAULT_CONTEXT_TEMPLATE = `{{#if anchorBefore}}{{anchorBefore}}
 {{/if}}{{#if system}}{{system}}
-{{/if}}{{#if wiBefore}}{{wiBefore}}
+{{/if}}{{#if loreBefore}}{{loreBefore}}
 {{/if}}{{#if description}}{{description}}
 {{/if}}{{#if personality}}{{personality}}
 {{/if}}{{#if scenario}}{{scenario}}
-{{/if}}{{#if wiAfter}}{{wiAfter}}
+{{/if}}{{#if loreAfter}}{{loreAfter}}
 {{/if}}{{#if persona}}{{persona}}
 {{/if}}{{#if anchorAfter}}{{anchorAfter}}
 {{/if}}{{trim}}`;
@@ -2464,6 +2464,7 @@ const CONTEXT_TEMPLATE_PLACEHOLDERS = [
   { key: 'anchorBefore', snippet: '{{#if anchorBefore}}{{anchorBefore}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.anchorBefore' },
   { key: 'anchorAfter', snippet: '{{#if anchorAfter}}{{anchorAfter}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.anchorAfter' },
   { key: 'mesExamples', snippet: '{{#if mesExamples}}{{mesExamples}}{{/if}}', descriptionKey: 'globalPrompt.placeholder.mesExamples' },
+  { key: 'trim', snippet: '{{trim}}', descriptionKey: 'globalPrompt.placeholder.trim' },
 ];
 
 const SYSTEM_PROMPT_PLACEHOLDERS = CONTEXT_TEMPLATE_PLACEHOLDERS.filter(item => ['char', 'user', 'description', 'personality', 'scenario', 'persona'].includes(item.key));

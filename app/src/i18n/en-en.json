@@ -102,7 +102,7 @@
   "library.exported": "Character JSON exported.",
   "character.identity": "Identity",
   "character.avatar": "Choose avatar",
-  "character.avatarHelp": "PNG, JPG or WebP. No import size limit. The final avatar is cropped to 2:3, resized automatically up to 512×768, and stored locally for this base.",
+  "character.avatarHelp": "PNG, APNG, JPG or WebP. No import size limit. Static and animated avatars are cropped to 2:3 and resized automatically up to 512×768.",
   "character.removeAvatar": "Remove avatar",
   "character.personality": "Personality",
   "character.altGreetings": "Alternative greetings",
@@ -157,5 +157,10 @@
   "character.cropHelp": "Drag the image and adjust the zoom to choose a 2:3 portrait crop.",
   "character.cropZoom": "Zoom",
   "character.cropApply": "Use crop",
-  "character.cropLoadError": "Unable to load this image for cropping."
+  "character.cropLoadError": "Unable to load this image for cropping.",
+  "character.cropHelpAnimated": "Animated APNG detected. Drag and zoom to choose one 2:3 crop; the same crop is applied to every frame and the animation is preserved.",
+  "character.cropProcessing": "Processing…",
+  "character.apngUnsupported": "Animated APNG cropping requires a current WebView2 version with ImageDecoder support.",
+  "character.apngEncodeError": "Unable to rebuild the animated APNG.",
+  "character.cropEncodeError": "Unable to encode the cropped avatar."
 }

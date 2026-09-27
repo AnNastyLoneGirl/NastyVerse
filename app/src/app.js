@@ -260,8 +260,229 @@ function toast(message, type = 'info') {
 
 
 
+let pngCrcTable = null;
+
+function readUint32Be(bytes, offset) {
+  return (((bytes[offset] << 24) >>> 0) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
+}
+
+function writeUint32Be(bytes, offset, value) {
+  const v = value >>> 0;
+  bytes[offset] = (v >>> 24) & 255;
+  bytes[offset + 1] = (v >>> 16) & 255;
+  bytes[offset + 2] = (v >>> 8) & 255;
+  bytes[offset + 3] = v & 255;
+}
+
+function writeUint16Be(bytes, offset, value) {
+  const v = Math.max(0, Math.min(65535, Math.round(value)));
+  bytes[offset] = (v >>> 8) & 255;
+  bytes[offset + 1] = v & 255;
+}
+
+function concatUint8Arrays(parts) {
+  const size = parts.reduce((sum, part) => sum + part.length, 0);
+  const output = new Uint8Array(size);
+  let offset = 0;
+  parts.forEach(part => {
+    output.set(part, offset);
+    offset += part.length;
+  });
+  return output;
+}
+
+function crc32(bytes) {
+  if (!pngCrcTable) {
+    pngCrcTable = new Uint32Array(256);
+    for (let n = 0; n < 256; n += 1) {
+      let c = n;
+      for (let k = 0; k < 8; k += 1) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+      pngCrcTable[n] = c >>> 0;
+    }
+  }
+  let crc = 0xffffffff;
+  for (const byte of bytes) crc = pngCrcTable[(crc ^ byte) & 255] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data = new Uint8Array()) {
+  const encoder = new TextEncoder();
+  const typeBytes = encoder.encode(type);
+  const chunk = new Uint8Array(12 + data.length);
+  writeUint32Be(chunk, 0, data.length);
+  chunk.set(typeBytes, 4);
+  chunk.set(data, 8);
+  writeUint32Be(chunk, 8 + data.length, crc32(concatUint8Arrays([typeBytes, data])));
+  return chunk;
+}
+
+function parsePngChunks(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (bytes.length < 8 || signature.some((value, index) => bytes[index] !== value)) return [];
+  const decoder = new TextDecoder('ascii');
+  const chunks = [];
+  let offset = 8;
+  while (offset + 12 <= bytes.length) {
+    const length = readUint32Be(bytes, offset);
+    const end = offset + 12 + length;
+    if (end > bytes.length) break;
+    const type = decoder.decode(bytes.slice(offset + 4, offset + 8));
+    chunks.push({ type, data: bytes.slice(offset + 8, offset + 8 + length) });
+    offset = end;
+    if (type === 'IEND') break;
+  }
+  return chunks;
+}
+
+function getPngAnimationInfo(buffer) {
+  const chunks = parsePngChunks(buffer);
+  const animation = { animated: false, frameCount: 1, plays: 0, delays: [] };
+  for (const chunk of chunks) {
+    if (chunk.type === 'acTL' && chunk.data.length >= 8) {
+      animation.animated = true;
+      animation.frameCount = readUint32Be(chunk.data, 0) || 1;
+      animation.plays = readUint32Be(chunk.data, 4);
+    }
+    if (chunk.type === 'fcTL' && chunk.data.length >= 26) {
+      const numerator = (chunk.data[20] << 8) | chunk.data[21];
+      const denominatorRaw = (chunk.data[22] << 8) | chunk.data[23];
+      const denominator = denominatorRaw || 100;
+      animation.delays.push(Math.max(1, Math.round((numerator || 1) * 1000 / denominator)));
+    }
+  }
+  return animation;
+}
+
+function pngIdatData(buffer) {
+  return concatUint8Arrays(parsePngChunks(buffer).filter(chunk => chunk.type === 'IDAT').map(chunk => chunk.data));
+}
+
+function apngDelayFields(milliseconds) {
+  const ms = Math.max(1, Math.round(milliseconds || 100));
+  if (ms <= 65535) return { numerator: ms, denominator: 1000 };
+  const tenths = Math.min(65535, Math.round(ms / 10));
+  return { numerator: tenths, denominator: 100 };
+}
+
+function buildApng(framePngBuffers, width, height, delays, plays = 0) {
+  if (!framePngBuffers.length) throw new Error(t('character.apngEncodeError'));
+  const signature = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  const chunks = [signature];
+
+  const ihdr = new Uint8Array(13);
+  writeUint32Be(ihdr, 0, width);
+  writeUint32Be(ihdr, 4, height);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+  chunks.push(pngChunk('IHDR', ihdr));
+
+  const actl = new Uint8Array(8);
+  writeUint32Be(actl, 0, framePngBuffers.length);
+  writeUint32Be(actl, 4, Number.isFinite(plays) ? Math.max(0, plays) : 0);
+  chunks.push(pngChunk('acTL', actl));
+
+  let sequence = 0;
+  framePngBuffers.forEach((frameBuffer, index) => {
+    const fctl = new Uint8Array(26);
+    writeUint32Be(fctl, 0, sequence++);
+    writeUint32Be(fctl, 4, width);
+    writeUint32Be(fctl, 8, height);
+    writeUint32Be(fctl, 12, 0);
+    writeUint32Be(fctl, 16, 0);
+    const delay = apngDelayFields(delays[index] ?? delays[delays.length - 1] ?? 100);
+    writeUint16Be(fctl, 20, delay.numerator);
+    writeUint16Be(fctl, 22, delay.denominator);
+    fctl[24] = 0;
+    fctl[25] = 0;
+    chunks.push(pngChunk('fcTL', fctl));
+
+    const idat = pngIdatData(frameBuffer);
+    if (index === 0) {
+      chunks.push(pngChunk('IDAT', idat));
+    } else {
+      const fdat = new Uint8Array(4 + idat.length);
+      writeUint32Be(fdat, 0, sequence++);
+      fdat.set(idat, 4);
+      chunks.push(pngChunk('fdAT', fdat));
+    }
+  });
+
+  chunks.push(pngChunk('IEND'));
+  return concatUint8Arrays(chunks);
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error(t('character.cropEncodeError'))), type, quality);
+  });
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error(t('character.cropEncodeError')));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function processAnimatedPng(fileBuffer, crop) {
+  if (!('ImageDecoder' in window)) throw new Error(t('character.apngUnsupported'));
+
+  const preferredTypes = ['image/apng', 'image/png'];
+  let decoderType = null;
+  for (const type of preferredTypes) {
+    try {
+      if (!ImageDecoder.isTypeSupported || await ImageDecoder.isTypeSupported(type)) {
+        decoderType = type;
+        break;
+      }
+    } catch (_) {}
+  }
+  if (!decoderType) throw new Error(t('character.apngUnsupported'));
+
+  const decoder = new ImageDecoder({ data: fileBuffer.slice(0), type: decoderType, preferAnimation: true });
+  try {
+    if (decoder.tracks?.ready) await decoder.tracks.ready;
+    const info = getPngAnimationInfo(fileBuffer);
+    const firstResult = await decoder.decode({ frameIndex: 0, completeFramesOnly: true });
+    const track = decoder.tracks?.selectedTrack;
+    const frameCount = Math.max(1, track?.frameCount || info.frameCount || 1);
+    const framePngBuffers = [];
+    const delays = [];
+    const canvas = document.createElement('canvas');
+    canvas.width = crop.targetWidth;
+    canvas.height = crop.targetHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error(t('character.cropEncodeError'));
+
+    for (let index = 0; index < frameCount; index += 1) {
+      const result = index === 0 ? firstResult : await decoder.decode({ frameIndex: index, completeFramesOnly: true });
+      const frame = result.image;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(frame, crop.sourceX, crop.sourceY, crop.sourceWidth, crop.sourceHeight, 0, 0, canvas.width, canvas.height);
+      const pngBlob = await canvasToBlob(canvas, 'image/png');
+      framePngBuffers.push(await pngBlob.arrayBuffer());
+      const fallbackDelay = frame.duration ? Math.max(1, Math.round(frame.duration / 1000)) : 100;
+      delays.push(info.delays[index] ?? fallbackDelay);
+      frame.close?.();
+    }
+
+    const encoded = buildApng(framePngBuffers, canvas.width, canvas.height, delays, info.plays);
+    return blobToDataUrl(new Blob([encoded], { type: 'image/apng' }));
+  } finally {
+    decoder.close?.();
+  }
+}
+
 async function openAvatarCropper(file) {
   const objectUrl = URL.createObjectURL(file);
+  const fileBuffer = await file.arrayBuffer();
+  const animationInfo = getPngAnimationInfo(fileBuffer);
 
   try {
     const image = await new Promise((resolve, reject) => {
@@ -285,7 +506,7 @@ async function openAvatarCropper(file) {
             <div>
               <div class="modal-kicker">${escapeHtml(t('character.avatar'))}</div>
               <h2 id="avatar-crop-title">${escapeHtml(t('character.cropTitle'))}</h2>
-              <p class="avatar-crop-copy">${escapeHtml(t('character.cropHelp'))}</p>
+              <p class="avatar-crop-copy">${escapeHtml(t(animationInfo.animated ? 'character.cropHelpAnimated' : 'character.cropHelp'))}</p>
             </div>
             <button type="button" class="modal-close" data-avatar-crop-cancel aria-label="${escapeHtml(t('common.cancel'))}">×</button>
           </div>
@@ -311,6 +532,7 @@ async function openAvatarCropper(file) {
       const stage = backdrop.querySelector('#avatar-crop-stage');
       const cropImage = backdrop.querySelector('#avatar-crop-image');
       const zoomInput = backdrop.querySelector('#avatar-crop-zoom');
+      const confirmButton = backdrop.querySelector('#avatar-crop-confirm');
       cropImage.src = objectUrl;
 
       let scale = Math.max(cropWidth / naturalWidth, cropHeight / naturalHeight);
@@ -412,20 +634,36 @@ async function openAvatarCropper(file) {
         applyScale(scale * delta);
       }, { passive: false });
 
-      backdrop.querySelector('#avatar-crop-confirm').addEventListener('click', () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 512;
-        canvas.height = 768;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return close(null);
-
+      confirmButton.addEventListener('click', async () => {
         const sourceX = Math.max(0, -offsetX / scale);
         const sourceY = Math.max(0, -offsetY / scale);
         const sourceWidth = cropWidth / scale;
         const sourceHeight = cropHeight / scale;
+        const targetWidth = Math.max(1, Math.min(512, Math.floor(sourceWidth)));
+        const targetHeight = Math.max(1, Math.min(768, Math.floor(targetWidth * 1.5)));
+        const crop = { sourceX, sourceY, sourceWidth, sourceHeight, targetWidth, targetHeight };
 
-        ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
-        close(canvas.toDataURL('image/webp', 0.92));
+        confirmButton.disabled = true;
+        confirmButton.textContent = t('character.cropProcessing');
+        try {
+          if (animationInfo.animated) {
+            close(await processAnimatedPng(fileBuffer, crop));
+            return;
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return close(null);
+          ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
+          close(canvas.toDataURL('image/webp', 0.92));
+        } catch (error) {
+          console.error(error);
+          toast(error?.message || String(error), 'error');
+          confirmButton.disabled = false;
+          confirmButton.textContent = t('character.cropApply');
+        }
       });
 
       syncZoomInput();
@@ -894,7 +1132,7 @@ function openCharacterEditor(characterId = null) {
         <div class="character-editor-layout">
           <aside class="character-editor-aside">
             <div id="character-avatar-preview">${characterAvatar(character, 'character-editor-avatar')}</div>
-            <label class="avatar-upload-button"><input type="file" id="character-avatar-file" accept="image/png,image/jpeg,image/webp" hidden>${escapeHtml(t('character.avatar'))}</label>
+            <label class="avatar-upload-button"><input type="file" id="character-avatar-file" accept="image/png,image/apng,image/jpeg,image/webp,.apng" hidden>${escapeHtml(t('character.avatar'))}</label>
             <button type="button" class="avatar-remove" id="character-avatar-remove">${escapeHtml(t('character.removeAvatar'))}</button>
             <p class="avatar-help">${escapeHtml(t('character.avatarHelp'))}</p>
             <div class="editor-mini-stats">

@@ -102,7 +102,7 @@
   "library.exported": "JSON du personnage exporté.",
   "character.identity": "Identité",
   "character.avatar": "Choisir un avatar",
-  "character.avatarHelp": "PNG, JPG ou WebP. Aucune limite de taille à l’import. L’avatar final est recadré en 2:3, redimensionné automatiquement au maximum en 512×768, puis stocké localement pour cette base.",
+  "character.avatarHelp": "PNG, APNG, JPG ou WebP. Aucune limite de taille à l’import. Les avatars statiques et animés sont recadrés en 2:3 et redimensionnés automatiquement au maximum en 512×768.",
   "character.removeAvatar": "Retirer l’avatar",
   "character.personality": "Personnalité",
   "character.altGreetings": "Salutations alternatives",
@@ -157,5 +157,10 @@
   "character.cropHelp": "Déplacez l’image et ajustez le zoom pour choisir un recadrage portrait en 2:3.",
   "character.cropZoom": "Zoom",
   "character.cropApply": "Utiliser ce cadrage",
-  "character.cropLoadError": "Impossible de charger cette image pour le recadrage."
+  "character.cropLoadError": "Impossible de charger cette image pour le recadrage.",
+  "character.cropHelpAnimated": "APNG animé détecté. Déplacez et zoomez pour choisir un cadrage 2:3 ; le même cadrage est appliqué à toutes les frames et l’animation est conservée.",
+  "character.cropProcessing": "Traitement…",
+  "character.apngUnsupported": "Le recadrage APNG animé nécessite une version récente de WebView2 avec le support ImageDecoder.",
+  "character.apngEncodeError": "Impossible de reconstruire l’APNG animé.",
+  "character.cropEncodeError": "Impossible d’encoder l’avatar recadré."
 }

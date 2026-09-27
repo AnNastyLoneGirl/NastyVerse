@@ -70,7 +70,7 @@
   "character.systemPrompt": "Prompt système",
   "character.required": "Le nom du personnage est obligatoire.",
   "toast.importSoon": "L’import des Character Cards sera ajouté lors de la prochaine passe Library.",
-  "library.importJson": "Importer JSON",
+  "library.importJson": "Importer une carte",
   "library.sort": "Trier",
   "library.sort.nameAsc": "Nom A–Z",
   "library.sort.nameDesc": "Nom Z–A",
@@ -96,8 +96,8 @@
   "library.favorite": "Favori",
   "library.unfavorite": "Retirer des favoris",
   "library.imported": "Personnage importé.",
-  "library.importInvalid": "Ce JSON n’est pas une carte de personnage reconnue.",
-  "library.importUnsupported": "L’import PNG et CHARX arrivera avec le parseur natif Character Card.",
+  "library.importInvalid": "Ce fichier n’est pas une carte de personnage reconnue.",
+  "library.importUnsupported": "Formats de cartes pris en charge : JSON, PNG, APNG et CHARX.",
   "library.avatarTooLarge": "L’avatar doit faire moins de 2 Mo.",
   "library.exported": "JSON du personnage exporté.",
   "character.identity": "Identité",
@@ -163,5 +163,7 @@
   "character.apngUnsupported": "Le recadrage APNG animé nécessite une version récente de WebView2 avec le support ImageDecoder.",
   "character.apngEncodeError": "Impossible de reconstruire l’APNG animé.",
   "character.cropEncodeError": "Impossible d’encoder l’avatar recadré.",
-  "character.avatarSaveError": "Impossible d’enregistrer cet avatar. Réessayez avec une autre image."
+  "character.avatarSaveError": "Impossible d’enregistrer cet avatar. Réessayez avec une autre image.",
+  "library.importedMany": "{count} personnages importés.",
+  "library.importFailed": "{count} fichier(s) n’ont pas pu être importés. Formats pris en charge : JSON, PNG, APNG et CHARX."
 }

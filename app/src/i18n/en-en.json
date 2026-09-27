@@ -70,7 +70,7 @@
   "character.systemPrompt": "System prompt",
   "character.required": "Character name is required.",
   "toast.importSoon": "Character Card import will be added in the next Library pass.",
-  "library.importJson": "Import JSON",
+  "library.importJson": "Import card",
   "library.sort": "Sort",
   "library.sort.nameAsc": "Name A–Z",
   "library.sort.nameDesc": "Name Z–A",
@@ -96,8 +96,8 @@
   "library.favorite": "Favorite",
   "library.unfavorite": "Remove favorite",
   "library.imported": "Character imported.",
-  "library.importInvalid": "This JSON is not a recognized character card.",
-  "library.importUnsupported": "PNG and CHARX import will be added with the native Character Card parser.",
+  "library.importInvalid": "This file is not a recognized character card.",
+  "library.importUnsupported": "Supported character card formats: JSON, PNG, APNG and CHARX.",
   "library.avatarTooLarge": "Avatar must be smaller than 2 MB.",
   "library.exported": "Character JSON exported.",
   "character.identity": "Identity",
@@ -163,5 +163,7 @@
   "character.apngUnsupported": "Animated APNG cropping requires a current WebView2 version with ImageDecoder support.",
   "character.apngEncodeError": "Unable to rebuild the animated APNG.",
   "character.cropEncodeError": "Unable to encode the cropped avatar.",
-  "character.avatarSaveError": "Unable to save this avatar. Try again with another image."
+  "character.avatarSaveError": "Unable to save this avatar. Try again with another image.",
+  "library.importedMany": "{count} characters imported.",
+  "library.importFailed": "{count} file(s) could not be imported. Supported formats: JSON, PNG, APNG and CHARX."
 }

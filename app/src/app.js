@@ -1055,8 +1055,8 @@ function renderLibrary(tab = 'characters') {
         </div>
         ${tab === 'characters' ? `
           <div class="library-command-actions">
-            <input type="file" id="character-import-file" accept=".json,application/json" hidden>
-            <button class="btn btn-ghost" id="library-import">${escapeHtml(t('library.importJson'))}</button>
+            <input type="file" id="character-import-file" accept=".json,.png,.apng,.charx,application/json,image/png,application/zip" multiple hidden>
+            <button class="btn btn-ghost" id="library-import">${escapeHtml(t('library.import'))}</button>
             <button class="btn btn-primary" id="library-create">+ ${escapeHtml(t('library.create'))}</button>
           </div>` : ''}
       </div>
@@ -1068,7 +1068,7 @@ function renderLibrary(tab = 'characters') {
   if (tab === 'characters') {
     document.getElementById('library-create').addEventListener('click', () => openCharacterEditor());
     document.getElementById('library-import').addEventListener('click', () => document.getElementById('character-import-file').click());
-    document.getElementById('character-import-file').addEventListener('change', importCharacterJson);
+    document.getElementById('character-import-file').addEventListener('change', importCharacterCards);
     renderCharacterLibrary();
   } else {
     document.getElementById('library-content').innerHTML = `
@@ -1477,6 +1477,328 @@ async function duplicateCharacter(id) {
   renderCharacterLibrary();
 }
 
+
+function isPngSignature(bytes) {
+  return bytes.length >= 8
+    && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+    && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a;
+}
+
+function isZipSignature(bytes) {
+  return bytes.length >= 4
+    && bytes[0] === 0x50 && bytes[1] === 0x4b
+    && ((bytes[2] === 0x03 && bytes[3] === 0x04)
+      || (bytes[2] === 0x05 && bytes[3] === 0x06)
+      || (bytes[2] === 0x07 && bytes[3] === 0x08));
+}
+
+function decodeUtf8Base64(value) {
+  const normalized = String(value || '').trim().replace(/\s+/g, '');
+  const binary = atob(normalized);
+  const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+  return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+}
+
+function parseCharacterCardJson(value) {
+  const payload = typeof value === 'string' ? JSON.parse(value) : value;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid character card JSON.');
+  const data = payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data) ? payload.data : payload;
+  if (!String(data?.name || '').trim()) throw new Error('Character card has no name.');
+  return { payload, data };
+}
+
+function cardTimestamp(value, fallback = Date.now()) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return fallback;
+  return number < 1_000_000_000_000 ? number * 1000 : number;
+}
+
+function characterFromCardPayload(payload) {
+  const { data } = parseCharacterCardJson(payload);
+  return normalizeCharacter({
+    name: data.name,
+    description: data.description,
+    personality: data.personality,
+    scenario: data.scenario,
+    firstMessage: data.first_mes ?? data.firstMessage,
+    alternateGreetings: data.alternate_greetings ?? data.alternateGreetings,
+    exampleMessages: data.mes_example ?? data.exampleMessages,
+    systemPrompt: data.system_prompt ?? data.systemPrompt,
+    postHistoryInstructions: data.post_history_instructions ?? data.postHistoryInstructions,
+    creator: data.creator,
+    characterVersion: data.character_version ?? data.characterVersion,
+    creatorNotes: data.creator_notes ?? data.creatorNotes,
+    tags: data.tags,
+    createdAt: cardTimestamp(data.creation_date, Date.now()),
+    updatedAt: cardTimestamp(data.modification_date, Date.now()),
+  });
+}
+
+function cardIconAsset(payload) {
+  const { data } = parseCharacterCardJson(payload);
+  const assets = Array.isArray(data.assets) ? data.assets : [];
+  const icons = assets.filter(asset => String(asset?.type || '').toLowerCase() === 'icon');
+  return icons.find(asset => String(asset?.name || '').toLowerCase() === 'main') || icons[0] || null;
+}
+
+function extensionMime(pathOrExt) {
+  const raw = String(pathOrExt || '').toLowerCase();
+  const ext = raw.includes('.') ? raw.split('.').pop() : raw.replace(/^\./, '');
+  const types = {
+    png: 'image/png', apng: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    webp: 'image/webp', gif: 'image/gif', avif: 'image/avif', bmp: 'image/bmp',
+  };
+  return types[ext] || 'application/octet-stream';
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Unable to read imported asset.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function bytesToDataUrl(bytes, mime) {
+  return blobToDataUrl(new Blob([bytes], { type: mime || 'application/octet-stream' }));
+}
+
+async function decompressBytes(bytes, format) {
+  if (typeof DecompressionStream !== 'function') throw new Error('Compressed character cards are not supported by this WebView version.');
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+function pngChunkType(bytes, offset) {
+  return String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+}
+
+async function parsePngTextChunks(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  if (!isPngSignature(bytes)) throw new Error('Not a PNG/APNG file.');
+  const view = new DataView(arrayBuffer);
+  const chunks = new Map();
+  let offset = 8;
+
+  while (offset + 12 <= bytes.length) {
+    const length = view.getUint32(offset, false);
+    const typeOffset = offset + 4;
+    const dataOffset = offset + 8;
+    const end = dataOffset + length;
+    if (end + 4 > bytes.length) throw new Error('Corrupted PNG/APNG chunk.');
+    const type = pngChunkType(bytes, typeOffset);
+    const data = bytes.slice(dataOffset, end);
+
+    if (type === 'tEXt') {
+      const separator = data.indexOf(0);
+      if (separator > 0) {
+        const key = new TextDecoder('latin1').decode(data.slice(0, separator));
+        const value = new TextDecoder('latin1').decode(data.slice(separator + 1));
+        chunks.set(key, value);
+      }
+    } else if (type === 'zTXt') {
+      const separator = data.indexOf(0);
+      if (separator > 0 && separator + 2 <= data.length && data[separator + 1] === 0) {
+        const key = new TextDecoder('latin1').decode(data.slice(0, separator));
+        const inflated = await decompressBytes(data.slice(separator + 2), 'deflate');
+        chunks.set(key, new TextDecoder('latin1').decode(inflated));
+      }
+    } else if (type === 'iTXt') {
+      const firstNull = data.indexOf(0);
+      if (firstNull > 0 && firstNull + 3 <= data.length) {
+        const key = new TextDecoder('latin1').decode(data.slice(0, firstNull));
+        const compressionFlag = data[firstNull + 1];
+        let cursor = firstNull + 3;
+        const languageEnd = data.indexOf(0, cursor);
+        if (languageEnd >= 0) {
+          cursor = languageEnd + 1;
+          const translatedEnd = data.indexOf(0, cursor);
+          if (translatedEnd >= 0) {
+            cursor = translatedEnd + 1;
+            let content = data.slice(cursor);
+            if (compressionFlag === 1) content = await decompressBytes(content, 'deflate');
+            chunks.set(key, new TextDecoder('utf-8', { fatal: false }).decode(content));
+          }
+        }
+      }
+    }
+
+    offset = end + 4;
+    if (type === 'IEND') break;
+  }
+  return chunks;
+}
+
+function parseEmbeddedCardText(value) {
+  const raw = String(value || '').trim();
+  try {
+    return parseCharacterCardJson(decodeUtf8Base64(raw)).payload;
+  } catch (base64Error) {
+    return parseCharacterCardJson(raw).payload;
+  }
+}
+
+function resolvePngEmbeddedAsset(icon, textChunks) {
+  const uri = String(icon?.uri || '');
+  if (!uri.startsWith('__asset:')) return '';
+  const path = uri.slice('__asset:'.length).replace(/^\/+/, '');
+  const encoded = textChunks.get(`chara-ext-asset_:${path}`);
+  if (!encoded) return '';
+  const ext = icon?.ext || path;
+  return `data:${extensionMime(ext)};base64,${String(encoded).trim().replace(/\s+/g, '')}`;
+}
+
+async function importPngCharacterCard(file, arrayBuffer) {
+  const chunks = await parsePngTextChunks(arrayBuffer);
+  const embedded = chunks.get('ccv3') ?? chunks.get('chara');
+  if (!embedded) throw new Error('PNG/APNG has no ccv3 or chara character card metadata.');
+  const payload = parseEmbeddedCardText(embedded);
+  const character = characterFromCardPayload(payload);
+  const originalImage = await blobToDataUrl(file);
+  const icon = cardIconAsset(payload);
+  let avatar = originalImage;
+
+  if (icon) {
+    const uri = String(icon.uri || '');
+    if (uri.startsWith('data:image/')) avatar = uri;
+    else if (/^https:\/\//i.test(uri)) avatar = uri;
+    else if (uri.startsWith('__asset:')) avatar = resolvePngEmbeddedAsset(icon, chunks) || originalImage;
+    else if (uri === 'ccdefault:') avatar = originalImage;
+  }
+
+  return { character, avatar };
+}
+
+function findZipEndOfCentralDirectory(bytes) {
+  const minimum = Math.max(0, bytes.length - 0xffff - 22);
+  for (let offset = bytes.length - 22; offset >= minimum; offset -= 1) {
+    if (bytes[offset] === 0x50 && bytes[offset + 1] === 0x4b && bytes[offset + 2] === 0x05 && bytes[offset + 3] === 0x06) return offset;
+  }
+  return -1;
+}
+
+function parseZipDirectory(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  const view = new DataView(arrayBuffer);
+  const eocd = findZipEndOfCentralDirectory(bytes);
+  if (eocd < 0) throw new Error('Invalid CHARX ZIP directory.');
+
+  const entriesCount = view.getUint16(eocd + 10, true);
+  const centralSize = view.getUint32(eocd + 12, true);
+  const centralOffset = view.getUint32(eocd + 16, true);
+  if (entriesCount === 0xffff || centralSize === 0xffffffff || centralOffset === 0xffffffff) {
+    throw new Error('ZIP64 CHARX files are not supported yet.');
+  }
+
+  const decoder = new TextDecoder('utf-8', { fatal: false });
+  const entries = [];
+  let cursor = centralOffset;
+  for (let index = 0; index < entriesCount; index += 1) {
+    if (view.getUint32(cursor, true) !== 0x02014b50) throw new Error('Corrupted CHARX central directory.');
+    const flags = view.getUint16(cursor + 8, true);
+    const method = view.getUint16(cursor + 10, true);
+    const compressedSize = view.getUint32(cursor + 20, true);
+    const uncompressedSize = view.getUint32(cursor + 24, true);
+    const nameLength = view.getUint16(cursor + 28, true);
+    const extraLength = view.getUint16(cursor + 30, true);
+    const commentLength = view.getUint16(cursor + 32, true);
+    const localHeaderOffset = view.getUint32(cursor + 42, true);
+    const nameBytes = bytes.slice(cursor + 46, cursor + 46 + nameLength);
+    const name = decoder.decode(nameBytes).replaceAll('\\', '/');
+    entries.push({ name, flags, method, compressedSize, uncompressedSize, localHeaderOffset });
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+  return entries;
+}
+
+async function extractZipEntry(arrayBuffer, entry) {
+  if (!entry) throw new Error('Missing CHARX entry.');
+  if (entry.flags & 0x1) throw new Error('Encrypted CHARX files are not supported.');
+  const view = new DataView(arrayBuffer);
+  const bytes = new Uint8Array(arrayBuffer);
+  const offset = entry.localHeaderOffset;
+  if (view.getUint32(offset, true) !== 0x04034b50) throw new Error('Corrupted CHARX local header.');
+  const nameLength = view.getUint16(offset + 26, true);
+  const extraLength = view.getUint16(offset + 28, true);
+  const dataStart = offset + 30 + nameLength + extraLength;
+  const compressed = bytes.slice(dataStart, dataStart + entry.compressedSize);
+  let result;
+  if (entry.method === 0) result = compressed;
+  else if (entry.method === 8) result = await decompressBytes(compressed, 'deflate-raw');
+  else throw new Error(`Unsupported CHARX compression method: ${entry.method}`);
+  if (entry.uncompressedSize && result.length !== entry.uncompressedSize) throw new Error('Corrupted CHARX entry size.');
+  return result;
+}
+
+function normalizeEmbeddedAssetPath(uri) {
+  return String(uri || '')
+    .replace(/^embeded:\/\//i, '')
+    .replace(/^embedded:\/\//i, '')
+    .replace(/^\/+/, '');
+}
+
+async function resolveCharxAvatar(payload, arrayBuffer, entries) {
+  const byName = new Map(entries.map(entry => [entry.name, entry]));
+  const icon = cardIconAsset(payload);
+  if (icon) {
+    const uri = String(icon.uri || '');
+    if (uri.startsWith('data:image/')) return uri;
+    if (/^https:\/\//i.test(uri)) return uri;
+    if (/^embed+ed:\/\//i.test(uri)) {
+      const path = normalizeEmbeddedAssetPath(uri);
+      const entry = byName.get(path);
+      if (entry) return bytesToDataUrl(await extractZipEntry(arrayBuffer, entry), extensionMime(icon.ext || path));
+    }
+  }
+
+  const fallback = entries.find(entry => /^assets\/icon\/images\//i.test(entry.name) && /\.(png|apng|jpe?g|webp|gif|avif)$/i.test(entry.name));
+  if (fallback) return bytesToDataUrl(await extractZipEntry(arrayBuffer, fallback), extensionMime(fallback.name));
+  return '';
+}
+
+async function importCharxCharacterCard(arrayBuffer) {
+  const entries = parseZipDirectory(arrayBuffer);
+  const cardEntry = entries.find(entry => entry.name === 'card.json');
+  if (!cardEntry) throw new Error('CHARX is missing card.json at the archive root.');
+  const cardBytes = await extractZipEntry(arrayBuffer, cardEntry);
+  const payload = parseCharacterCardJson(new TextDecoder('utf-8', { fatal: false }).decode(cardBytes)).payload;
+  const character = characterFromCardPayload(payload);
+  const avatar = await resolveCharxAvatar(payload, arrayBuffer, entries);
+  return { character, avatar };
+}
+
+async function importJsonCharacterCard(file) {
+  const payload = parseCharacterCardJson(await file.text()).payload;
+  const character = characterFromCardPayload(payload);
+  const icon = cardIconAsset(payload);
+  let avatar = '';
+  if (icon) {
+    const uri = String(icon.uri || '');
+    if (uri.startsWith('data:image/') || /^https:\/\//i.test(uri)) avatar = uri;
+  }
+  return { character, avatar };
+}
+
+async function parseCharacterImportFile(file) {
+  const prefix = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+  const lowerName = file.name.toLowerCase();
+  if (isPngSignature(prefix)) return importPngCharacterCard(file, await file.arrayBuffer());
+  if (isZipSignature(prefix) || lowerName.endsWith('.charx')) return importCharxCharacterCard(await file.arrayBuffer());
+  if (lowerName.endsWith('.json') || String(file.type || '').includes('json')) return importJsonCharacterCard(file);
+  throw new Error('Unsupported character card format.');
+}
+
+async function persistImportedCharacter(result) {
+  const character = result.character;
+  const avatar = String(result.avatar || '');
+  if (avatar) character.avatar = await persistAvatarValue(character.id, avatar);
+  const characters = getNormalizedCharacters();
+  characters.push(character);
+  saveCharacters(characters);
+  return character;
+}
+
 function exportCharacterJson(id) {
   const character = getNormalizedCharacters().find(item => item.id === id);
   if (!character) return;
@@ -1513,43 +1835,30 @@ function exportCharacterJson(id) {
   toast(t('library.exported'), 'success');
 }
 
-async function importCharacterJson(event) {
+async function importCharacterCards(event) {
   const input = event.currentTarget;
-  const file = input.files?.[0];
+  const files = [...(input.files || [])];
   input.value = '';
-  if (!file) return;
-  if (!file.name.toLowerCase().endsWith('.json')) return toast(t('library.importUnsupported'), 'error');
+  if (!files.length) return;
 
-  try {
-    const payload = JSON.parse(await file.text());
-    const data = payload?.data && typeof payload.data === 'object' ? payload.data : payload;
-    if (!data || typeof data !== 'object' || !String(data.name || '').trim()) throw new Error('invalid card');
-    const character = normalizeCharacter({
-      name: data.name,
-      description: data.description,
-      personality: data.personality,
-      scenario: data.scenario,
-      firstMessage: data.first_mes ?? data.firstMessage,
-      alternateGreetings: data.alternate_greetings ?? data.alternateGreetings,
-      exampleMessages: data.mes_example ?? data.exampleMessages,
-      systemPrompt: data.system_prompt ?? data.systemPrompt,
-      postHistoryInstructions: data.post_history_instructions ?? data.postHistoryInstructions,
-      creator: data.creator,
-      characterVersion: data.character_version ?? data.characterVersion,
-      creatorNotes: data.creator_notes ?? data.creatorNotes,
-      tags: data.tags,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-    const characters = getNormalizedCharacters();
-    characters.push(character);
-    saveCharacters(characters);
-    toast(t('library.imported'), 'success');
-    renderCharacterLibrary();
-  } catch (error) {
-    console.error(error);
-    toast(t('library.importInvalid'), 'error');
+  let imported = 0;
+  let failed = 0;
+  for (const file of files) {
+    try {
+      const result = await parseCharacterImportFile(file);
+      await persistImportedCharacter(result);
+      imported += 1;
+    } catch (error) {
+      failed += 1;
+      console.error(`[character import] ${file.name}`, error);
+    }
   }
+
+  if (imported) {
+    toast(t(imported > 1 ? 'library.importedMany' : 'library.imported', { count: imported }), 'success');
+    renderCharacterLibrary();
+  }
+  if (failed) toast(t('library.importFailed', { count: failed }), 'error');
 }
 
 async function deleteCharacter(id, confirmed = false) {

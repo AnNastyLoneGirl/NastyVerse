@@ -123,12 +123,12 @@ Catalog translations keep their current format for now.
 Launcher/native host and application payload use independent versions.
 
 - Launcher/native host: **0.1.8**
-- Application payload: **0.1.0** (`app/src/app-version.json`)
+- Application payload: **0.1.12** (`app/src/app-version.json`)
 
 Changes limited to `app/src/**` advance only the application version and are synchronized from GitHub `main`; they do not require a new launcher Release. The application must remain tolerant of native commands that may be unavailable on older launchers. Native launcher changes use their own release cycle.
 
-## Application base 0.1.0
+## Application base 0.1.12
 
-The replaceable `app/src/**` frontend currently provides the Character Library base: search/sort/filter/favorites/tags, rich character cards, avatar editing, personality/scenario/greetings/example messages, prompt overrides, creator metadata, duplication, JSON import/export, and local conversation statistics. Characters and conversations are still persisted locally in the WebView profile for this first application version.
+The replaceable `app/src/**` frontend currently provides the Character Library base: search/sort/filter/favorites/tags, rich character cards, avatar editing, personality/scenario/greetings/example messages, prompt overrides, creator metadata, duplication, JSON export, Character Card import from JSON/PNG/APNG/CHARX, and local conversation statistics. Characters and conversations are still persisted locally in the WebView profile for this first application version.
 
 Backend-native features remain optional from the application point of view: if a launcher does not expose a newer native command, the application must keep loading and only the dependent capability may be unavailable.

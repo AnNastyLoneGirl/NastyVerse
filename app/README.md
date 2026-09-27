@@ -11,11 +11,11 @@ Do not add another `app/src-tauri/` crate unless the project owner explicitly re
 
 ## Application version
 
-Current application payload version: **0.1.0**. The source of truth is `src/app-version.json`. This version is independent from the launcher/native host version.
+Current application payload version: **0.1.12**. The source of truth is `src/app-version.json`. This version is independent from the launcher/native host version.
 
 ## Current functional base
 
-The frontend now includes a full Character Library management surface: search/sort/filter/favorites/tags, rich character cards, avatar editing, personality/scenario/greetings/example messages, prompt overrides, creator metadata, duplication, JSON import/export, and local conversation statistics. Conversations and character records are still persisted locally in the frontend for this base. Structured content will move to SQLite and PNG/CHARX import will move to the native V3-unified Character Card parser in later passes.
+The frontend now includes a full Character Library management surface: search/sort/filter/favorites/tags, rich character cards, avatar editing, personality/scenario/greetings/example messages, prompt overrides, creator metadata, duplication, JSON export, Character Card import from JSON/PNG/APNG/CHARX, and local conversation statistics. Conversations and character records are still persisted locally in the frontend for this base. Structured content will move to SQLite later. Character Card import currently runs entirely in the replaceable frontend so it stays compatible with existing launcher versions; V1/V2/V3 cards are normalized into the current internal character model.
 
 ## Application i18n
 

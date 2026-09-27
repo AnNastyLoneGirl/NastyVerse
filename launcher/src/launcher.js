@@ -270,7 +270,8 @@ const NEWS_CONTENT_CACHE_KEY = 'nv_launcher_news_content_v1';
 const DEFAULT_NEWS_CONTENT = {
   entries: [
     {
-      title: 'NastyVerse Launcher 0.1.5',
+      title_fr: 'NastyVerse Launcher 0.1.7',
+      title_en: 'NastyVerse Launcher 0.1.7',
       category: 'Update',
       image: 'news/launcher-015.webp',
       date: '2026-09-26',
@@ -285,17 +286,27 @@ const DEFAULT_NEWS_CONTENT = {
 function normalizeNewsContent(raw) {
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.entries)) return null;
   const entries = raw.entries
-    .filter(entry => entry && typeof entry === 'object' && typeof entry.title === 'string' && entry.title.trim())
-    .map(entry => ({
-      title: entry.title.trim(),
-      category: typeof entry.category === 'string' && entry.category.trim() ? entry.category.trim() : 'News',
-      image: typeof entry.image === 'string' ? entry.image.trim() : '',
-      date: typeof entry.date === 'string' ? entry.date.trim() : '',
-      summary_fr: typeof entry.summary_fr === 'string' ? entry.summary_fr : '',
-      summary_en: typeof entry.summary_en === 'string' ? entry.summary_en : '',
-      description_fr: typeof entry.description_fr === 'string' ? entry.description_fr : '',
-      description_en: typeof entry.description_en === 'string' ? entry.description_en : ''
-    }));
+    .filter(entry => {
+      if (!entry || typeof entry !== 'object') return false;
+      const titleEn = typeof entry.title_en === 'string' ? entry.title_en.trim() : '';
+      const titleFr = typeof entry.title_fr === 'string' ? entry.title_fr.trim() : '';
+      const legacyTitle = typeof entry.title === 'string' ? entry.title.trim() : '';
+      return Boolean(titleEn || titleFr || legacyTitle);
+    })
+    .map(entry => {
+      const legacyTitle = typeof entry.title === 'string' ? entry.title.trim() : '';
+      return {
+        title_fr: typeof entry.title_fr === 'string' && entry.title_fr.trim() ? entry.title_fr.trim() : legacyTitle,
+        title_en: typeof entry.title_en === 'string' && entry.title_en.trim() ? entry.title_en.trim() : (legacyTitle || (typeof entry.title_fr === 'string' ? entry.title_fr.trim() : '')),
+        category: typeof entry.category === 'string' && entry.category.trim() ? entry.category.trim() : 'News',
+        image: typeof entry.image === 'string' ? entry.image.trim() : '',
+        date: typeof entry.date === 'string' ? entry.date.trim() : '',
+        summary_fr: typeof entry.summary_fr === 'string' ? entry.summary_fr : '',
+        summary_en: typeof entry.summary_en === 'string' ? entry.summary_en : '',
+        description_fr: typeof entry.description_fr === 'string' ? entry.description_fr : '',
+        description_en: typeof entry.description_en === 'string' ? entry.description_en : ''
+      };
+    });
   return entries.length ? { entries } : null;
 }
 
@@ -358,7 +369,8 @@ function escapeHtml(value) {
 function newsThumb(entry) {
   const image = resolveLauncherContentImage(entry.image);
   if (image) return `<div class="thumb news-thumb"><img src="${escapeHtml(image)}" alt="" loading="lazy"></div>`;
-  return `<div class="thumb">${escapeHtml(entry.title.slice(0, 1).toUpperCase())}</div>`;
+  const title = localizedNewsValue(entry, 'title');
+  return `<div class="thumb">${escapeHtml(title.slice(0, 1).toUpperCase())}</div>`;
 }
 
 function categoryClass(category) {
@@ -493,7 +505,7 @@ function renderHome() {
             <button class="list-item news-list-item" type="button" data-news-target="${isUpdateEntry(entry) ? 'changelog' : 'news'}">
               ${newsThumb(entry)}<div class="list-item-copy">
                 <div class="item-top"><span class="date">${escapeHtml(formatNewsDate(entry.date))}</span><span class="tag ${categoryClass(entry.category)}">${escapeHtml(entry.category)}</span></div>
-                <div class="item-title">${escapeHtml(entry.title)}</div><div class="item-desc">${escapeHtml(localizedNewsValue(entry, 'summary'))}</div>
+                <div class="item-title">${escapeHtml(localizedNewsValue(entry, 'title'))}</div><div class="item-desc">${escapeHtml(localizedNewsValue(entry, 'summary'))}</div>
               </div>
             </button>`).join('')}</div>
         </div>
@@ -594,7 +606,7 @@ function renderNews() {
             ${newsThumb(entry)}
             <div class="remote-entry-copy">
               <div class="item-top"><span class="date">${escapeHtml(formatNewsDate(entry.date))}</span><span class="tag ${categoryClass(entry.category)}">${escapeHtml(entry.category)}</span></div>
-              <h3>${escapeHtml(entry.title)}</h3>
+              <h3>${escapeHtml(localizedNewsValue(entry, 'title'))}</h3>
               <p>${escapeHtml(localizedNewsValue(entry, 'description'))}</p>
             </div>
           </article>`).join('') : `<p class="remote-empty">${t('news.empty', currentLang)}</p>`}
@@ -624,7 +636,7 @@ function renderChangelog() {
             ${newsThumb(entry)}
             <div class="remote-entry-copy">
               <div class="item-top"><span class="date">${escapeHtml(formatNewsDate(entry.date))}</span><span class="tag update">${escapeHtml(entry.category)}</span></div>
-              <h3>${escapeHtml(entry.title)}</h3>
+              <h3>${escapeHtml(localizedNewsValue(entry, 'title'))}</h3>
               <p>${escapeHtml(localizedNewsValue(entry, 'description'))}</p>
             </div>
           </article>`).join('') : `<p class="remote-empty">${t('changelog.empty', currentLang)}</p>`}

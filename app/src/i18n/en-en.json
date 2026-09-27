@@ -162,5 +162,6 @@
   "character.cropProcessing": "Processing…",
   "character.apngUnsupported": "Animated APNG cropping requires a current WebView2 version with ImageDecoder support.",
   "character.apngEncodeError": "Unable to rebuild the animated APNG.",
-  "character.cropEncodeError": "Unable to encode the cropped avatar."
+  "character.cropEncodeError": "Unable to encode the cropped avatar.",
+  "character.avatarSaveError": "Unable to save this avatar. Try again with another image."
 }

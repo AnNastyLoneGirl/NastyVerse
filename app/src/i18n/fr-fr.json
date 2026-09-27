@@ -162,5 +162,6 @@
   "character.cropProcessing": "Traitement…",
   "character.apngUnsupported": "Le recadrage APNG animé nécessite une version récente de WebView2 avec le support ImageDecoder.",
   "character.apngEncodeError": "Impossible de reconstruire l’APNG animé.",
-  "character.cropEncodeError": "Impossible d’encoder l’avatar recadré."
+  "character.cropEncodeError": "Impossible d’encoder l’avatar recadré.",
+  "character.avatarSaveError": "Impossible d’enregistrer cet avatar. Réessayez avec une autre image."
 }

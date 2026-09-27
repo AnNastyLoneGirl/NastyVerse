@@ -220,6 +220,119 @@ function saveCharacters(characters) {
   writeJson(STORAGE.characters, characters);
 }
 
+const AVATAR_ASSET_DB = {
+  name: 'nastyverse-app-assets',
+  version: 1,
+  store: 'avatars',
+};
+const avatarAssetCache = new Map();
+let avatarDbPromise = null;
+
+function openAvatarAssetDb() {
+  if (avatarDbPromise) return avatarDbPromise;
+  avatarDbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(AVATAR_ASSET_DB.name, AVATAR_ASSET_DB.version);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(AVATAR_ASSET_DB.store)) {
+        db.createObjectStore(AVATAR_ASSET_DB.store, { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('Unable to open avatar storage.'));
+  });
+  return avatarDbPromise;
+}
+
+async function loadAvatarAssets() {
+  const db = await openAvatarAssetDb();
+  const records = await new Promise((resolve, reject) => {
+    const transaction = db.transaction(AVATAR_ASSET_DB.store, 'readonly');
+    const request = transaction.objectStore(AVATAR_ASSET_DB.store).getAll();
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error || new Error('Unable to read avatar storage.'));
+  });
+  avatarAssetCache.clear();
+  records.forEach(record => {
+    if (record?.id && record?.dataUrl) avatarAssetCache.set(record.id, record.dataUrl);
+  });
+}
+
+async function putAvatarAsset(id, dataUrl) {
+  const db = await openAvatarAssetDb();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction(AVATAR_ASSET_DB.store, 'readwrite');
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error('Unable to save avatar.'));
+    transaction.objectStore(AVATAR_ASSET_DB.store).put({ id, dataUrl });
+  });
+  avatarAssetCache.set(id, dataUrl);
+}
+
+async function deleteAvatarAsset(id) {
+  avatarAssetCache.delete(id);
+  const db = await openAvatarAssetDb();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction(AVATAR_ASSET_DB.store, 'readwrite');
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error('Unable to delete avatar.'));
+    transaction.objectStore(AVATAR_ASSET_DB.store).delete(id);
+  });
+}
+
+function avatarAssetId(value) {
+  const raw = String(value || '');
+  return raw.startsWith('idb:') ? raw.slice(4) : null;
+}
+
+function resolvedAvatarSource(characterOrValue) {
+  const value = typeof characterOrValue === 'object' && characterOrValue !== null
+    ? characterOrValue.avatar
+    : characterOrValue;
+  const id = avatarAssetId(value);
+  if (id) return avatarAssetCache.get(id) || '';
+  return String(value || '');
+}
+
+async function persistAvatarValue(characterId, value) {
+  const raw = String(value || '');
+  if (!raw) {
+    await deleteAvatarAsset(characterId).catch(() => {});
+    return '';
+  }
+
+  const existingId = avatarAssetId(raw);
+  if (existingId) {
+    if (existingId === characterId) return raw;
+    const existingData = avatarAssetCache.get(existingId);
+    if (!existingData) return '';
+    await putAvatarAsset(characterId, existingData);
+    return `idb:${characterId}`;
+  }
+
+  if (raw.startsWith('data:image/')) {
+    await putAvatarAsset(characterId, raw);
+    return `idb:${characterId}`;
+  }
+
+  return raw;
+}
+
+async function migrateInlineCharacterAvatars() {
+  const characters = getCharacters();
+  let changed = false;
+  for (const character of characters) {
+    const rawAvatar = String(character?.avatar || '');
+    if (!rawAvatar.startsWith('data:image/')) continue;
+    const id = character.id || uid();
+    character.id = id;
+    await putAvatarAsset(id, rawAvatar);
+    character.avatar = `idb:${id}`;
+    changed = true;
+  }
+  if (changed) saveCharacters(characters);
+}
+
 function getConversations() {
   return readJson(STORAGE.conversations, {});
 }
@@ -920,7 +1033,8 @@ function characterDate(timestamp) {
 }
 
 function characterAvatar(character, className) {
-  if (character.avatar) return `<div class="${className}"><img src="${escapeHtml(character.avatar)}" alt=""></div>`;
+  const avatarSource = resolvedAvatarSource(character);
+  if (avatarSource) return `<div class="${className}"><img src="${escapeHtml(avatarSource)}" alt=""></div>`;
   return `<div class="${className} character-avatar-fallback">${escapeHtml((character.name || '?').slice(0, 1).toUpperCase())}</div>`;
 }
 
@@ -1214,8 +1328,9 @@ function openCharacterEditor(characterId = null) {
   const characterNameInput = pageRoot.querySelector('input[name="name"]');
   const refreshAvatarPreview = value => {
     const fallbackName = String(characterNameInput?.value || character.name || '?').trim() || '?';
-    document.getElementById('character-avatar-preview').innerHTML = value
-      ? `<div class="character-editor-avatar"><img src="${escapeHtml(value)}" alt=""></div>`
+    const source = resolvedAvatarSource(value);
+    document.getElementById('character-avatar-preview').innerHTML = source
+      ? `<div class="character-editor-avatar"><img src="${escapeHtml(source)}" alt=""></div>`
       : `<div class="character-editor-avatar character-avatar-fallback">${escapeHtml(fallbackName.slice(0, 1).toUpperCase())}</div>`;
   };
 
@@ -1275,18 +1390,27 @@ function openCharacterEditor(characterId = null) {
     row.querySelector('textarea')?.focus();
   });
 
-  document.getElementById('character-form').addEventListener('submit', event => {
+  document.getElementById('character-form').addEventListener('submit', async event => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const name = String(data.get('name') || '').trim();
     if (!name) return toast(t('character.required'), 'error');
 
     const characters = getNormalizedCharacters();
+    const recordId = existing?.id || character.id || uid();
+    let persistedAvatar = '';
+    try {
+      persistedAvatar = await persistAvatarValue(recordId, String(data.get('avatar') || ''));
+    } catch (error) {
+      console.error(error);
+      toast(t('character.avatarSaveError'), 'error');
+      return;
+    }
     const record = normalizeCharacter({
       ...character,
-      id: existing?.id || character.id || uid(),
+      id: recordId,
       name,
-      avatar: String(data.get('avatar') || ''),
+      avatar: persistedAvatar,
       description: String(data.get('description') || '').trim(),
       personality: String(data.get('personality') || '').trim(),
       scenario: String(data.get('scenario') || '').trim(),
@@ -1334,11 +1458,18 @@ function toggleCharacterFavorite(id) {
   renderCharacterLibrary();
 }
 
-function duplicateCharacter(id) {
+async function duplicateCharacter(id) {
   const source = getNormalizedCharacters().find(character => character.id === id);
   if (!source) return;
   const characters = getNormalizedCharacters();
-  characters.push(normalizeCharacter({ ...source, id: uid(), name: `${source.name} ${t('character.duplicateSuffix')}`, favorite: false, createdAt: Date.now(), updatedAt: Date.now() }));
+  const duplicateId = uid();
+  let avatar = '';
+  try {
+    avatar = await persistAvatarValue(duplicateId, source.avatar);
+  } catch (error) {
+    console.error(error);
+  }
+  characters.push(normalizeCharacter({ ...source, id: duplicateId, avatar, name: `${source.name} ${t('character.duplicateSuffix')}`, favorite: false, createdAt: Date.now(), updatedAt: Date.now() }));
   saveCharacters(characters);
   renderCharacterLibrary();
 }
@@ -1418,11 +1549,12 @@ async function importCharacterJson(event) {
   }
 }
 
-function deleteCharacter(id, confirmed = false) {
+async function deleteCharacter(id, confirmed = false) {
   const character = getNormalizedCharacters().find(item => item.id === id);
   if (!character) return;
   if (!confirmed && !confirm(t('character.deleteConfirm'))) return;
   saveCharacters(getNormalizedCharacters().filter(item => item.id !== id));
+  await deleteAvatarAsset(id).catch(error => console.warn('[avatar] Unable to delete avatar asset.', error));
   const conversations = getConversations();
   delete conversations[id];
   saveConversations(conversations);
@@ -1650,6 +1782,12 @@ async function bootstrap() {
   applyAccent();
   applyUiSettings();
   await initI18n();
+  try {
+    await loadAvatarAssets();
+    await migrateInlineCharacterAvatars();
+  } catch (error) {
+    console.warn('[avatar] IndexedDB avatar storage unavailable.', error);
+  }
   renderNavbar();
   goTo('chat');
   await refreshModelStatus();

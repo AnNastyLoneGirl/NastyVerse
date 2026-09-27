@@ -278,6 +278,13 @@ async fn test_backend_connection(
 }
 
 #[tauri::command]
+async fn analyze_backend_model(
+    config: backend::BackendConfig,
+) -> Result<backend::ModelAnalysis, String> {
+    backend::analyze_backend_model(config).await
+}
+
+#[tauri::command]
 async fn chat_completion(
     app: tauri::AppHandle,
     messages: Vec<backend::ChatMessage>,
@@ -332,6 +339,7 @@ fn main() {
             load_backend_config,
             save_backend_config,
             test_backend_connection,
+            analyze_backend_model,
             chat_completion,
             text_completion,
             get_model_status

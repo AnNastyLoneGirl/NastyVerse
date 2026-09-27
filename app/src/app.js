@@ -12,6 +12,7 @@ const invoke = TAURI?.core?.invoke
       if (cmd === 'get_model_status') return { loaded: false, backend: null, modelName: null, message: t('preview.browser') };
       if (cmd === 'load_backend_config') return null;
       if (cmd === 'test_backend_connection') return { ok: true, message: t('preview.connection'), models: ['preview-model'], modelName: 'preview-model', modelDetails: [{ id: 'preview-model', name: 'Preview model', contextLength: 32768, priceLabel: null, subscriptionIncluded: true, subscriptionInputMultiplier: 2, vision: true, reasoning: true, tools: true }] };
+      if (cmd === 'analyze_backend_model') return { provider: 'koboldcpp', modelId: 'preview-model', modelName: 'Preview model', architecture: 'llama', contextLength: 32768, priceLabel: null, subscriptionIncluded: true, subscriptionInputMultiplier: 2, vision: true, reasoning: true, tools: true, modelPath: '/models/preview-model.gguf', chatTemplate: "{% for message in messages %}<|im_start|>{{ message['role'] }}\n{{ message['content'] }}<|im_end|>{% endfor %}", chatTemplateHash: 'preview', detectedTemplate: 'ChatML', contextPreset: 'ChatML', instructionPreset: 'ChatML', confidence: 'high', source: 'chat-template-pattern', notes: [] };
       if (cmd === 'save_backend_config') return args?.config || null;
       if (cmd === 'chat_completion') return { content: t('preview.reply'), model: 'preview-model' };
       if (cmd === 'text_completion') return { content: t('preview.reply'), model: 'preview-model' };
@@ -21,7 +22,7 @@ const invoke = TAURI?.core?.invoke
 
 function friendlyNativeError(error) {
   const message = String(error ?? '');
-  if (/command\s+(test_backend_connection|load_backend_config|save_backend_config|get_model_status|chat_completion|text_completion)\s+not found/i.test(message)) {
+  if (/command\s+(test_backend_connection|analyze_backend_model|load_backend_config|save_backend_config|get_model_status|chat_completion|text_completion)\s+not found/i.test(message)) {
     return t('models.launcherUpdateRequired');
   }
   return message;
@@ -554,6 +555,7 @@ const state = {
   modelStatus: null,
   backendConfig: null,
   backendDiscovery: null,
+  modelAnalysis: null,
 };
 
 const pageRoot = document.getElementById('page-root');
@@ -3034,6 +3036,8 @@ function renderSelectedModelSummary(backendType) {
 
 function bindModelSelection(backendType) {
   document.getElementById('backend-model')?.addEventListener('change', async () => {
+    state.modelAnalysis = null;
+    renderModelAnalysisResult();
     renderSelectedModelSummary(backendType);
     try {
       await saveBackendConfiguration({ quiet: true, refresh: false });
@@ -3123,8 +3127,148 @@ function renderBackendModelControl(backendType) {
     </label>
     <div class="model-summary" id="backend-model-summary" hidden></div>`;
   bindModelSelection(backendType);
-  document.getElementById('backend-model')?.addEventListener('input', () => renderSelectedModelSummary(backendType));
+  document.getElementById('backend-model')?.addEventListener('input', () => {
+    state.modelAnalysis = null;
+    renderModelAnalysisResult();
+    renderSelectedModelSummary(backendType);
+  });
   renderSelectedModelSummary(backendType);
+}
+
+function modelAnalysisSourceLabel(source) {
+  const key = `models.analysis.source.${String(source || 'insufficient-metadata')}`;
+  return t(key);
+}
+
+function modelAnalysisConfidenceLabel(confidence) {
+  return t(`models.analysis.confidence.${String(confidence || 'low')}`);
+}
+
+function analysisCapabilityChips(analysis) {
+  const parts = [];
+  if (analysis.vision) parts.push(t('models.meta.vision'));
+  if (analysis.reasoning) parts.push(t('models.meta.reasoning'));
+  if (analysis.tools) parts.push(t('models.meta.tools'));
+  return parts;
+}
+
+function analysisSubscriptionLabel(analysis) {
+  if (analysis.subscriptionIncluded !== true) return analysis.subscriptionIncluded === false ? t('models.meta.notSub') : '';
+  const multiplier = Number(analysis.subscriptionInputMultiplier || 1);
+  return multiplier !== 1 ? t('models.meta.subMultiplier', { multiplier }) : t('models.meta.sub');
+}
+
+function modelAnalysisInfoRow(label, value) {
+  if (!value) return '';
+  return `<div class="analysis-info-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+}
+
+function renderModelAnalysisResult(analysis = state.modelAnalysis) {
+  const host = document.getElementById('model-analysis-result');
+  if (!host) return;
+  if (!analysis) {
+    host.innerHTML = `<div class="model-analysis-empty">${escapeHtml(t('models.analysis.empty'))}</div>`;
+    return;
+  }
+
+  const provider = backendDefinition(analysis.provider || state.backendConfig?.backendType || 'custom').label;
+  const modelTitle = analysis.modelName || analysis.modelId || t('models.analysis.unknownModel');
+  const context = formatContextLength(analysis.contextLength) || t('models.analysis.unknown');
+  const capabilities = analysisCapabilityChips(analysis);
+  const subscription = analysisSubscriptionLabel(analysis);
+  const commercial = [subscription, analysis.priceLabel].filter(Boolean).join(' · ');
+  const recommendationAvailable = Boolean(analysis.contextPreset || analysis.instructionPreset);
+  const templateSummary = analysis.detectedTemplate || t('models.analysis.unknown');
+  const source = modelAnalysisSourceLabel(analysis.source);
+  const confidence = modelAnalysisConfidenceLabel(analysis.confidence);
+  const chatTemplate = String(analysis.chatTemplate || '').trim();
+
+  host.innerHTML = `
+    <div class="analysis-overview">
+      <div class="analysis-model-title">
+        <strong>${escapeHtml(modelTitle)}</strong>
+        ${analysis.modelId && analysis.modelId !== modelTitle ? `<span>${escapeHtml(analysis.modelId)}</span>` : ''}
+      </div>
+      <span class="analysis-confidence analysis-confidence-${escapeHtml(analysis.confidence || 'low')}">${escapeHtml(t('models.analysis.confidence', { value: confidence }))}</span>
+    </div>
+    <div class="analysis-grid">
+      <div class="analysis-panel">
+        <h5>${escapeHtml(t('models.analysis.information'))}</h5>
+        ${modelAnalysisInfoRow(t('models.provider'), provider)}
+        ${modelAnalysisInfoRow(t('models.analysis.architecture'), analysis.architecture || t('models.analysis.unknown'))}
+        ${analysis.tokenizer ? modelAnalysisInfoRow(t('models.analysis.tokenizer'), analysis.tokenizer) : ''}
+        ${analysis.instructType ? modelAnalysisInfoRow(t('models.analysis.instructType'), analysis.instructType) : ''}
+        ${analysis.modality ? modelAnalysisInfoRow(t('models.analysis.modality'), analysis.modality) : ''}
+        ${modelAnalysisInfoRow(t('models.analysis.context'), context)}
+        ${modelAnalysisInfoRow(t('models.analysis.template'), templateSummary)}
+        ${modelAnalysisInfoRow(t('models.analysis.source'), source)}
+        ${commercial ? modelAnalysisInfoRow(t('models.analysis.planPricing'), commercial) : ''}
+        ${analysis.modelPath ? modelAnalysisInfoRow(t('models.analysis.modelPath'), analysis.modelPath) : ''}
+        ${analysis.chatTemplateHash ? modelAnalysisInfoRow(t('models.analysis.templateHash'), analysis.chatTemplateHash) : ''}
+        ${capabilities.length ? `<div class="analysis-capabilities">${capabilities.map(item => `<span>${escapeHtml(item)}</span>`).join('')}</div>` : ''}
+      </div>
+      <div class="analysis-panel analysis-recommendations">
+        <h5>${escapeHtml(t('models.analysis.recommendations'))}</h5>
+        <div class="analysis-recommendation">
+          <span>${escapeHtml(t('models.analysis.contextPreset'))}</span>
+          <strong>${escapeHtml(analysis.contextPreset || t('models.analysis.notDetermined'))}</strong>
+        </div>
+        <div class="analysis-recommendation">
+          <span>${escapeHtml(t('models.analysis.instructionPreset'))}</span>
+          <strong>${escapeHtml(analysis.instructionPreset || t('models.analysis.notDetermined'))}</strong>
+        </div>
+        <p>${escapeHtml(t(recommendationAvailable ? 'models.analysis.recommendationHint' : 'models.analysis.noRecommendationHint'))}</p>
+        <button class="btn btn-ghost" id="apply-model-analysis" ${recommendationAvailable ? '' : 'disabled'}>${escapeHtml(t('models.analysis.apply'))}</button>
+      </div>
+    </div>
+    ${chatTemplate ? `
+      <details class="analysis-template-details">
+        <summary>${escapeHtml(t('models.analysis.rawTemplate'))}</summary>
+        <pre>${escapeHtml(chatTemplate)}</pre>
+      </details>` : ''}`;
+
+  document.getElementById('apply-model-analysis')?.addEventListener('click', () => applyModelAnalysisRecommendations(analysis));
+}
+
+function applyModelAnalysisRecommendations(analysis) {
+  let applied = 0;
+  if (analysis.contextPreset && allContextPresets().some(preset => preset.name === analysis.contextPreset)) {
+    setActiveContextPreset(analysis.contextPreset);
+    applied += 1;
+  }
+  if (analysis.instructionPreset && allInstructionPresets().some(preset => preset.name === analysis.instructionPreset)) {
+    const presetState = getInstructionPresetState();
+    presetState.active = analysis.instructionPreset;
+    if (effectiveBackendApiMode(currentBackendDraft()) === 'text') presetState.enabled = true;
+    saveInstructionPresetState(presetState);
+    applied += 1;
+  }
+  if (applied) toast(t('models.analysis.applied'), 'success');
+}
+
+async function analyzeCurrentModel() {
+  const button = document.getElementById('analyze-model');
+  const host = document.getElementById('model-analysis-result');
+  const draft = currentBackendDraft();
+  if (button) {
+    button.disabled = true;
+    button.textContent = t('models.analysis.analyzing');
+  }
+  if (host) host.innerHTML = `<div class="model-analysis-empty">${escapeHtml(t('models.analysis.analyzing'))}</div>`;
+  try {
+    const analysis = await invoke('analyze_backend_model', { config: draft });
+    state.modelAnalysis = analysis;
+    renderModelAnalysisResult(analysis);
+  } catch (error) {
+    state.modelAnalysis = null;
+    if (host) host.innerHTML = `<div class="model-analysis-empty is-error">${escapeHtml(friendlyNativeError(error))}</div>`;
+    toast(friendlyNativeError(error), 'error');
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = t('models.analysis.analyze');
+    }
+  }
 }
 
 function updateProviderFields(backendType, { resetUrl = false } = {}) {
@@ -3156,7 +3300,6 @@ async function renderModelsConfig() {
   const selectedProvider = backendDefinition(selected);
 
   body.innerHTML = `
-    <div class="config-page-head"><div><h2>${escapeHtml(t('config.models'))}</h2><p>${escapeHtml(t('models.desc'))}</p></div></div>
     <div class="field-card field-card-stack model-connection-card">
       <div class="info"><h4>${escapeHtml(t('models.connection'))}</h4><p>${escapeHtml(t('models.connection.desc'))}</p></div>
       <div class="model-connection-form">
@@ -3189,13 +3332,20 @@ async function renderModelsConfig() {
           <div class="connection-result" id="connection-result">${escapeHtml(t('models.notTested'))}</div>
         </div>
       </div>
+    </div>
+    <div class="field-card field-card-stack model-analysis-card">
+      <div class="model-analysis-heading">
+        <div class="info"><h4>${escapeHtml(t('models.analysis.title'))}</h4><p>${escapeHtml(t('models.analysis.desc'))}</p></div>
+        <button class="btn btn-ghost" id="analyze-model">${escapeHtml(t('models.analysis.analyze'))}</button>
+      </div>
+      <div class="model-analysis-result" id="model-analysis-result"></div>
     </div>`;
 
   const providerSelect = document.getElementById('backend-provider');
   providerSelect.addEventListener('change', () => {
     const previous = state.backendDiscovery?.backendType;
     const backendType = providerSelect.value;
-    if (previous !== backendType) state.backendDiscovery = null;
+    if (previous !== backendType) { state.backendDiscovery = null; state.modelAnalysis = null; renderModelAnalysisResult(); }
     const apiKeyInput = document.getElementById('backend-api-key');
     const apiModeSelect = document.getElementById('backend-api-mode');
     if (apiKeyInput) apiKeyInput.value = '';
@@ -3204,7 +3354,9 @@ async function renderModelsConfig() {
   });
   document.getElementById('backend-api-mode').addEventListener('change', () => updateProviderFields(providerSelect.value));
   document.getElementById('connect-backend').addEventListener('click', () => testBackend(providerSelect.value));
+  document.getElementById('analyze-model').addEventListener('click', analyzeCurrentModel);
   updateProviderFields(selected);
+  renderModelAnalysisResult();
 }
 
 function currentBackendDraft() {
@@ -3269,6 +3421,8 @@ async function testBackend(backendType, { quiet = false } = {}) {
           : t('models.connectedNoModels');
     }
     renderSelectedModelSummary(backendType);
+    state.modelAnalysis = null;
+    renderModelAnalysisResult();
     if (!quiet) toast(t('models.connected'), 'success');
     await refreshModelStatus();
     return result;

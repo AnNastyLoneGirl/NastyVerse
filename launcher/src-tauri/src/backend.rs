@@ -1,6 +1,7 @@
 use reqwest::{Client, RequestBuilder, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 use std::{fs, path::PathBuf, time::Duration};
 use tauri::AppHandle;
 
@@ -54,6 +55,9 @@ pub struct ModelInfo {
     pub id: String,
     pub name: Option<String>,
     pub context_length: Option<u64>,
+    pub tokenizer: Option<String>,
+    pub instruct_type: Option<String>,
+    pub modality: Option<String>,
     pub price_label: Option<String>,
     pub subscription_included: Option<bool>,
     pub subscription_input_multiplier: Option<f64>,
@@ -78,6 +82,34 @@ pub struct ModelStatus {
     pub model_name: Option<String>,
     pub message: Option<String>,
     pub api_mode: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelAnalysis {
+    pub provider: String,
+    pub model_id: Option<String>,
+    pub model_name: Option<String>,
+    pub architecture: Option<String>,
+    pub tokenizer: Option<String>,
+    pub instruct_type: Option<String>,
+    pub modality: Option<String>,
+    pub context_length: Option<u64>,
+    pub price_label: Option<String>,
+    pub subscription_included: Option<bool>,
+    pub subscription_input_multiplier: Option<f64>,
+    pub vision: bool,
+    pub reasoning: bool,
+    pub tools: bool,
+    pub model_path: Option<String>,
+    pub chat_template: Option<String>,
+    pub chat_template_hash: Option<String>,
+    pub detected_template: Option<String>,
+    pub context_preset: Option<String>,
+    pub instruction_preset: Option<String>,
+    pub confidence: String,
+    pub source: String,
+    pub notes: Vec<String>,
 }
 
 fn default_api_mode() -> String {
@@ -321,6 +353,12 @@ fn model_info_from_entry(entry: &Value, backend_type: &str) -> Option<ModelInfo>
         .or_else(|| value_u64(entry.get("max_model_len")))
         .or_else(|| value_u64(entry.get("max_context_length")))
         .or_else(|| value_u64(entry.pointer("/limits/context")));
+    let tokenizer = clean_prop_string(entry.pointer("/architecture/tokenizer"))
+        .or_else(|| clean_prop_string(entry.get("tokenizer")));
+    let instruct_type = clean_prop_string(entry.pointer("/architecture/instruct_type"))
+        .or_else(|| clean_prop_string(entry.get("instruct_type")));
+    let modality = clean_prop_string(entry.pointer("/architecture/modality"))
+        .or_else(|| clean_prop_string(entry.get("modality")));
 
     let subscription_included = entry.pointer("/subscription/included").and_then(Value::as_bool);
     let subscription_input_multiplier = value_f64(entry.pointer("/subscription/inputTokenMultiplier"));
@@ -345,6 +383,9 @@ fn model_info_from_entry(entry: &Value, backend_type: &str) -> Option<ModelInfo>
         id: id.to_string(),
         name,
         context_length,
+        tokenizer,
+        instruct_type,
+        modality,
         price_label: model_price_label(entry, backend_type),
         subscription_included,
         subscription_input_multiplier,
@@ -360,6 +401,9 @@ fn basic_model_info(id: &str, context_length: Option<u64>) -> ModelInfo {
         id: id.to_string(),
         name: None,
         context_length,
+        tokenizer: None,
+        instruct_type: None,
+        modality: None,
         price_label: None,
         subscription_included: None,
         subscription_input_multiplier: None,
@@ -591,6 +635,307 @@ pub async fn test_backend_connection(config: BackendConfig) -> Result<BackendTes
         models: probe.models,
         model_name: probe.model_name,
         model_details: probe.model_details,
+    })
+}
+
+fn clean_prop_string(value: Option<&Value>) -> Option<String> {
+    value
+        .and_then(Value::as_str)
+        .map(|text| text.trim_matches('\0').trim().to_string())
+        .filter(|text| !text.is_empty())
+}
+
+fn nested_context_length(payload: &Value) -> Option<u64> {
+    value_u64(payload.pointer("/default_generation_settings/n_ctx"))
+        .or_else(|| value_u64(payload.get("n_ctx")))
+        .or_else(|| value_u64(payload.get("context_length")))
+        .or_else(|| value_u64(payload.get("max_context_length")))
+        .or_else(|| {
+            payload.get("model_info")?.as_object()?.iter().find_map(|(key, value)| {
+                if key.ends_with(".context_length") || key == "context_length" {
+                    value_u64(Some(value))
+                } else {
+                    None
+                }
+            })
+        })
+}
+
+fn analysis_architecture(payload: &Value) -> Option<String> {
+    clean_prop_string(payload.pointer("/model_info/general.architecture"))
+        .or_else(|| clean_prop_string(payload.pointer("/details/family")))
+        .or_else(|| clean_prop_string(payload.get("architecture")))
+        .or_else(|| clean_prop_string(payload.get("model_type")))
+}
+
+fn analysis_model_path(payload: &Value) -> Option<String> {
+    clean_prop_string(payload.get("model_path"))
+        .or_else(|| clean_prop_string(payload.get("model")))
+        .or_else(|| clean_prop_string(payload.get("name")))
+}
+
+fn analysis_chat_template(payload: &Value) -> Option<String> {
+    payload
+        .get("chat_template")
+        .or_else(|| payload.get("template"))
+        .and_then(Value::as_str)
+        .map(|text| text.trim_matches('\0').to_string())
+        .filter(|text| !text.trim().is_empty())
+}
+
+async fn analysis_properties(config: &BackendConfig) -> Option<Value> {
+    match config.backend_type.as_str() {
+        "koboldcpp" | "llamacpp" => {
+            let client = client(10).ok()?;
+            let mut url = reqwest::Url::parse(&endpoint(&config.url, "/props")).ok()?;
+            if config.backend_type == "llamacpp" {
+                if let Some(model) = config.model.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+                    url.query_pairs_mut().append_pair("model", model);
+                }
+            }
+            let response = authorize(client.get(url), &config.api_key).send().await.ok()?;
+            if !response.status().is_success() {
+                return None;
+            }
+            response_json(response, "Model properties").await.ok()
+        }
+        "ollama" => {
+            let model = config.model.as_deref().map(str::trim).filter(|value| !value.is_empty())?;
+            let client = client(10).ok()?;
+            let response = authorize(
+                client.post(endpoint(&config.url, "/api/show")).json(&json!({ "model": model })),
+                &config.api_key,
+            )
+            .send()
+            .await
+            .ok()?;
+            if !response.status().is_success() {
+                return None;
+            }
+            response_json(response, "Ollama model properties").await.ok()
+        }
+        _ => None,
+    }
+}
+
+fn template_hash(chat_template: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(chat_template.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+fn template_from_hash(hash: &str) -> Option<&'static str> {
+    match hash {
+        // Matches SillyTavern's current chat-template derivation table.
+        "e10ca381b1ccc5cf9db52e371f3b6651576caee0a630b452e2816b2d404d4b65"
+        | "5816fce10444e03c2e9ee1ef8a4a1ea61ae7e69e438613f3b17b69d0426223a4"
+        | "73e87b1667d87ab7d7b579107f01151b29ce7f3ccdd1018fdc397e78be76219d" => Some("Llama 3 Instruct"),
+        "e16746b40344d6c5b5265988e0328a0bf7277be86f1c335156eae07e29c82826"
+        | "26a59556925c987317ce5291811ba3b7f32ec4c647c400c6cc7e3a9993007ba7" => Some("Mistral V2 & V3"),
+        "e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272" => Some("Mistral V3-Tekken"),
+        "3c4ad5fa60dd8c7ccdf82fa4225864c903e107728fcaf859fa6052cb80c92ee9"
+        | "3934d199bfe5b6fab5cba1b5f8ee475e8d5738ac315f21cb09545b4e665cc005" => Some("Mistral V7"),
+        "ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6"
+        | "87fa45af6cdc3d6a9e4dd34a0a6848eceaa73a35dcfe976bd2946a5822a38bf3"
+        | "7de1c58e208eda46e9c7f86397df37ec49883aeece39fb961e0a6b24088dd3c4" => Some("Gemma 2"),
+        "3b54f5c219ae1caa5c0bb2cdc7c001863ca6807cf888e4240e8739fa7eb9e02e" => Some("Command R"),
+        "ac7498a36a719da630e99d48e6ebc4409de85a77556c2b6159eeb735bcbd11df" => Some("Tulu"),
+        "54d400beedcd17f464e10063e0577f6f798fa896266a912d8a366f8a2fcc0bca"
+        | "b6835114b7303ddd78919a82e4d9f7d8c26ed0d7dfc36beeb12d524f6144eab1" => Some("DeepSeek-V2.5"),
+        "854b703e44ca06bdb196cc471c728d15dbab61e744fe6cdce980086b61646ed1" => Some("GLM-4"),
+        "aab20feb9bc6881f941ea649356130ffbc4943b3c2577c0991e1fba90de5a0fc" => Some("Moonshot AI"),
+        "70da0d2348e40aaf8dad05f04a316835fd10547bd7e3392ce337e4c79ba91c01"
+        | "a4c9919cbbd4acdd51ccffe22da049264b1b73e59055fa58811a99efbd7c8146" => Some("OpenAI Harmony"),
+        _ => None,
+    }
+}
+
+fn template_from_content(chat_template: &str) -> Option<&'static str> {
+    let template = chat_template;
+    if template.contains("<|im_user|>user<|im_middle|>")
+        && template.contains("<|im_assistant|>assistant<|im_middle|>")
+        && template.contains("<|im_end|>")
+    {
+        return Some("Moonshot AI");
+    }
+    if template.contains("<|start|>user<|message|>")
+        && template.contains("<|start|>assistant<|channel|>final<|message|>")
+        && template.contains("<|end|>")
+    {
+        return Some("OpenAI Harmony");
+    }
+    if template.contains("<|im_start|>user")
+        && template.contains("<|im_start|>assistant")
+        && template.contains("<|im_end|>")
+    {
+        return Some("ChatML");
+    }
+    None
+}
+
+fn template_from_model_name(model: &str) -> Option<&'static str> {
+    let normalized = model.to_ascii_lowercase().replace('_', " ").replace('-', " ").replace('/', " ").replace('.', " ");
+    let checks = [
+        ("llama 4", "Llama 4 Instruct"),
+        ("llama4", "Llama 4 Instruct"),
+        ("llama 3", "Llama 3 Instruct"),
+        ("llama3", "Llama 3 Instruct"),
+        ("gemma 4", "Gemma 4"),
+        ("gemma4", "Gemma 4"),
+        ("gemma 2", "Gemma 2"),
+        ("gemma2", "Gemma 2"),
+        ("deepseek v2 5", "DeepSeek-V2.5"),
+        ("command r", "Command R"),
+        ("chatml", "ChatML"),
+        ("mistral v7 tekken", "Mistral V7-Tekken"),
+        ("mistral v3 tekken", "Mistral V3-Tekken"),
+        ("mistral v7", "Mistral V7"),
+        ("mistral v3", "Mistral V2 & V3"),
+        ("mistral v2", "Mistral V2 & V3"),
+    ];
+    checks
+        .iter()
+        .find_map(|(needle, preset)| normalized.contains(needle).then_some(*preset))
+}
+
+fn derive_prompt_presets(
+    model: Option<&str>,
+    chat_template: Option<&str>,
+    provider_hint: Option<&str>,
+) -> (Option<String>, Option<String>, String, String, Option<String>) {
+    if let Some(template) = chat_template.filter(|value| !value.trim().is_empty()) {
+        let hash = template_hash(template);
+        if let Some(preset) = template_from_hash(&hash) {
+            return (
+                Some(preset.into()),
+                Some(preset.into()),
+                "high".into(),
+                "chat-template-hash".into(),
+                Some(hash),
+            );
+        }
+        if let Some(preset) = template_from_content(template) {
+            return (
+                Some(preset.into()),
+                Some(preset.into()),
+                "high".into(),
+                "chat-template-pattern".into(),
+                Some(hash),
+            );
+        }
+        if let Some(preset) = provider_hint.and_then(template_from_model_name) {
+            return (
+                Some(preset.into()),
+                Some(preset.into()),
+                "medium".into(),
+                "provider-instruct-type".into(),
+                Some(hash),
+            );
+        }
+        if let Some(preset) = model.and_then(template_from_model_name) {
+            return (
+                Some(preset.into()),
+                Some(preset.into()),
+                "medium".into(),
+                "model-name".into(),
+                Some(hash),
+            );
+        }
+        return (None, None, "low".into(), "chat-template-unknown".into(), Some(hash));
+    }
+
+    if let Some(preset) = provider_hint.and_then(template_from_model_name) {
+        return (
+            Some(preset.into()),
+            Some(preset.into()),
+            "medium".into(),
+            "provider-instruct-type".into(),
+            None,
+        );
+    }
+
+    if let Some(preset) = model.and_then(template_from_model_name) {
+        return (
+            Some(preset.into()),
+            Some(preset.into()),
+            "medium".into(),
+            "model-name".into(),
+            None,
+        );
+    }
+
+    (None, None, "low".into(), "insufficient-metadata".into(), None)
+}
+
+pub async fn analyze_backend_model(config: BackendConfig) -> Result<ModelAnalysis, String> {
+    let config = validate_config(config)?;
+    let probe = match config.backend_type.as_str() {
+        "ollama" => test_ollama(&config).await?,
+        "koboldcpp" => test_koboldcpp(&config).await?,
+        "llamacpp" => test_llamacpp(&config).await?,
+        "textgenwebui" => test_textgenwebui(&config).await?,
+        "nanogpt" => test_nanogpt(&config).await?,
+        "custom" => test_custom(&config).await?,
+        _ => test_openai(&config).await?,
+    };
+
+    let model_id = config
+        .model
+        .clone()
+        .filter(|selected| probe.models.iter().any(|model| model == selected))
+        .or_else(|| probe.model_name.clone())
+        .or_else(|| config.model.clone())
+        .or_else(|| probe.models.first().cloned());
+    let info = model_id
+        .as_deref()
+        .and_then(|id| probe.model_details.iter().find(|entry| entry.id == id))
+        .cloned();
+    let props = analysis_properties(&BackendConfig { model: model_id.clone(), ..config.clone() }).await;
+    let chat_template = props.as_ref().and_then(analysis_chat_template);
+    let tokenizer = info.as_ref().and_then(|entry| entry.tokenizer.clone());
+    let instruct_type = info.as_ref().and_then(|entry| entry.instruct_type.clone());
+    let modality = info.as_ref().and_then(|entry| entry.modality.clone());
+    let architecture = props.as_ref().and_then(analysis_architecture).or_else(|| tokenizer.clone());
+    let model_path = props.as_ref().and_then(analysis_model_path);
+    let props_context = props.as_ref().and_then(nested_context_length);
+    let model_name = info.as_ref().and_then(|entry| entry.name.clone()).or_else(|| model_id.clone());
+    let (context_preset, instruction_preset, confidence, source, chat_template_hash) =
+        derive_prompt_presets(model_id.as_deref(), chat_template.as_deref(), instruct_type.as_deref());
+    let detected_template = context_preset.clone().or_else(|| instruction_preset.clone());
+    let mut notes = Vec::new();
+    if chat_template.is_some() {
+        notes.push("Backend exposed a model chat template; recommendations were derived from it when recognized.".into());
+    } else {
+        notes.push("Backend did not expose a chat template; recommendations can only use model/provider metadata.".into());
+    }
+    if context_preset.is_none() || instruction_preset.is_none() {
+        notes.push("No known Context/Instruct preset can be selected confidently from the available metadata.".into());
+    }
+
+    Ok(ModelAnalysis {
+        provider: config.backend_type,
+        model_id,
+        model_name,
+        architecture,
+        tokenizer,
+        instruct_type,
+        modality,
+        context_length: props_context.or_else(|| info.as_ref().and_then(|entry| entry.context_length)),
+        price_label: info.as_ref().and_then(|entry| entry.price_label.clone()),
+        subscription_included: info.as_ref().and_then(|entry| entry.subscription_included),
+        subscription_input_multiplier: info.as_ref().and_then(|entry| entry.subscription_input_multiplier),
+        vision: info.as_ref().map(|entry| entry.vision).unwrap_or(false),
+        reasoning: info.as_ref().map(|entry| entry.reasoning).unwrap_or(false),
+        tools: info.as_ref().map(|entry| entry.tools).unwrap_or(false),
+        model_path,
+        chat_template,
+        chat_template_hash,
+        detected_template,
+        context_preset,
+        instruction_preset,
+        confidence,
+        source,
+        notes,
     })
 }
 

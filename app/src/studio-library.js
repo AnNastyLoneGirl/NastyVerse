@@ -105,12 +105,58 @@ function nvRenderLibrary(tab) {
   root.querySelectorAll('[data-chat]').forEach(b=>b.onclick=()=>{NV.groupId=b.dataset.chat;nvEnsureSession(null);goTo('chat');});
 }
 async function nvPersonaEditor(existing) {
-  const draft=await nvForm(nvText('Votre persona','Your persona'),[nvField('name',nvText('Nom','Name'),existing?.name||'','text',{required:true}),nvField('description',nvText('Qui êtes-vous dans l’histoire ?','Who are you in the story?'),existing?.description||'','textarea',{rows:7}),nvField('default',nvText('Utiliser par défaut','Use as default'),NV.data.defaultPersona===existing?.id,'checkbox'),...(existing?[nvField('remove',nvText('Supprimer cette persona','Delete this persona'),false,'checkbox')]:[])]);
-  if(!draft)return;
-  if(draft.remove){NV.data.personas=NV.data.personas.filter(p=>p.id!==existing.id);if(NV.data.defaultPersona===existing.id)NV.data.defaultPersona='';}
-  else{const record={id:existing?.id||uid(),name:draft.name.trim(),description:draft.description,variations:existing?.variations||[]};if(existing)Object.assign(existing,record);else NV.data.personas.push(record);if(draft.default)NV.data.defaultPersona=record.id;else if(NV.data.defaultPersona===record.id)NV.data.defaultPersona='';}
-  await nvSave();renderLibrary('personas');
+  const recordId = existing?.id || uid();
+  let avatarValue = existing?.avatar || '';
+  let result = null;
+  const avatarSource = () => resolvedAvatarSource(avatarValue);
+  const dialog = nvDialog(nvText('Votre persona','Your persona'), `<form class="nv-form nv-persona-editor" id="nv-persona-form">
+    <div class="nv-persona-avatar-editor"><div class="nv-persona-avatar-preview" id="nv-persona-avatar-preview"></div><div class="nv-actions"><button type="button" class="btn btn-ghost btn-small" data-avatar-upload>${nvText('Choisir un avatar','Choose avatar')}</button><button type="button" class="btn btn-ghost btn-small" data-avatar-remove>${nvText('Retirer','Remove')}</button></div><small>${nvText('Cet avatar apparaît dans les messages envoyés avec cette persona.','This avatar appears beside messages sent with this persona.')}</small></div>
+    <label><span>${nvText('Nom','Name')}</span><input name="name" value="${nvEscape(existing?.name||'')}" required></label>
+    <label><span>${nvText('Qui êtes-vous dans l’histoire ?','Who are you in the story?')}</span><textarea name="description" rows="7">${nvEscape(existing?.description||'')}</textarea></label>
+    <label class="nv-check"><input name="default" type="checkbox" ${NV.data.defaultPersona===existing?.id?'checked':''}>${nvText('Utiliser par défaut','Use as default')}</label>
+    ${existing ? `<label class="nv-check"><input name="remove" type="checkbox">${nvText('Supprimer cette persona','Delete this persona')}</label>` : ''}
+    <footer><button type="button" class="btn btn-ghost" data-cancel>${nvText('Annuler','Cancel')}</button><button type="submit" class="btn btn-primary">${nvText('Enregistrer','Save')}</button></footer>
+  </form>`);
+  const form = dialog.querySelector('#nv-persona-form');
+  const preview = dialog.querySelector('#nv-persona-avatar-preview');
+  const renderAvatar = () => {
+    const source = avatarSource();
+    preview.innerHTML = source ? `<img src="${nvEscape(source)}" alt="">` : `<span>${nvEscape(String(form.elements.name.value || existing?.name || '?').slice(0,1).toUpperCase())}</span>`;
+  };
+  renderAvatar();
+  form.elements.name.addEventListener('input', () => { if (!avatarSource()) renderAvatar(); });
+  dialog.querySelector('[data-avatar-upload]').onclick = async () => {
+    const [file] = await nvPickFiles('image/png,image/apng,image/jpeg,image/webp,image/gif,.apng');
+    if (!file) return;
+    if (file.size > 8_000_000) return toast(nvText('Avatar trop volumineux (8 Mo maximum).','Avatar is too large (8 MB maximum).'),'error');
+    avatarValue = await blobToDataUrl(file);
+    renderAvatar();
+  };
+  dialog.querySelector('[data-avatar-remove]').onclick = () => { avatarValue = ''; renderAvatar(); };
+  dialog.querySelector('[data-cancel]').onclick = () => dialog.close();
+  form.onsubmit = event => {
+    event.preventDefault();
+    const data = new FormData(form);
+    result = { name:String(data.get('name')||'').trim(), description:String(data.get('description')||''), default:data.has('default'), remove:data.has('remove') };
+    dialog.close();
+  };
+  await new Promise(resolve => dialog.addEventListener('close', resolve, { once:true }));
+  if (!result) return;
+  const assetId = `persona:${recordId}`;
+  if (result.remove && existing) {
+    NV.data.personas = NV.data.personas.filter(persona => persona.id !== existing.id);
+    if (NV.data.defaultPersona === existing.id) NV.data.defaultPersona = '';
+    await deleteAvatarAsset(assetId).catch(() => {});
+  } else {
+    const avatar = await persistAvatarValue(assetId, avatarValue);
+    const record = { id:recordId, name:result.name, description:result.description, avatar, variations:existing?.variations||[] };
+    if (existing) Object.assign(existing,record); else NV.data.personas.push(record);
+    if (result.default) NV.data.defaultPersona=record.id; else if(NV.data.defaultPersona===record.id) NV.data.defaultPersona='';
+  }
+  await nvSave();
+  renderLibrary('personas');
 }
+
 function nvPersonaVariations(persona) {
   persona.variations = Array.isArray(persona.variations) ? persona.variations : [];
   const dialog=nvDialog(`${persona.name} · ${nvText('Variations','Variations')}`,`<p class="nv-muted">${nvText('La description de base reste toujours présente. Une variation s’ajoute uniquement si elle est activée et liée au personnage qui répond ou à la conversation en cours. Plusieurs variations peuvent s’appliquer ensemble.','The base description is always present. A variation is added only when enabled and linked to the replying character or current conversation. Multiple variations can apply together.')}</p>${nvButton('add',nvText('Ajouter une variation','Add variation'),true)}<div class="nv-entry-list">${persona.variations.map(v=>{

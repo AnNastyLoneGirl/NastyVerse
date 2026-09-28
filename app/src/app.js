@@ -54,6 +54,7 @@ const STORAGE = {
   contextFormatting: 'nv_app_context_formatting_v1',
   markdownStyles: 'nv_app_markdown_styles_v1',
   dialogueQuotes: 'nv_app_dialogue_quotes_v1',
+  messageAppearance: 'nv_app_message_appearance_v1',
 };
 
 const I18N_FALLBACK_MANIFEST = {
@@ -575,6 +576,7 @@ const state = {
   modelAnalysis: null,
   translationConfig: null,
   markdownStyleType: 'paragraph',
+  personalizationSection: 'text',
 };
 
 const pageRoot = document.getElementById('page-root');
@@ -1654,7 +1656,7 @@ function goTo(id, opts = {}) {
   renderNavbar();
   if (id === 'library') renderLibrary(opts.tab || state.libraryTab);
   else if (id === 'configuration') renderConfiguration(opts.section || 'general');
-  else if (id === 'personalization') renderPersonalization(opts.type || state.markdownStyleType || 'paragraph');
+  else if (id === 'personalization') renderPersonalization(opts.type || state.markdownStyleType || 'paragraph', opts.section || state.personalizationSection || 'text');
   else renderChat();
 }
 
@@ -5033,7 +5035,154 @@ function markdownColorOptions(value, allowNone = false) {
 function markdownPreviewSample() {
   return `# ${t('personalization.preview.h1')}\n## ${t('personalization.preview.h2')}\n### ${t('personalization.preview.h3')}\n\n${t('personalization.preview.paragraph')} **${t('personalization.preview.bold')}**, *${t('personalization.preview.italic')}*, "${t('personalization.preview.dialogue')}", «${t('personalization.preview.dialogueAlt')}», ~~${t('personalization.preview.strike')}~~ ${t('personalization.preview.and')} [${t('personalization.preview.link')}](https://example.com).\n\n> ${t('personalization.preview.quote')}\n\n- ${t('personalization.preview.listOne')}\n- ${t('personalization.preview.listTwo')}\n\n1. ${t('personalization.preview.orderedOne')}\n2. ${t('personalization.preview.orderedTwo')}\n\nInline: \`const mood = "NastyVerse";\`\n\n\`\`\`js\nfunction hello(name) {\n  return \`Hello \${name}\`;\n}\n\`\`\`\n\n---\n\n| ${t('personalization.preview.tableA')} | ${t('personalization.preview.tableB')} |\n| --- | --- |\n| ChatML | 32K |\n| Mistral | 128K |`;
 }
-function renderPersonalization(typeId = 'paragraph') {
+const DEFAULT_MESSAGE_APPEARANCE = {
+  maxWidth: 82,
+  gap: 18,
+  bubbleRadius: 14,
+  bubblePaddingY: 13,
+  bubblePaddingX: 15,
+  showNames: true,
+  showPersonaAvatar: true,
+  showCharacterAvatar: true,
+  personaAlign: 'right',
+  characterAlign: 'left',
+  personaAvatarSide: 'right',
+  characterAvatarSide: 'left',
+  avatarSize: 38,
+  avatarRadius: 32,
+  avatarGap: 10,
+  avatarVertical: 'top',
+  avatarBorderWidth: 1,
+  avatarBorder: 'line',
+};
+function normalizeMessageAppearance(input = {}) {
+  const n = (value, fallback, min, max) => Math.min(max, Math.max(min, Number.isFinite(Number(value)) ? Number(value) : fallback));
+  const side = value => value === 'right' ? 'right' : 'left';
+  const vertical = ['top','center','bottom'].includes(input.avatarVertical) ? input.avatarVertical : DEFAULT_MESSAGE_APPEARANCE.avatarVertical;
+  return {
+    maxWidth: n(input.maxWidth, DEFAULT_MESSAGE_APPEARANCE.maxWidth, 40, 100),
+    gap: n(input.gap, DEFAULT_MESSAGE_APPEARANCE.gap, 4, 48),
+    bubbleRadius: n(input.bubbleRadius, DEFAULT_MESSAGE_APPEARANCE.bubbleRadius, 0, 32),
+    bubblePaddingY: n(input.bubblePaddingY, DEFAULT_MESSAGE_APPEARANCE.bubblePaddingY, 4, 28),
+    bubblePaddingX: n(input.bubblePaddingX, DEFAULT_MESSAGE_APPEARANCE.bubblePaddingX, 6, 36),
+    showNames: input.showNames !== false,
+    showPersonaAvatar: input.showPersonaAvatar !== false,
+    showCharacterAvatar: input.showCharacterAvatar !== false,
+    personaAlign: side(input.personaAlign || DEFAULT_MESSAGE_APPEARANCE.personaAlign),
+    characterAlign: side(input.characterAlign || DEFAULT_MESSAGE_APPEARANCE.characterAlign),
+    personaAvatarSide: side(input.personaAvatarSide || DEFAULT_MESSAGE_APPEARANCE.personaAvatarSide),
+    characterAvatarSide: side(input.characterAvatarSide || DEFAULT_MESSAGE_APPEARANCE.characterAvatarSide),
+    avatarSize: n(input.avatarSize, DEFAULT_MESSAGE_APPEARANCE.avatarSize, 24, 88),
+    avatarRadius: n(input.avatarRadius, DEFAULT_MESSAGE_APPEARANCE.avatarRadius, 0, 50),
+    avatarGap: n(input.avatarGap, DEFAULT_MESSAGE_APPEARANCE.avatarGap, 2, 28),
+    avatarVertical: vertical,
+    avatarBorderWidth: n(input.avatarBorderWidth, DEFAULT_MESSAGE_APPEARANCE.avatarBorderWidth, 0, 4),
+    avatarBorder: MARKDOWN_STYLE_TOKENS.includes(input.avatarBorder) ? input.avatarBorder : DEFAULT_MESSAGE_APPEARANCE.avatarBorder,
+  };
+}
+function getMessagePersonalization() {
+  return normalizeMessageAppearance(readJson(STORAGE.messageAppearance, {}));
+}
+function saveMessagePersonalization(settings) {
+  const normalized = normalizeMessageAppearance(settings);
+  writeJson(STORAGE.messageAppearance, normalized);
+  applyMessagePersonalization(normalized);
+  return normalized;
+}
+function applyMessagePersonalization(settings = getMessagePersonalization()) {
+  const root = document.documentElement;
+  root.style.setProperty('--nv-message-max-width', `${settings.maxWidth}%`);
+  root.style.setProperty('--nv-message-gap', `${settings.gap}px`);
+  root.style.setProperty('--nv-message-radius', `${settings.bubbleRadius}px`);
+  root.style.setProperty('--nv-message-pad-y', `${settings.bubblePaddingY}px`);
+  root.style.setProperty('--nv-message-pad-x', `${settings.bubblePaddingX}px`);
+  root.style.setProperty('--nv-avatar-size', `${settings.avatarSize}px`);
+  root.style.setProperty('--nv-avatar-radius', `${settings.avatarRadius}%`);
+  root.style.setProperty('--nv-avatar-gap', `${settings.avatarGap}px`);
+  root.style.setProperty('--nv-avatar-border-width', `${settings.avatarBorderWidth}px`);
+  root.style.setProperty('--nv-avatar-border-color', markdownTokenCss(settings.avatarBorder, 'line'));
+  root.dataset.nvMessageNames = settings.showNames ? 'show' : 'hide';
+  return settings;
+}
+function personalizationTabs(active) {
+  return `<div class="personalization-tabs" role="tablist"><button type="button" class="${active === 'text' ? 'active' : ''}" data-personalization-section="text">${escapeHtml(t('personalization.section.text'))}</button><button type="button" class="${active === 'messages' ? 'active' : ''}" data-personalization-section="messages">${escapeHtml(t('personalization.section.messages'))}</button></div>`;
+}
+function bindPersonalizationTabs() {
+  pageRoot.querySelectorAll('[data-personalization-section]').forEach(button => button.addEventListener('click', () => renderPersonalization(state.markdownStyleType || 'paragraph', button.dataset.personalizationSection)));
+}
+function messagePersonalizationSelect(field, value, options) {
+  return `<select data-message-style="${field}">${options.map(([id,label]) => `<option value="${id}" ${value === id ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select>`;
+}
+function messagePersonalizationPreview(settings) {
+  const persona = typeof nvPersona === 'function' ? nvPersona(typeof nvSession === 'function' ? nvSession() : null) : { name: t('personalization.messages.preview.user'), avatar: '' };
+  const character = typeof activeCharacter === 'function' ? activeCharacter() : null;
+  const personaName = persona?.name || t('personalization.messages.preview.user');
+  const characterName = character?.name || t('personalization.messages.preview.character');
+  const avatar = (source, name, role) => {
+    if (!source) return `<div class="nv-message-avatar nv-avatar-fallback" aria-hidden="true">${escapeHtml((name || '?').slice(0,1).toUpperCase())}</div>`;
+    return `<div class="nv-message-avatar"><img src="${escapeHtml(source)}" alt=""></div>`;
+  };
+  const personaAvatar = resolvedAvatarSource(persona);
+  const characterAvatar = resolvedAvatarSource(character);
+  const item = (role, name, source, side, align, visible, body) => `<article class="message message-${role} nv-align-${align}"><div class="nv-message-row nv-avatar-${side} ${settings.avatarVertical === 'center' ? 'nv-avatar-v-center' : settings.avatarVertical === 'bottom' ? 'nv-avatar-v-bottom' : 'nv-avatar-v-top'}">${visible ? avatar(source,name,role) : ''}<div class="nv-message-body"><div class="message-role">${escapeHtml(name)}</div><div class="message-bubble nv-markdown-surface">${body}</div></div></div></article>`;
+  return `<div class="messages nv-personalization-message-preview">${item('assistant', characterName, characterAvatar, settings.characterAvatarSide, settings.characterAlign, settings.showCharacterAvatar, `<p>${escapeHtml(t('personalization.messages.preview.assistant'))}</p>`)}${item('user', personaName, personaAvatar, settings.personaAvatarSide, settings.personaAlign, settings.showPersonaAvatar, `<p>${escapeHtml(t('personalization.messages.preview.userMessage'))}</p>`)}</div>`;
+}
+function renderMessagePersonalization() {
+  state.currentPage = 'personalization';
+  state.personalizationSection = 'messages';
+  renderNavbar();
+  const s = getMessagePersonalization();
+  pageRoot.innerHTML = `<div class="personalization-page">
+    <div class="personalization-head"><div><h1>${escapeHtml(t('personalization.title'))}</h1><p>${escapeHtml(t('personalization.messages.desc'))}</p></div><button class="btn btn-ghost" id="message-style-reset">${escapeHtml(t('personalization.messages.reset'))}</button></div>
+    ${personalizationTabs('messages')}
+    <div class="message-personalization-layout">
+      <section class="personalization-editor message-personalization-editor">
+        <div class="personalization-editor-head"><div><span>${escapeHtml(t('personalization.messages.global'))}</span><h2>${escapeHtml(t('personalization.messages.layout'))}</h2></div></div>
+        <div class="message-style-grid">
+          <label><span>${escapeHtml(t('personalization.messages.maxWidth'))}</span><input data-message-style="maxWidth" type="range" min="40" max="100" step="1" value="${s.maxWidth}"><output data-output="maxWidth">${s.maxWidth}%</output></label>
+          <label><span>${escapeHtml(t('personalization.messages.gap'))}</span><input data-message-style="gap" type="range" min="4" max="48" step="1" value="${s.gap}"><output data-output="gap">${s.gap}px</output></label>
+          <label><span>${escapeHtml(t('personalization.messages.radius'))}</span><input data-message-style="bubbleRadius" type="range" min="0" max="32" step="1" value="${s.bubbleRadius}"><output data-output="bubbleRadius">${s.bubbleRadius}px</output></label>
+          <label><span>${escapeHtml(t('personalization.messages.paddingY'))}</span><input data-message-style="bubblePaddingY" type="range" min="4" max="28" step="1" value="${s.bubblePaddingY}"><output data-output="bubblePaddingY">${s.bubblePaddingY}px</output></label>
+          <label><span>${escapeHtml(t('personalization.messages.paddingX'))}</span><input data-message-style="bubblePaddingX" type="range" min="6" max="36" step="1" value="${s.bubblePaddingX}"><output data-output="bubblePaddingX">${s.bubblePaddingX}px</output></label>
+          <label class="message-style-toggle"><span>${escapeHtml(t('personalization.messages.showNames'))}</span><input data-message-style="showNames" type="checkbox" ${s.showNames ? 'checked' : ''}></label>
+        </div>
+        <div class="personalization-subsection"><div class="personalization-editor-head"><div><span>${escapeHtml(t('personalization.messages.avatars'))}</span><h2>${escapeHtml(t('personalization.messages.avatarStyle'))}</h2></div></div>
+          <div class="message-style-grid">
+            <label><span>${escapeHtml(t('personalization.messages.avatarSize'))}</span><input data-message-style="avatarSize" type="range" min="24" max="88" step="1" value="${s.avatarSize}"><output data-output="avatarSize">${s.avatarSize}px</output></label>
+            <label><span>${escapeHtml(t('personalization.messages.avatarRoundness'))}</span><input data-message-style="avatarRadius" type="range" min="0" max="50" step="1" value="${s.avatarRadius}"><output data-output="avatarRadius">${s.avatarRadius}%</output></label>
+            <label><span>${escapeHtml(t('personalization.messages.avatarGap'))}</span><input data-message-style="avatarGap" type="range" min="2" max="28" step="1" value="${s.avatarGap}"><output data-output="avatarGap">${s.avatarGap}px</output></label>
+            <label><span>${escapeHtml(t('personalization.messages.avatarVertical'))}</span>${messagePersonalizationSelect('avatarVertical',s.avatarVertical,[['top',t('personalization.messages.top')],['center',t('personalization.messages.center')],['bottom',t('personalization.messages.bottom')]])}</label>
+            <label><span>${escapeHtml(t('personalization.messages.avatarBorderWidth'))}</span><input data-message-style="avatarBorderWidth" type="range" min="0" max="4" step="1" value="${s.avatarBorderWidth}"><output data-output="avatarBorderWidth">${s.avatarBorderWidth}px</output></label>
+            <label><span>${escapeHtml(t('personalization.messages.avatarBorder'))}</span><select data-message-style="avatarBorder">${markdownColorOptions(s.avatarBorder)}</select></label>
+          </div>
+        </div>
+        <div class="personalization-subsection message-role-settings"><div><h3>${escapeHtml(t('personalization.messages.character'))}</h3><label class="message-style-toggle"><span>${escapeHtml(t('personalization.messages.showAvatar'))}</span><input data-message-style="showCharacterAvatar" type="checkbox" ${s.showCharacterAvatar?'checked':''}></label><label><span>${escapeHtml(t('personalization.messages.messageSide'))}</span>${messagePersonalizationSelect('characterAlign',s.characterAlign,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]])}</label><label><span>${escapeHtml(t('personalization.messages.avatarSide'))}</span>${messagePersonalizationSelect('characterAvatarSide',s.characterAvatarSide,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]])}</label></div><div><h3>${escapeHtml(t('personalization.messages.persona'))}</h3><label class="message-style-toggle"><span>${escapeHtml(t('personalization.messages.showAvatar'))}</span><input data-message-style="showPersonaAvatar" type="checkbox" ${s.showPersonaAvatar?'checked':''}></label><label><span>${escapeHtml(t('personalization.messages.messageSide'))}</span>${messagePersonalizationSelect('personaAlign',s.personaAlign,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]])}</label><label><span>${escapeHtml(t('personalization.messages.avatarSide'))}</span>${messagePersonalizationSelect('personaAvatarSide',s.personaAvatarSide,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]])}</label></div></div>
+      </section>
+      <aside class="message-personalization-preview"><div class="personalization-preview-label">${escapeHtml(t('personalization.preview'))}</div><div id="message-style-preview">${messagePersonalizationPreview(s)}</div><p class="message-personalization-help">${escapeHtml(t('personalization.messages.avatarHelp'))}</p></aside>
+    </div>
+  </div>`;
+  bindPersonalizationTabs();
+  const collect = () => {
+    const next = {...getMessagePersonalization()};
+    pageRoot.querySelectorAll('[data-message-style]').forEach(input => {
+      const key = input.dataset.messageStyle;
+      next[key] = input.type === 'checkbox' ? input.checked : input.type === 'range' || input.type === 'number' ? Number(input.value) : input.value;
+    });
+    const saved = saveMessagePersonalization(next);
+    for (const output of pageRoot.querySelectorAll('[data-output]')) {
+      const key = output.dataset.output, value = saved[key];
+      output.textContent = key === 'avatarRadius' ? `${value}%` : key === 'maxWidth' ? `${value}%` : `${value}px`;
+    }
+    const preview = document.getElementById('message-style-preview');
+    if (preview) preview.innerHTML = messagePersonalizationPreview(saved);
+  };
+  pageRoot.querySelectorAll('[data-message-style]').forEach(input => input.addEventListener('input', collect));
+  document.getElementById('message-style-reset')?.addEventListener('click', () => { localStorage.removeItem(STORAGE.messageAppearance); applyMessagePersonalization(); renderMessagePersonalization(); });
+  applyMessagePersonalization(s);
+}
+function renderPersonalization(typeId = 'paragraph', section = 'text') {
+  state.personalizationSection = section === 'messages' ? 'messages' : 'text';
+  if (state.personalizationSection === 'messages') return renderMessagePersonalization();
   state.currentPage = 'personalization';
   state.markdownStyleType = MARKDOWN_STYLE_TYPES.some(type => type.id === typeId) ? typeId : 'paragraph';
   renderNavbar();
@@ -5045,6 +5194,7 @@ function renderPersonalization(typeId = 'paragraph') {
   const dialogueMode = getDialogueQuoteMode();
   pageRoot.innerHTML = `<div class="personalization-page">
     <div class="personalization-head"><div><h1>${escapeHtml(t('personalization.title'))}</h1><p>${escapeHtml(t('personalization.desc'))}</p></div><button class="btn btn-ghost" id="markdown-reset-all">${escapeHtml(t('personalization.resetAll'))}</button></div>
+    ${personalizationTabs('text')}
     <div class="personalization-layout">
       <aside class="personalization-elements">${MARKDOWN_STYLE_TYPES.map(type => `<button class="personalization-element ${type.id === activeType.id ? 'active' : ''}" data-md-type="${type.id}">${escapeHtml(t(type.labelKey))}</button>`).join('')}</aside>
       <section class="personalization-editor">
@@ -5068,7 +5218,8 @@ function renderPersonalization(typeId = 'paragraph') {
       </section>
     </div>
   </div>`;
-  pageRoot.querySelectorAll('[data-md-type]').forEach(button => button.addEventListener('click', () => renderPersonalization(button.dataset.mdType)));
+  bindPersonalizationTabs();
+  pageRoot.querySelectorAll('[data-md-type]').forEach(button => button.addEventListener('click', () => renderPersonalization(button.dataset.mdType, 'text')));
   const preview = document.getElementById('markdown-preview');
   const commit = () => {
     const next = getMarkdownPersonalization();
@@ -5089,9 +5240,9 @@ function renderPersonalization(typeId = 'paragraph') {
   document.getElementById('markdown-reset-current').addEventListener('click', () => {
     const next = getMarkdownPersonalization(); next[activeType.id] = { ...DEFAULT_MARKDOWN_STYLES[activeType.id] }; saveMarkdownPersonalization(next);
     if (activeType.id === 'dialogue') localStorage.removeItem(STORAGE.dialogueQuotes);
-    renderPersonalization(activeType.id);
+    renderPersonalization(activeType.id, 'text');
   });
-  document.getElementById('markdown-reset-all').addEventListener('click', () => { localStorage.removeItem(STORAGE.markdownStyles); localStorage.removeItem(STORAGE.dialogueQuotes); applyMarkdownPersonalization(); renderPersonalization(activeType.id); });
+  document.getElementById('markdown-reset-all').addEventListener('click', () => { localStorage.removeItem(STORAGE.markdownStyles); localStorage.removeItem(STORAGE.dialogueQuotes); applyMarkdownPersonalization(); renderPersonalization(activeType.id, 'text'); });
   applyMarkdownPersonalization(styles);
 }
 
@@ -5137,6 +5288,7 @@ async function bootstrap() {
   applyUiSettings();
   await initI18n();
   applyMarkdownPersonalization();
+  applyMessagePersonalization();
   await loadContextPresetFactory();
   await loadInstructionPresetFactory();
   try { state.backendConfig = await invoke('load_backend_config'); } catch (error) { console.warn('[backend] Unable to load saved backend configuration.', error); }

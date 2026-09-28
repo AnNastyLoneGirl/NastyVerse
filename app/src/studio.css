@@ -42,7 +42,7 @@
 
 /* Message presentation driven by Personalization > Messages. */
 .nv-chat-main .messages{gap:var(--nv-message-gap,18px)}
-.nv-chat-main .message{width:fit-content;max-width:var(--nv-message-max-width,82%);margin-bottom:0;align-items:stretch}
+.nv-chat-main .message{width:var(--nv-message-max-width,82%);max-width:100%;margin-bottom:0;align-items:stretch}
 .nv-chat-main .message.nv-align-left{align-self:flex-start}.nv-chat-main .message.nv-align-right{align-self:flex-end}
 .nv-message-row{display:flex;gap:var(--nv-avatar-gap,10px);max-width:100%;min-width:0;align-items:flex-start}
 .nv-message-row.nv-avatar-right{flex-direction:row-reverse}.nv-message-row.nv-avatar-left{flex-direction:row}

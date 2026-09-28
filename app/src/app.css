@@ -1214,7 +1214,7 @@ input,textarea,select{font:inherit}input,textarea,select{background:var(--panel-
 .message-personalization-preview{position:sticky;top:0;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
 .message-personalization-help{margin:10px 2px 0;color:var(--text-faint);font-size:10.5px;line-height:1.5}
 .nv-personalization-message-preview{min-height:300px;max-height:520px;padding:18px!important;border:1px solid var(--line);border-radius:10px;background:var(--void);overflow:auto}
-.nv-personalization-message-preview .message{width:fit-content;max-width:var(--nv-message-max-width,82%);margin:0;align-items:stretch}
+.nv-personalization-message-preview .message{width:var(--nv-message-max-width,82%);max-width:100%;margin:0;align-items:stretch}
 .nv-personalization-message-preview .message.nv-align-right{align-self:flex-end}.nv-personalization-message-preview .message.nv-align-left{align-self:flex-start}
 .nv-personalization-message-preview .message-bubble{padding:var(--nv-message-pad-y,13px) var(--nv-message-pad-x,15px);border-radius:var(--nv-message-radius,14px)}
 .nv-personalization-message-preview{gap:var(--nv-message-gap,18px)}

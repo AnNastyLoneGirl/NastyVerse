@@ -1,5 +1,6 @@
-# NastyVerse application 0.2.29
+# NastyVerse application 0.2.30
 
+Chat workspace 0.2.30: message blocks now occupy the configured message width instead of shrinking to their longest text line. A 100% maximum width therefore uses the full available chat width, while lower percentages keep the configured proportional width.
 Chat workspace 0.2.29: the Chat navigation entry is now a conversation library. Opening a chat switches to a dedicated conversation view that keeps Timeline, message search, top-bar chat actions, messages and composer, but removes the legacy left conversation rail. Closing a conversation returns to the Chat library.
 Per-message prompt inspection 0.2.27: the global “View prompt” toolbar action is removed. Assistant messages now expose a prompt icon that opens a SillyTavern-inspired itemization view with estimated section token counts and the exact saved request payload when available; older messages are reconstructed from their preceding history.
 Chat top bar 0.2.28: the existing message search remains unchanged. Everything to its right is replaced by a compact icon-only action group inspired by SillyTavern Chat Top Info Bar: chat manager, new chat, rename current chat, delete current chat, and close current chat. Connection-profile controls, message counters, Persona, Context, and the overflow menu are not included in this top bar.

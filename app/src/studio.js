@@ -423,9 +423,6 @@ async function nvSend(chat,content) {
 }
 async function nvCompletion(character,history,chat,onDelta) {
   const params = {...getGenerationParams(),...NV.data.generation};
-  if (nvChatTranslationApplies('assistant')) {
-    history = [...history, { role:'system', content:'Write the next assistant response in English. English is the internal conversation language. Do not translate the answer for the user; the interface handles display translation separately.' }];
-  }
   NV.scope = chat; NV.promptHistory = history;
   let request;
   try {
@@ -481,17 +478,18 @@ async function nvGenerate(chat,mode = 'reply') {
       });
       if (run.cancelled) break;
       if (!result.content.trim()) throw new Error(nvText('Le modèle a renvoyé une réponse vide.','The model returned an empty reply.'));
+      const canonicalAssistant = await nvPrepareAssistantCanonical(result.content);
       if (mode === 'impersonate') {
-        try { const display = await nvPrepareAssistantTranslation(result.content); chat.draft = display?.content || result.content; }
+        try { const display = await nvPrepareAssistantTranslation(canonicalAssistant); chat.draft = display?.content || canonicalAssistant; }
         catch (error) { console.warn('[translate] Impersonation translation failed.', error); chat.draft = nvText('[Traduction indisponible]','[Translation unavailable]'); }
       } else if (mode === 'regenerate' && last?.role === 'assistant') {
-        last.variants.push(result.content); last.variant = last.variants.length - 1; last.content = result.content;
+        last.variants.push(canonicalAssistant); last.variant = last.variants.length - 1; last.content = canonicalAssistant;
         await nvApplyAssistantDisplay(last);
       } else if (mode === 'continue' && last?.role === 'assistant') {
-        last.content += '\n' + result.content; last.variants[last.variant] = last.content;
+        last.content += '\n' + canonicalAssistant; last.variants[last.variant] = last.content;
         await nvApplyAssistantDisplay(last);
       } else {
-        const message = NVCore.message({role:'assistant',content:result.content,name:character.name,characterId:character.id,model:result.model,duration:performance.now()-started});
+        const message = NVCore.message({role:'assistant',content:canonicalAssistant,name:character.name,characterId:character.id,model:result.model,duration:performance.now()-started});
         chat.messages.push(message);
         await nvApplyAssistantDisplay(message);
       }
@@ -501,7 +499,8 @@ async function nvGenerate(chat,mode = 'reply') {
   } catch (error) { run.failed = true; if (!run.cancelled) toast(friendlyNativeError(error),'error'); }
   finally {
     if ((run.cancelled || run.failed) && run.content.trim() && mode !== 'impersonate') {
-      const partial = NVCore.message({role:'assistant',content:run.content,name:run.name,characterId:run.characterId});
+      const partialContent = await nvPrepareAssistantCanonical(run.content);
+      const partial = NVCore.message({role:'assistant',content:partialContent,name:run.name,characterId:run.characterId});
       await nvApplyAssistantDisplay(partial);
       chat.messages.push(partial); await nvSave();
     }

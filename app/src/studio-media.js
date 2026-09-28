@@ -171,6 +171,16 @@ async function nvPrepareOutgoingTranslation(text) {
   const english = await nvTranslateChatText(text, 'en', config.targetLanguage);
   return { content: english, displayText: text, displayLanguage: config.targetLanguage };
 }
+async function nvPrepareAssistantCanonical(text) {
+  const source = String(text || '');
+  const config = nvChatTranslationConfig();
+  if (!nvChatTranslationApplies('assistant', config)) return source;
+  // Keep the prompt/context free of translation instructions. The raw model
+  // response is normalized after generation instead, so the stored assistant
+  // message remains English while display translation stays UI-only.
+  try { return await nvTranslateChatText(source, 'en', null); }
+  catch (error) { console.warn('[translate] Assistant English normalization failed.', error); return source; }
+}
 async function nvPrepareAssistantTranslation(text) {
   const config = nvChatTranslationConfig();
   if (!nvChatTranslationApplies('assistant', config) || String(config.targetLanguage).toLowerCase() === 'en') return null;

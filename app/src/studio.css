@@ -124,3 +124,30 @@
 .nv-prompt-totals{margin-top:auto;padding-top:10px;border-top:1px solid var(--line)}.nv-prompt-totals .nv-prompt-item-row{font-size:12px}.nv-prompt-totals .nv-prompt-item-row:first-child{color:var(--text)}
 .nv-prompt-raw-panel{display:flex;flex-direction:column;overflow:hidden}.nv-prompt-raw-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;border-bottom:1px solid var(--line);font-size:11px}.nv-prompt-raw{flex:1;min-height:0;overflow:auto;margin:0;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere;background:transparent;color:var(--text);font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}
 @media(max-width:760px){.nv-prompt-itemization-dialog{width:calc(100vw - 16px)!important;height:calc(100dvh - 16px)}.nv-prompt-inspector-layout{grid-template-columns:1fr;grid-template-rows:minmax(220px,42%) minmax(0,1fr)}}
+
+
+/* Chat library + dedicated conversation view. The Chat nav now opens the library;
+   an opened conversation uses the full workspace width without the legacy rail. */
+.nv-workspace.nv-workspace-conversation{grid-template-columns:minmax(0,1fr)}
+.nv-chat-main-standalone{width:100%;min-width:0}
+.nv-chat-library-page{height:100%;min-height:0;overflow:auto;padding:clamp(22px,3vw,38px);box-sizing:border-box;background:radial-gradient(circle at 50% 0%,color-mix(in srgb,var(--violet) 6%,transparent),transparent 34%)}
+.nv-chat-library-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin:0 auto 22px;max-width:1500px}
+.nv-chat-library-head h1{margin:5px 0 7px;font-family:'Cinzel Decorative',serif;font-size:clamp(24px,2.2vw,34px);line-height:1.15}
+.nv-chat-library-head p{margin:0;max-width:68ch;color:var(--text-dim);font-size:12px;line-height:1.6}
+.nv-chat-library-toolbar{display:flex;align-items:center;gap:12px;max-width:1500px;margin:0 auto 18px}
+.nv-chat-library-toolbar input{flex:1;min-width:0;padding:10px 12px;font-size:12px}
+.nv-chat-library-toolbar span{flex:none;color:var(--text-faint);font-size:10px}
+.nv-chat-library-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;max-width:1500px;margin:0 auto}
+.nv-chat-library-card{min-width:0;border:1px solid var(--line);border-radius:13px;background:var(--panel);overflow:hidden;transition:border-color .15s,transform .15s,box-shadow .15s}
+.nv-chat-library-card:hover{border-color:var(--violet-2);transform:translateY(-2px);box-shadow:0 14px 36px #0004}
+.nv-chat-library-open{display:flex;flex-direction:column;gap:10px;width:100%;min-height:180px;padding:18px;border:0;background:transparent;color:var(--text);text-align:left;cursor:pointer}
+.nv-chat-library-card-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+.nv-chat-library-card-meta .nv-eyebrow{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nv-chat-library-card-meta time{flex:none;color:var(--text-faint);font-size:9px}
+.nv-chat-library-open h3{margin:0;font-size:16px;line-height:1.35;overflow-wrap:anywhere}
+.nv-chat-library-open p{display:-webkit-box;flex:1;margin:0;color:var(--text-dim);font-size:11px;line-height:1.55;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.nv-chat-library-open footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:10px;border-top:1px solid var(--line);color:var(--text-faint);font-size:9.5px}
+.nv-chat-library-open footer strong{color:var(--magenta);font-size:10px}
+.nv-chat-library-empty{grid-column:1/-1;padding:70px 24px;border:1px dashed var(--line);border-radius:13px;text-align:center;color:var(--text-dim)}
+.nv-chat-library-empty h2{margin:0 0 8px;color:var(--text);font-size:18px}.nv-chat-library-empty p{margin:0;font-size:12px}
+@media(max-width:700px){.nv-chat-library-page{padding:18px 14px}.nv-chat-library-head{align-items:stretch;flex-direction:column}.nv-chat-library-head .btn{align-self:flex-start}.nv-chat-library-toolbar{align-items:stretch;flex-direction:column}.nv-chat-library-toolbar span{align-self:flex-end}.nv-chat-library-grid{grid-template-columns:1fr}}

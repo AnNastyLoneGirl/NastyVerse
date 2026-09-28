@@ -1658,7 +1658,10 @@ function goTo(id, opts = {}) {
   if (id === 'library') renderLibrary(opts.tab || state.libraryTab);
   else if (id === 'configuration') renderConfiguration(opts.section || 'general');
   else if (id === 'personalization') renderPersonalization(opts.type || state.markdownStyleType || 'paragraph', opts.section || state.personalizationSection || 'text');
-  else renderChat();
+  else {
+    NV.chatView = opts.view || 'library';
+    renderChat();
+  }
 }
 
 /* ===================================================================
@@ -2341,7 +2344,7 @@ function openCharacterEditor(characterId = null) {
 
   if (existing) {
     const start = document.createElement('button'); start.type = 'button'; start.className = 'btn btn-primary'; start.textContent = nvText('Discuter','Chat');
-    start.onclick = () => { NV.groupId = ''; state.activeCharacterId = existing.id; localStorage.setItem(STORAGE.activeCharacter,existing.id); nvEnsureSession(existing); goTo('chat'); };
+    start.onclick = () => { NV.groupId = ''; state.activeCharacterId = existing.id; localStorage.setItem(STORAGE.activeCharacter,existing.id); nvEnsureSession(existing); goTo('chat',{view:'conversation'}); };
     pageRoot.querySelector('.editor-actions-right')?.prepend(start);
   }
   pageRoot.querySelector('input[name=name]')?.focus();

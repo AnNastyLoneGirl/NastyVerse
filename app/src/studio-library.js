@@ -192,7 +192,7 @@ function nvRenderLibrary(tab) {
   nvBind(root,{create:()=>editor(),import:async()=>{const files=await nvPickFiles('.json',true);for(const file of files){NV.data.books.push(NVCore.normalizeBook(JSON.parse(await nvReadFile(file)),file.name.replace(/\.json$/i,'')));}await nvSave();renderLibrary(tab);}});
   root.querySelectorAll('[data-edit]').forEach(b=>b.onclick=nvGuard(()=>editor(NV.data[key].find(i=>i.id===b.dataset.edit))));
   if(key==='personas')root.querySelectorAll('[data-edit]').forEach(b=>{const persona=NV.data.personas.find(p=>p.id===b.dataset.edit);const button=document.createElement('button');button.className='btn btn-ghost btn-small';button.textContent=`${nvText('Variations','Variations')} (${persona.variations?.length||0})`;button.onclick=()=>nvPersonaVariations(persona);b.parentElement.append(button);});
-  root.querySelectorAll('[data-chat]').forEach(b=>b.onclick=()=>{NV.groupId=b.dataset.chat;nvEnsureSession(null);goTo('chat');});
+  root.querySelectorAll('[data-chat]').forEach(b=>b.onclick=()=>{NV.groupId=b.dataset.chat;nvEnsureSession(null);goTo('chat',{view:'conversation'});});
 }
 async function nvPersonaEditor(existing) {
   const recordId = existing?.id || uid();

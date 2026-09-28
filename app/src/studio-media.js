@@ -131,29 +131,41 @@ function nvChatTranslationApplies(role, config = nvChatTranslationConfig()) {
   if (role === 'assistant') return config.mode === 'responses' || config.mode === 'both';
   return false;
 }
-function nvTranslationMessageSource(message, chat = null) {
-  let source = String(message?.content || '');
-  try {
-    if (typeof nvVariableExpand === 'function') source = nvVariableExpand(source, chat || (typeof nvSession === 'function' ? nvSession() : null));
-  } catch (error) {
-    console.warn('[translate] Unable to resolve variables before translation.', error);
-  }
-  return source;
+function nvTranslationMessageSource(message) {
+  // Variable macros are executed exactly once before a chat message is stored.
+  // Translation must therefore consume the canonical stored content directly;
+  // re-evaluating macros here would duplicate side effects and invalidate the
+  // display translation cache on every render.
+  return String(message?.content || '');
+}
+function nvTranslationDisplayFailed(message) {
+  return /^\[(?:Traduction indisponible|Translation unavailable)\]$/i.test(String(message?.displayText || '').trim());
+}
+const nvTranslationFailures = new WeakMap();
+function nvTranslationFailureMatches(message, source, language) {
+  const failure = nvTranslationFailures.get(message);
+  return !!failure && failure.source === String(source || '') && failure.language === String(language || '');
+}
+function nvSetTranslationFailure(message, source, language, error = null) {
+  nvTranslationFailures.set(message, { source:String(source || ''), language:String(language || ''), error:String(error?.message || error || '') });
 }
 function nvMessageDisplayContent(message, chat = null) {
   const config = nvChatTranslationConfig();
-  const source = nvTranslationMessageSource(message, chat);
+  const source = nvTranslationMessageSource(message);
   if (!nvChatTranslationApplies(message?.role, config)) return source;
   if (String(config.targetLanguage).toLowerCase() === 'en') return source;
-  if (message?.displayText && message.displaySource === source && message.displayLanguage === config.targetLanguage) return message.displayText;
+  if (message?.displayText && !nvTranslationDisplayFailed(message) && message.displaySource === source && message.displayLanguage === config.targetLanguage) return message.displayText;
+  if (nvTranslationFailureMatches(message, source, config.targetLanguage)) return nvText('[Traduction indisponible]','[Translation unavailable]');
   return nvText('Traduction…','Translating…');
 }
 function nvSetMessageDisplay(message, displayText, language, sourceText = null) {
+  nvTranslationFailures.delete(message);
   message.displayText = String(displayText || '');
   message.displaySource = String(sourceText == null ? message.content || '' : sourceText);
   message.displayLanguage = String(language || '');
 }
 function nvClearMessageDisplay(message) {
+  nvTranslationFailures.delete(message);
   message.displayText = '';
   message.displaySource = '';
   message.displayLanguage = '';
@@ -202,7 +214,7 @@ async function nvPrepareAssistantTranslation(text) {
 }
 async function nvApplyAssistantDisplay(message, chat = null) {
   try {
-    const source = nvTranslationMessageSource(message, chat);
+    const source = nvTranslationMessageSource(message);
     const display = await nvPrepareAssistantTranslation(source);
     if (display) nvSetMessageDisplay(message, display.content, display.language, source);
     else nvClearMessageDisplay(message);
@@ -210,9 +222,9 @@ async function nvApplyAssistantDisplay(message, chat = null) {
   } catch (error) {
     console.warn('[translate] Assistant display translation failed.', error);
     if (nvChatTranslationApplies('assistant')) {
-      const placeholder = nvText('[Traduction indisponible]','[Translation unavailable]');
-      nvSetMessageDisplay(message, placeholder, nvChatTranslationConfig().targetLanguage, nvTranslationMessageSource(message, chat));
-      return placeholder;
+      nvClearMessageDisplay(message);
+      nvSetTranslationFailure(message, nvTranslationMessageSource(message), nvChatTranslationConfig().targetLanguage, error);
+      return nvText('[Traduction indisponible]','[Translation unavailable]');
     }
     nvClearMessageDisplay(message);
     return message.content;
@@ -237,15 +249,15 @@ const nvTranslationRefresh = new Set();
 async function nvEnsureChatDisplayTranslations(chat) {
   const config = nvChatTranslationConfig();
   if (!chat || !config.enabled || String(config.targetLanguage).toLowerCase() === 'en' || nvTranslationRefresh.has(chat.id)) return;
-  const pending = chat.messages.map(message => ({ message, source: nvTranslationMessageSource(message, chat) })).filter(({ message, source }) => nvChatTranslationApplies(message.role, config) && source && (!message.displayText || message.displaySource !== source || message.displayLanguage !== config.targetLanguage));
+  const pending = chat.messages.map(message => ({ message, source: nvTranslationMessageSource(message) })).filter(({ message, source }) => nvChatTranslationApplies(message.role, config) && source && !nvTranslationFailureMatches(message, source, config.targetLanguage) && (!message.displayText || nvTranslationDisplayFailed(message) || message.displaySource !== source || message.displayLanguage !== config.targetLanguage));
   if (!pending.length) return;
   nvTranslationRefresh.add(chat.id);
   try {
     let changed = false;
     for (const { message, source } of pending) {
       try {
-        // Stored chat content is canonical English. Resolve variables before
-        // sending it to the display translator so macros never reach providers.
+        // Stored chat content is canonical English and variable macros have already
+        // been executed once before storage, so translation uses it verbatim.
         const display = await nvTranslateChatText(source, config.targetLanguage, 'en');
         if (!NV.data.sessions.includes(chat) || !chat.messages.includes(message)) continue;
         nvSetMessageDisplay(message, display, config.targetLanguage, source);
@@ -253,7 +265,8 @@ async function nvEnsureChatDisplayTranslations(chat) {
       } catch (error) {
         console.warn('[translate] Unable to translate existing message.', error);
         if (!NV.data.sessions.includes(chat) || !chat.messages.includes(message)) continue;
-        nvSetMessageDisplay(message, nvText('[Traduction indisponible]','[Translation unavailable]'), config.targetLanguage, source);
+        nvClearMessageDisplay(message);
+        nvSetTranslationFailure(message, source, config.targetLanguage, error);
         changed = true;
       }
     }

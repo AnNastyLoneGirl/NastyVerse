@@ -66,9 +66,10 @@
 .nv-timeline-toolbar input{flex:1 1 340px;min-width:180px;padding:9px 11px;font-size:11px}
 .nv-timeline-count{font-size:10px;color:var(--text-dim);white-space:nowrap}
 .nv-timeline-layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:12px;min-height:0;flex:1}
-.nv-timeline-viewport{position:relative;min-width:0;min-height:0;overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--void)}
-.nv-timeline-space{position:relative;min-width:100%;min-height:100%}
-.nv-timeline-stage{position:absolute;left:0;top:0;transform-origin:0 0}
+.nv-timeline-viewport{position:relative;min-width:0;min-height:0;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--void);cursor:grab;touch-action:none;user-select:none}
+.nv-timeline-viewport.is-panning,.nv-timeline-viewport.is-space-pan{cursor:grabbing}
+.nv-timeline-space{position:absolute;inset:0;overflow:visible}
+.nv-timeline-stage{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .nv-timeline-edges{position:absolute;inset:0;overflow:visible}
 .nv-timeline-edge{fill:none;stroke:var(--line);stroke-width:2;opacity:.72;pointer-events:stroke;cursor:pointer;transition:stroke-width .12s,opacity .12s,stroke .12s}
 .nv-timeline-edge.is-current{stroke:var(--violet-2);opacity:.95;stroke-width:3}

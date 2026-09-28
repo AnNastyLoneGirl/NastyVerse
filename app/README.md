@@ -1,4 +1,4 @@
-# NastyVerse application 0.2.20
+# NastyVerse application 0.2.21
 
 The application is a replaceable HTML/CSS/JavaScript payload hosted by the single Tauri launcher (0.1.12). No second Tauri crate is introduced.
 
@@ -56,3 +56,5 @@ Chat layout 0.2.18: the message stream now uses the full width available between
 Chat message actions 0.2.19: message actions are now rendered as a dedicated toolbar above the complete avatar + message row instead of below the bubble. This keeps controls visually attached to the whole message block, especially with large avatars and short messages.
 
 Timeline navigation 0.2.20: the message action bar no longer exposes Branch or Bookmark, and the chat toolbar no longer exposes Bookmarks. A new Timeline button to the left of message search opens a native timeline navigator inspired by SillyTavern Timelines: all chats for the current target are merged into a branch graph, identical messages at the same depth share a node, realtime fragment search filters the graph, current-chat paths are highlighted, swipes can be expanded, nodes expose all chat occurrences, and users can jump to a message or create a branch from any message/swipe.
+
+Timeline canvas navigation 0.2.21: the Timeline viewport is now a true pan/zoom surface. Drag empty space (or hold Space while dragging) to pan, use the mouse wheel to zoom around the cursor, and use the toolbar controls to fit or recenter the current chat. Pan/zoom state is preserved per target when reopening the Timeline.

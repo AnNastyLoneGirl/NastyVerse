@@ -413,7 +413,27 @@ function nvOpenTimeline(chat) {
   if (!chat) return;
   const sessions = NV.data.sessions.filter(session => session.targetId === chat.targetId).sort((a,b) => a.createdAt - b.createdAt || a.updatedAt - b.updatedAt);
   const sessionById = new Map(sessions.map(session => [session.id, session]));
-  const tl = { zoom: 1, showSwipes: false, expanded: new Set(), selected: '', graph: null, ignoreClick: '', search: '' };
+  const viewStorageKey = `nastyverse.timeline.view:${chat.targetId}`;
+  let savedView = null;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(viewStorageKey) || 'null');
+    if (parsed && Number.isFinite(parsed.zoom) && Number.isFinite(parsed.panX) && Number.isFinite(parsed.panY)) savedView = parsed;
+  } catch {}
+  const tl = {
+    zoom: savedView?.zoom ?? 1,
+    panX: savedView?.panX ?? 0,
+    panY: savedView?.panY ?? 0,
+    hasSavedView: Boolean(savedView),
+    showSwipes: false,
+    expanded: new Set(),
+    selected: '',
+    graph: null,
+    ignoreClick: '',
+    search: '',
+    panning: false,
+    panPointer: null,
+    spaceHeld: false,
+  };
   const title = chat.targetId.startsWith('group:')
     ? (NV.data.groups.find(group => `group:${group.id}` === chat.targetId)?.name || chat.title)
     : (getCharacters().find(character => character.id === chat.targetId)?.name || chat.title);
@@ -435,7 +455,7 @@ function nvOpenTimeline(chat) {
       <aside class="nv-timeline-inspector" data-tl-inspector>
         <span class="nv-eyebrow">TIMELINE</span>
         <h3>${nvText('Naviguez dans vos branches','Navigate your branches')}</h3>
-        <p>${nvText('Cliquez sur un nœud pour voir ses occurrences. Double-cliquez pour y aller. Maintenez un nœud avec variantes pour les déplier.','Click a node to inspect its occurrences. Double-click to jump there. Hold a node with swipes to expand them.')}</p>
+        <p>${nvText('Glissez le fond pour déplacer la Timeline et utilisez la molette pour zoomer autour du curseur. Cliquez sur un nœud pour voir ses occurrences, double-cliquez pour y aller, ou maintenez-le pour déplier ses variantes.','Drag the background to pan the Timeline and use the wheel to zoom around the cursor. Click a node to inspect its occurrences, double-click to jump there, or hold it to expand its swipes.')}</p>
       </aside>
     </div>
     <div class="nv-timeline-legend">
@@ -546,22 +566,48 @@ function nvOpenTimeline(chat) {
     return `M ${a.x} ${a.y} C ${a.x+dx} ${a.y}, ${b.x-dx} ${b.y}, ${b.x} ${b.y}`;
   }
 
-  function applyZoom() {
+  const clampZoom = value => Math.max(.25,Math.min(2.5,Number(value) || 1));
+
+  function applyView() {
     if (!tl.graph) return;
-    tl.zoom = Math.max(.42,Math.min(1.8,tl.zoom));
-    stage.style.transform = `scale(${tl.zoom})`;
-    space.style.width = `${Math.ceil(tl.graph.width * tl.zoom)}px`;
-    space.style.height = `${Math.ceil(tl.graph.height * tl.zoom)}px`;
+    tl.zoom = clampZoom(tl.zoom);
+    stage.style.transform = `translate(${tl.panX}px,${tl.panY}px) scale(${tl.zoom})`;
+  }
+
+  function saveView() {
+    try { localStorage.setItem(viewStorageKey,JSON.stringify({ zoom:tl.zoom, panX:tl.panX, panY:tl.panY })); } catch {}
+  }
+
+  function zoomAt(clientX, clientY, nextZoom) {
+    if (!tl.graph) return;
+    const rect = viewport.getBoundingClientRect();
+    const pointX = clientX - rect.left;
+    const pointY = clientY - rect.top;
+    const worldX = (pointX - tl.panX) / tl.zoom;
+    const worldY = (pointY - tl.panY) / tl.zoom;
+    tl.zoom = clampZoom(nextZoom);
+    tl.panX = pointX - worldX * tl.zoom;
+    tl.panY = pointY - worldY * tl.zoom;
+    applyView();
+  }
+
+  function zoomFromCenter(factor) {
+    const rect = viewport.getBoundingClientRect();
+    zoomAt(rect.left + viewport.clientWidth / 2,rect.top + viewport.clientHeight / 2,tl.zoom * factor);
+    saveView();
   }
 
   function scrollToNode(node, flash = false) {
     if (!node) return;
     const center = nodeCenter(node);
-    viewport.scrollTo({ left:Math.max(0,center.x*tl.zoom - viewport.clientWidth/2), top:Math.max(0,center.y*tl.zoom - viewport.clientHeight/2), behavior:'smooth' });
+    tl.panX = viewport.clientWidth / 2 - center.x * tl.zoom;
+    tl.panY = viewport.clientHeight / 2 - center.y * tl.zoom;
+    applyView();
     if (flash) {
       const element = stage.querySelector(`[data-tl-node="${node.id}"]`);
       element?.classList.add('is-flash'); setTimeout(() => element?.classList.remove('is-flash'),900);
     }
+    saveView();
   }
 
   function currentLastNode() {
@@ -585,7 +631,7 @@ function nvOpenTimeline(chat) {
 
   function renderInspector(node) {
     if (!node) {
-      inspector.innerHTML = `<span class="nv-eyebrow">TIMELINE</span><h3>${nvText('Naviguez dans vos branches','Navigate your branches')}</h3><p>${nvText('Cliquez sur un nœud pour voir ses occurrences. Double-cliquez pour y aller. Maintenez un nœud avec variantes pour les déplier.','Click a node to inspect its occurrences. Double-click to jump there. Hold a node with swipes to expand them.')}</p>`;
+      inspector.innerHTML = `<span class="nv-eyebrow">TIMELINE</span><h3>${nvText('Naviguez dans vos branches','Navigate your branches')}</h3><p>${nvText('Glissez le fond pour déplacer la Timeline et utilisez la molette pour zoomer autour du curseur. Cliquez sur un nœud pour voir ses occurrences, double-cliquez pour y aller, ou maintenez-le pour déplier ses variantes.','Drag the background to pan the Timeline and use the wheel to zoom around the cursor. Click a node to inspect its occurrences, double-click to jump there, or hold it to expand its swipes.')}</p>`;
       return;
     }
     const rows = node.occurrences.map((occurrence,index) => {
@@ -672,25 +718,94 @@ function nvOpenTimeline(chat) {
     }).join('');
     stage.style.width = `${tl.graph.width}px`; stage.style.height = `${tl.graph.height}px`;
     stage.innerHTML = `<svg class="nv-timeline-edges" width="${tl.graph.width}" height="${tl.graph.height}" viewBox="0 0 ${tl.graph.width} ${tl.graph.height}" aria-hidden="true">${edgeMarkup}</svg>${nodeMarkup}`;
-    applyZoom(); bindNodes(); updateSearch(false);
+    applyView(); bindNodes(); updateSearch(false);
     if (selectId && tl.graph.allById.has(selectId)) { tl.selected = selectId; renderInspector(tl.graph.allById.get(selectId)); } else { tl.selected = ''; renderInspector(null); }
   }
 
   function fitGraph() {
     if (!tl.graph) return;
-    const x = Math.max(.42,(viewport.clientWidth - 36) / Math.max(1,tl.graph.width));
-    const y = Math.max(.42,(viewport.clientHeight - 36) / Math.max(1,tl.graph.height));
-    tl.zoom = Math.min(1.35,x,y); applyZoom(); viewport.scrollTo({left:0,top:0,behavior:'smooth'});
+    const padding = 42;
+    const availableWidth = Math.max(1,viewport.clientWidth - padding * 2);
+    const availableHeight = Math.max(1,viewport.clientHeight - padding * 2);
+    tl.zoom = clampZoom(Math.min(1.35,availableWidth / Math.max(1,tl.graph.width),availableHeight / Math.max(1,tl.graph.height)));
+    tl.panX = (viewport.clientWidth - tl.graph.width * tl.zoom) / 2;
+    tl.panY = (viewport.clientHeight - tl.graph.height * tl.zoom) / 2;
+    applyView(); saveView();
   }
+
+  function beginPan(event) {
+    const interactive = event.target.closest('[data-tl-node],[data-tl-edge]');
+    const wantsCanvasPan = event.button === 0 && (!interactive || tl.spaceHeld) || event.button === 1;
+    if (!wantsCanvasPan) return;
+    event.preventDefault();
+    tl.panning = true;
+    tl.panPointer = event.pointerId;
+    tl.panStartX = event.clientX;
+    tl.panStartY = event.clientY;
+    tl.panOriginX = tl.panX;
+    tl.panOriginY = tl.panY;
+    viewport.classList.add('is-panning');
+    viewport.setPointerCapture?.(event.pointerId);
+  }
+
+  function movePan(event) {
+    if (!tl.panning || event.pointerId !== tl.panPointer) return;
+    tl.panX = tl.panOriginX + event.clientX - tl.panStartX;
+    tl.panY = tl.panOriginY + event.clientY - tl.panStartY;
+    applyView();
+  }
+
+  function endPan(event) {
+    if (!tl.panning || (event.pointerId != null && event.pointerId !== tl.panPointer)) return;
+    tl.panning = false;
+    tl.panPointer = null;
+    viewport.classList.remove('is-panning');
+    try { viewport.releasePointerCapture?.(event.pointerId); } catch {}
+    saveView();
+  }
+
+  viewport.addEventListener('pointerdown',beginPan);
+  viewport.addEventListener('pointermove',movePan);
+  viewport.addEventListener('pointerup',endPan);
+  viewport.addEventListener('pointercancel',endPan);
+  viewport.addEventListener('wheel',event => {
+    event.preventDefault();
+    const factor = Math.exp(-event.deltaY * .0015);
+    zoomAt(event.clientX,event.clientY,tl.zoom * factor);
+  },{ passive:false });
+
+  const onKeyDown = event => {
+    if (event.code !== 'Space' || event.repeat || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '')) return;
+    tl.spaceHeld = true;
+    viewport.classList.add('is-space-pan');
+    event.preventDefault();
+  };
+  const onKeyUp = event => {
+    if (event.code !== 'Space') return;
+    tl.spaceHeld = false;
+    viewport.classList.remove('is-space-pan');
+  };
+  window.addEventListener('keydown',onKeyDown);
+  window.addEventListener('keyup',onKeyUp);
+  dialog.addEventListener('close',() => {
+    saveView();
+    window.removeEventListener('keydown',onKeyDown);
+    window.removeEventListener('keyup',onKeyUp);
+  },{ once:true });
 
   dialog.querySelector('[data-tl="current"]').onclick = () => scrollToNode(currentLastNode(),true);
   dialog.querySelector('[data-tl="swipes"]').onclick = event => { tl.showSwipes = !tl.showSwipes; event.currentTarget.textContent = tl.showSwipes ? nvText('Masquer les variantes','Hide swipes') : nvText('Afficher les variantes','Show swipes'); renderGraph(); };
-  dialog.querySelector('[data-tl="zoom-out"]').onclick = () => { tl.zoom -= .15; applyZoom(); };
-  dialog.querySelector('[data-tl="zoom-in"]').onclick = () => { tl.zoom += .15; applyZoom(); };
+  dialog.querySelector('[data-tl="zoom-out"]').onclick = () => zoomFromCenter(1 / 1.18);
+  dialog.querySelector('[data-tl="zoom-in"]').onclick = () => zoomFromCenter(1.18);
   dialog.querySelector('[data-tl="fit"]').onclick = fitGraph;
   search.oninput = () => updateSearch(true);
   renderGraph();
-  requestAnimationFrame(() => { fitGraph(); const current = currentLastNode(); if (current) setTimeout(() => scrollToNode(current,true),120); });
+  requestAnimationFrame(() => {
+    if (tl.hasSavedView) { applyView(); return; }
+    fitGraph();
+    const current = currentLastNode();
+    if (current) setTimeout(() => scrollToNode(current,true),120);
+  });
 }
 
 function nvRenderChat(scrollSnapshot = null) {

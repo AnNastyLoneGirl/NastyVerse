@@ -5134,7 +5134,15 @@ function messageAvatarTransform(x, y, zoomPercent) {
   const maxPan = ((zoom - 1) / (2 * zoom)) * 100;
   const translateX = ((50 - Number(x || 50)) / 50) * maxPan;
   const translateY = ((50 - Number(y || 50)) / 50) * maxPan;
-  return `scale(${zoom.toFixed(4)}) translate(${translateX.toFixed(4)}%, ${translateY.toFixed(4)}%)`;
+  return `translate(${translateX.toFixed(4)}%, ${translateY.toFixed(4)}%) scale(${zoom.toFixed(4)})`;
+}
+function messageAvatarInlineStyle(role, settings = getMessagePersonalization()) {
+  const normalized = normalizeMessageAppearance(settings || {});
+  const prefix = role === 'persona' || role === 'user' ? 'persona' : 'character';
+  const x = normalized[`${prefix}AvatarX`];
+  const y = normalized[`${prefix}AvatarY`];
+  const zoom = normalized[`${prefix}AvatarZoom`];
+  return `object-position:${x}% ${y}%;transform:${messageAvatarTransform(x, y, zoom)}`;
 }
 function applyMessagePersonalization(settings = getMessagePersonalization()) {
   const normalized = normalizeMessageAppearance(settings);
@@ -5175,7 +5183,8 @@ function messagePersonalizationPreview(settings) {
   const avatar = (source, name, role) => {
     const roleClass = role === 'user' ? 'nv-avatar-persona' : 'nv-avatar-character';
     if (!source) return `<div class="nv-message-avatar ${roleClass} nv-avatar-fallback" aria-hidden="true">${escapeHtml((name || '?').slice(0,1).toUpperCase())}</div>`;
-    return `<div class="nv-message-avatar ${roleClass}"><img src="${escapeHtml(source)}" alt=""></div>`;
+    const inlineStyle = messageAvatarInlineStyle(role, settings);
+    return `<div class="nv-message-avatar ${roleClass}"><img src="${escapeHtml(source)}" alt="" style="${inlineStyle}"></div>`;
   };
   const personaAvatar = resolvedAvatarSource(persona);
   const characterAvatar = resolvedAvatarSource(character);

@@ -374,7 +374,9 @@ function nvMessageAvatarMarkup(message, persona, fallbackCharacter, settings) {
   const name = message.name || owner?.name || '?';
   const source = typeof resolvedAvatarSource === 'function' ? resolvedAvatarSource(owner) : '';
   const roleClass = message.role === 'user' ? 'nv-avatar-persona' : 'nv-avatar-character';
-  if (source) return `<div class="nv-message-avatar ${roleClass}" title="${nvEscape(name)}"><img src="${nvEscape(source)}" alt=""></div>`;
+  const avatarRole = message.role === 'user' ? 'persona' : 'character';
+  const inlineStyle = typeof messageAvatarInlineStyle === 'function' ? messageAvatarInlineStyle(avatarRole, settings) : '';
+  if (source) return `<div class="nv-message-avatar ${roleClass}" title="${nvEscape(name)}"><img src="${nvEscape(source)}" alt=""${inlineStyle ? ` style="${inlineStyle}"` : ''}></div>`;
   return `<div class="nv-message-avatar ${roleClass} nv-avatar-fallback" title="${nvEscape(name)}" aria-hidden="true">${nvEscape(String(name || '?').slice(0,1).toUpperCase())}</div>`;
 }
 function nvMessageLayout(message, persona, fallbackCharacter, settings) {

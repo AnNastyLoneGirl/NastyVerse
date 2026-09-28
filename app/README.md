@@ -1,4 +1,6 @@
-# NastyVerse application 0.2.25
+# NastyVerse application 0.2.26
+
+Message actions 0.2.26: right-aligned action toolbars now remain anchored to the right edge while keeping the mirrored Context visibility → Edit → Delete order.
 
 The application is a replaceable HTML/CSS/JavaScript payload hosted by the single Tauri launcher (0.1.12). No second Tauri crate is introduced.
 

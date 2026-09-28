@@ -1,4 +1,4 @@
-# NastyVerse application 0.2.3
+# NastyVerse application 0.2.4
 
 The application is a replaceable HTML/CSS/JavaScript payload hosted by the single Tauri launcher (0.1.12). No second Tauri crate is introduced.
 
@@ -24,3 +24,5 @@ Chat translation keeps English as the canonical message content used for prompt 
 Chat composer 0.2.2: the story header was removed, chat actions were folded into the toolbar, and the composer is now a single full-width row with tools, attachment, dictation, continue/stop and send controls.
 
 Chat scroll 0.2.3: rerendering the active conversation now preserves the current viewport (or stays pinned to the bottom only when the user was already there), preventing the visible jump-to-top then smooth-scroll-to-bottom effect after messages and message actions.
+Composer input 0.2.4: the message field now grows from one to three lines as text wraps or line breaks are added; from the fourth line onward only the textarea scrolls, keeping the surrounding composer compact.
+

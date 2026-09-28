@@ -212,6 +212,17 @@ function nvRestoreChatScroll(snapshot) {
   });
 }
 
+function nvResizeComposerInput(input) {
+  if (!input) return;
+  input.style.height = 'auto';
+  const styles = getComputedStyle(input);
+  const minHeight = Number.parseFloat(styles.minHeight) || 40;
+  const maxHeight = Number.parseFloat(styles.maxHeight) || 78;
+  const nextHeight = Math.max(minHeight, Math.min(input.scrollHeight, maxHeight));
+  input.style.height = `${nextHeight}px`;
+  input.style.overflowY = input.scrollHeight > maxHeight + 1 ? 'auto' : 'hidden';
+}
+
 function nvRenderChat(scrollSnapshot = null) {
   if (!NV.ready) return;
   const current = nvSession();
@@ -230,12 +241,13 @@ function nvRenderChat(scrollSnapshot = null) {
   document.getElementById('nv-session-search').oninput = event => { pageRoot.querySelectorAll('[data-session]').forEach(b => b.hidden = !b.textContent.toLocaleLowerCase().includes(event.target.value.toLocaleLowerCase())); };
   if (!chat) return;
   const input = document.getElementById('composer-input');
-  input.oninput = () => { chat.draft = input.value; nvSave(); };
+  nvResizeComposerInput(input);
+  input.oninput = () => { chat.draft = input.value; nvResizeComposerInput(input); nvSave(); };
   input.onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); document.getElementById('composer').requestSubmit(); } };
   document.getElementById('composer').onsubmit = nvGuard(async event => { event.preventDefault(); const content = input.value.trim(); if ((!content && !chat.draftImages?.length) || state.sending) return; if (content.startsWith('/') && await nvCommand(content,chat)) { chat.draft = ''; nvChanged(chat); return; } await nvSend(chat, content); });
   document.getElementById('nv-message-search').oninput = event => { NV.search = event.target.value; pageRoot.querySelectorAll('[data-message]').forEach(article => { const m = chat.messages.find(m => m.id === article.dataset.message); article.hidden = !nvMessageDisplayContent(m).toLocaleLowerCase().includes(NV.search.toLocaleLowerCase()); }); };
   pageRoot.querySelectorAll('[data-message-action]').forEach(b => b.onclick = nvGuard(() => nvMessageAction(chat,chat.messages.find(m => m.id === b.closest('[data-message]').dataset.message),b.dataset.messageAction)));
-  pageRoot.querySelectorAll('[data-reply]').forEach(b => b.onclick = () => { const r = NV.data.replies.find(r => r.id === b.dataset.reply); input.value = chat.draft = NVCore.expand(r.content,{char:character?.name,user:persona.name}); nvSave(); input.focus(); });
+  pageRoot.querySelectorAll('[data-reply]').forEach(b => b.onclick = () => { const r = NV.data.replies.find(r => r.id === b.dataset.reply); input.value = chat.draft = NVCore.expand(r.content,{char:character?.name,user:persona.name}); nvResizeComposerInput(input); nvSave(); input.focus(); });
   nvMediaBind(chat); nvAppearance(); nvRestoreChatScroll(scrollSnapshot); nvEnsureChatDisplayTranslations(chat).catch(error => console.warn('[translate] Chat display refresh failed.', error));
 }
 async function nvNewChat() {

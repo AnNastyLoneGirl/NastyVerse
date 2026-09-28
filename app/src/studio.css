@@ -60,9 +60,10 @@
 .nv-persona-avatar-preview img{width:100%;height:100%;object-fit:cover;display:block}.nv-persona-avatar-editor small{color:var(--text-faint);font-size:10px;text-align:center;line-height:1.45}
 
 /* Timeline navigation inspired by SillyTavern Timelines, implemented natively for NastyVerse. */
-.nv-timeline-dialog{width:min(1500px,calc(100vw - 28px))!important;height:min(900px,calc(100vh - 28px));max-height:calc(100vh - 28px)}
-.nv-timeline-dialog .nv-dialog-content{display:flex;flex-direction:column;gap:12px;height:calc(100% - 62px);padding:14px;box-sizing:border-box}
-.nv-timeline-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.nv-timeline-dialog{box-sizing:border-box;width:min(1500px,calc(100vw - 28px))!important;height:min(900px,calc(100dvh - 28px));max-height:calc(100dvh - 28px);display:flex;flex-direction:column;overflow:hidden}
+.nv-timeline-dialog>header{position:relative;top:auto;flex:0 0 auto}
+.nv-timeline-dialog .nv-dialog-content{display:flex;flex:1 1 auto;flex-direction:column;gap:12px;min-height:0;height:auto;overflow:hidden;padding:14px;box-sizing:border-box}
+.nv-timeline-toolbar{display:flex;flex:0 0 auto;align-items:center;gap:8px;flex-wrap:wrap}
 .nv-timeline-toolbar input{flex:1 1 340px;min-width:180px;padding:9px 11px;font-size:11px}
 .nv-timeline-count{font-size:10px;color:var(--text-dim);white-space:nowrap}
 .nv-timeline-layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:12px;min-height:0;flex:1}
@@ -97,7 +98,7 @@
 .nv-timeline-occurrence>div:first-child{display:flex;justify-content:space-between;gap:8px;align-items:baseline}.nv-timeline-occurrence strong{font-size:10px;overflow-wrap:anywhere}.nv-timeline-occurrence small{font-size:9px;color:var(--text-faint)}
 .nv-timeline-occurrence>div:last-child{display:flex;gap:6px;flex-wrap:wrap}.nv-timeline-occurrence button{font-size:9px}
 .nv-timeline-tooltip{position:absolute;z-index:15;width:min(235px,calc(100% - 16px));pointer-events:none;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:0 8px 22px #0008;color:var(--text);font-size:10px;line-height:1.45}
-.nv-timeline-legend{display:flex;gap:16px;flex-wrap:wrap;align-items:center;padding:0 4px;font-size:9px;color:var(--text-dim)}
+.nv-timeline-legend{display:flex;flex:0 0 auto;gap:16px;flex-wrap:wrap;align-items:center;padding:0 4px;font-size:9px;color:var(--text-dim)}
 .nv-timeline-legend span{display:flex;align-items:center;gap:6px}.nv-timeline-legend i{width:11px;height:11px;border:1px solid var(--line);border-radius:3px;background:var(--panel);display:inline-block}
 .nv-timeline-legend i.is-current{border-color:var(--violet-2);box-shadow:0 0 0 1px var(--violet-2)}.nv-timeline-legend i.is-user{background:color-mix(in srgb,var(--violet) 25%,var(--panel))}.nv-timeline-legend i.is-assistant{background:var(--panel)}.nv-timeline-legend i.is-swipe{border-style:dashed;background:var(--panel-2)}
-@media(max-width:900px){.nv-timeline-layout{grid-template-columns:1fr;grid-template-rows:minmax(420px,1fr) auto}.nv-timeline-inspector{max-height:260px}.nv-timeline-dialog{width:calc(100vw - 16px)!important;height:calc(100vh - 16px)}}
+@media(max-width:900px){.nv-timeline-layout{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(160px,34%)}.nv-timeline-inspector{min-height:0;max-height:none}.nv-timeline-dialog{width:calc(100vw - 16px)!important;height:calc(100dvh - 16px);max-height:calc(100dvh - 16px)}}

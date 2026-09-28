@@ -1,4 +1,4 @@
-# NastyVerse application 0.2.22
+# NastyVerse application 0.2.23
 
 The application is a replaceable HTML/CSS/JavaScript payload hosted by the single Tauri launcher (0.1.12). No second Tauri crate is introduced.
 
@@ -60,3 +60,5 @@ Timeline navigation 0.2.20: the message action bar no longer exposes Branch or B
 Timeline canvas navigation 0.2.21: the Timeline viewport is now a true pan/zoom surface. Drag empty space (or hold Space while dragging) to pan, use the mouse wheel to zoom around the cursor, and use the toolbar controls to fit or recenter the current chat. Pan/zoom state is preserved per target when reopening the Timeline.
 Timeline viewport sizing 0.2.22: the Timeline dialog now fits entirely inside the available viewport without a dialog-level scrollbar. Its header and toolbar stay fixed, the pan/zoom canvas consumes the remaining space, and only the inspector/message detail area scrolls when its own content overflows.
 
+
+Message variants 0.2.23: response variants are now controlled from the bottom-right corner inside each assistant message bubble. A single `›` creates a new variant; once variants exist the control becomes `‹ current/total ›`. Previous navigation is bounded, next advances through existing variants, and pressing next on the last variant generates a new alternative for that specific assistant message, including older messages. The former `Another reply` action was removed from the message action bar.

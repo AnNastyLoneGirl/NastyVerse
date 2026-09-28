@@ -396,14 +396,24 @@ function nvMessageRoleName(message, persona, fallbackCharacter) {
   }
   return 'System';
 }
+function nvMessageVariantNav(message) {
+  if (message?.role !== 'assistant') return '';
+  const total = Math.max(1, Array.isArray(message.variants) ? message.variants.length : 1);
+  const current = Math.min(Math.max(Number(message.variant) || 0, 0), total - 1);
+  if (total <= 1) {
+    return `<div class="nv-variant-nav nv-variant-nav-single" aria-label="${nvText('Variantes de réponse','Response variants')}"><button type="button" data-message-action="next" aria-label="${nvText('Créer une autre variante','Create another variant')}">›</button></div>`;
+  }
+  return `<div class="nv-variant-nav" aria-label="${nvText('Variantes de réponse','Response variants')}"><button type="button" data-message-action="previous" aria-label="${nvText('Variante précédente','Previous variant')}" ${current <= 0 ? 'disabled' : ''}>‹</button><span>${current + 1}/${total}</span><button type="button" data-message-action="next" aria-label="${current >= total - 1 ? nvText('Créer une autre variante','Create another variant') : nvText('Variante suivante','Next variant')}">›</button></div>`;
+}
 function nvMessageArticle(message, index, chat, persona, fallbackCharacter, settings) {
   const layout = nvMessageLayout(message, persona, fallbackCharacter, settings);
   const hiddenBySearch = NV.search && !nvMessageDisplayContent(message).toLocaleLowerCase().includes(NV.search.toLocaleLowerCase());
-  const actions = `<div class="nv-message-actions"><button data-message-action="edit">${nvText('Modifier','Edit')}</button><button data-message-action="more" aria-label="${nvText('Autres actions du message','More message actions')}">•••</button>${message.variants.length > 1 ? `<button data-message-action="previous" aria-label="${nvText('Variante précédente','Previous variant')}">‹</button><span>${message.variant + 1}/${message.variants.length}</span><button data-message-action="next" aria-label="${nvText('Variante suivante','Next variant')}">›</button>` : ''}${message.role === 'assistant' && index === chat.messages.length - 1 ? `<button data-message-action="regenerate">${nvText('Autre réponse','Another reply')}</button>` : ''}</div>`;
-  return `<article class="message message-${message.role} nv-align-${layout.align} ${message.hidden ? 'nv-excluded' : ''}" data-message="${nvEscape(message.id)}" ${hiddenBySearch ? 'hidden' : ''}>${actions}<div class="nv-message-row nv-avatar-${layout.side} nv-avatar-v-${layout.vertical}">${layout.avatar}<div class="nv-message-body"><div class="message-role">${nvEscape(nvMessageRoleName(message, persona, fallbackCharacter))}<small>${message.hidden ? nvText(' · Hors contexte',' · Excluded') : ''}</small></div><div class="message-bubble nv-markdown-surface">${nvMarkdown(nvMessageDisplayContent(message))}${nvMediaMarkup(message.attachments)}</div></div></div></article>`;
+  const actions = `<div class="nv-message-actions"><button data-message-action="edit">${nvText('Modifier','Edit')}</button><button data-message-action="more" aria-label="${nvText('Autres actions du message','More message actions')}">•••</button></div>`;
+  const variantNav = nvMessageVariantNav(message);
+  return `<article class="message message-${message.role} nv-align-${layout.align} ${message.hidden ? 'nv-excluded' : ''}" data-message="${nvEscape(message.id)}" ${hiddenBySearch ? 'hidden' : ''}>${actions}<div class="nv-message-row nv-avatar-${layout.side} nv-avatar-v-${layout.vertical}">${layout.avatar}<div class="nv-message-body"><div class="message-role">${nvEscape(nvMessageRoleName(message, persona, fallbackCharacter))}<small>${message.hidden ? nvText(' · Hors contexte',' · Excluded') : ''}</small></div><div class="message-bubble nv-markdown-surface ${variantNav ? 'nv-has-variant-nav' : ''}">${nvMarkdown(nvMessageDisplayContent(message))}${nvMediaMarkup(message.attachments)}${variantNav}</div></div></div></article>`;
 }
 function nvStreamingMessageArticle(chat, persona, fallbackCharacter, settings) {
-  if (!(state.sending && NV.activeRequest?.sessionId === chat.id)) return '';
+  if (!(state.sending && NV.activeRequest?.sessionId === chat.id) || NV.activeRequest?.variantMessageId) return '';
   const message = { role:'assistant', name:NV.activeRequest.name, characterId:NV.activeRequest.characterId };
   const layout = nvMessageLayout(message, persona, fallbackCharacter, settings);
   return `<article class="message message-assistant nv-align-${layout.align}"><div class="nv-message-row nv-avatar-${layout.side} nv-avatar-v-${layout.vertical}">${layout.avatar}<div class="nv-message-body"><div class="message-role">${nvEscape(NV.activeRequest.name)}</div><div id="nv-stream" class="message-bubble nv-markdown-surface">${nvMarkdown(nvChatTranslationApplies('assistant') ? nvText('Écriture et traduction en cours…','Writing and translating…') : (NV.activeRequest.content || nvText('Écriture en cours…','Writing…')))}</div><details id="nv-thinking" ${NV.activeRequest.reasoning ? '' : 'hidden'}><summary>${nvText('Raisonnement du modèle','Model reasoning')}</summary><pre></pre></details></div></div></article>`;
@@ -964,6 +974,48 @@ async function nvGenerate(chat,mode = 'reply') {
     state.sending = false; NV.activeRequest = null; if (state.currentPage === 'chat') renderChat();
   }
 }
+async function nvCreateMessageVariant(chat, message) {
+  if (!chat || !message || message.role !== 'assistant') return;
+  if (state.sending) return toast(nvText('Arrêtez la génération avant de créer une variante.','Stop generation before creating a variant.'));
+  const index = chat.messages.findIndex(item => item.id === message.id);
+  if (index < 0) return;
+  const character = getCharacters().find(item => item.id === message.characterId)
+    || getCharacters().find(item => item.name === message.name)
+    || getCharacters().find(item => item.id === chat.targetId);
+  if (!character) return toast(nvText('Le personnage associé à ce message est introuvable.','The character associated with this message could not be found.'),'error');
+  const scrollSnapshot = nvCaptureChatScroll();
+  state.sending = true;
+  const run = { id:uid(), sessionId:chat.id, content:'', reasoning:'', name:character.name, characterId:character.id, cancelled:false, variantMessageId:message.id };
+  NV.activeRequest = run;
+  if (state.currentPage === 'chat' && nvSession()?.id === chat.id) nvRenderChat(scrollSnapshot);
+  try {
+    if (!state.backendConfig) state.backendConfig = await invoke('load_backend_config');
+    const history = NVCore.clone(chat.messages.slice(0,index));
+    const started = performance.now();
+    const result = await nvCompletion(character,history,chat,event => {
+      run.content += event.delta || '';
+      run.reasoning += event.reasoning || '';
+    });
+    if (run.cancelled) return;
+    if (!String(result.content || '').trim()) throw new Error(nvText('Le modèle a renvoyé une réponse vide.','The model returned an empty reply.'));
+    const canonicalAssistant = await nvPrepareAssistantCanonical(result.content);
+    message.variants = Array.isArray(message.variants) && message.variants.length ? message.variants : [message.content || ''];
+    message.variants.push(canonicalAssistant);
+    message.variant = message.variants.length - 1;
+    message.content = canonicalAssistant;
+    message.model = result.model || message.model;
+    message.duration = performance.now() - started;
+    await nvApplyAssistantDisplay(message);
+    chat.updatedAt = Date.now();
+    await nvSave();
+  } catch (error) {
+    if (!run.cancelled) toast(friendlyNativeError(error),'error');
+  } finally {
+    state.sending = false;
+    NV.activeRequest = null;
+    if (state.currentPage === 'chat' && nvSession()?.id === chat.id) nvRenderChat(scrollSnapshot);
+  }
+}
 async function nvStop() { const run = NV.activeRequest; if (!run) return; run.cancelled = true; try { await invoke('cancel_completion',{requestId:run.id}); } catch (_) { toast(nvText('Annulation demandée. Ce lanceur doit attendre la fin de la requête.','Cancellation requested. This launcher must wait for the request to finish.')); } }
 async function nvMessageAction(chat,m,action) {
   if (!m) return;
@@ -985,7 +1037,18 @@ async function nvMessageAction(chat,m,action) {
     else if (action === 'hide') m.hidden = !m.hidden;
     else if (action === 'delete') { if (!confirm(nvText('Supprimer ce message ? Vous pourrez annuler dans le menu de conversation.','Delete this message? You can undo from the conversation menu.'))) return; chat.messages = chat.messages.filter(item => item.id !== m.id); }
     else if (action === 'previous' || action === 'next') {
-      m.variant = (m.variant + (action === 'next' ? 1 : -1) + m.variants.length) % m.variants.length; m.content = m.variants[m.variant]; nvClearMessageDisplay(m);
+      const variants = Array.isArray(m.variants) && m.variants.length ? m.variants : [m.content || ''];
+      m.variants = variants;
+      const current = Math.min(Math.max(Number(m.variant) || 0,0),variants.length - 1);
+      if (action === 'previous') {
+        if (current <= 0) return;
+        m.variant = current - 1;
+      } else if (current < variants.length - 1) {
+        m.variant = current + 1;
+      } else {
+        return nvCreateMessageVariant(chat,m);
+      }
+      m.content = m.variants[m.variant]; nvClearMessageDisplay(m);
       if (nvChatTranslationApplies(m.role) && String(nvChatTranslationConfig().targetLanguage).toLowerCase() !== 'en') {
         const display = await nvTranslateChatText(m.content,nvChatTranslationConfig().targetLanguage,'en'); nvSetMessageDisplay(m,display,nvChatTranslationConfig().targetLanguage);
       }

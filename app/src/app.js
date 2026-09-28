@@ -52,6 +52,7 @@ const STORAGE = {
   promptPreviewCharacter: 'nv_app_prompt_preview_character',
   promptPreviewMode: 'nv_app_prompt_preview_mode',
   contextFormatting: 'nv_app_context_formatting_v1',
+  markdownStyles: 'nv_app_markdown_styles_v1',
 };
 
 const I18N_FALLBACK_MANIFEST = {
@@ -233,6 +234,11 @@ function applyChromeI18n() {
     configurationShortcut.textContent = t('config.title');
     configurationShortcut.title = t('config.title');
     configurationShortcut.setAttribute('aria-label', t('config.title'));
+  }
+  if (personalizationShortcut) {
+    personalizationShortcut.textContent = t('personalization.title');
+    personalizationShortcut.title = t('personalization.title');
+    personalizationShortcut.setAttribute('aria-label', t('personalization.title'));
   }
 }
 
@@ -567,10 +573,12 @@ const state = {
   backendDiscovery: null,
   modelAnalysis: null,
   translationConfig: null,
+  markdownStyleType: 'paragraph',
 };
 
 const pageRoot = document.getElementById('page-root');
 const configurationShortcut = document.getElementById('configuration-shortcut');
+const personalizationShortcut = document.getElementById('personalization-shortcut');
 const navbar = document.getElementById('navbar');
 
 function readJson(key, fallback) {
@@ -1645,6 +1653,7 @@ function goTo(id, opts = {}) {
   renderNavbar();
   if (id === 'library') renderLibrary(opts.tab || state.libraryTab);
   else if (id === 'configuration') renderConfiguration(opts.section || 'general');
+  else if (id === 'personalization') renderPersonalization(opts.type || state.markdownStyleType || 'paragraph');
   else renderChat();
 }
 
@@ -1658,6 +1667,7 @@ document.getElementById('btn-max').addEventListener('click', () => invoke('windo
 
 document.getElementById('model-status').addEventListener('click', () => goTo('configuration', { section: 'models' }));
 configurationShortcut?.addEventListener('click', () => goTo('configuration', { section: 'general' }));
+personalizationShortcut?.addEventListener('click', () => goTo('personalization')); 
 
 /* ===================================================================
    Chat
@@ -4892,6 +4902,166 @@ function renderUiConfig() {
   });
 }
 
+
+/* ===================================================================
+   Markdown personalization
+=================================================================== */
+
+const MARKDOWN_STYLE_TOKENS = [
+  'text', 'text-dim', 'text-faint', 'magenta', 'violet', 'violet-2',
+  'line', 'panel', 'panel-2', 'void', 'ok', 'danger',
+];
+const MARKDOWN_NONE = 'none';
+const MARKDOWN_STYLE_TYPES = [
+  { id:'paragraph', labelKey:'personalization.markdown.paragraph', selector:'.nv-markdown-surface p' },
+  { id:'h1', labelKey:'personalization.markdown.h1', selector:'.nv-markdown-surface h1' },
+  { id:'h2', labelKey:'personalization.markdown.h2', selector:'.nv-markdown-surface h2' },
+  { id:'h3', labelKey:'personalization.markdown.h3', selector:'.nv-markdown-surface h3' },
+  { id:'h4', labelKey:'personalization.markdown.h4', selector:'.nv-markdown-surface h4' },
+  { id:'h5', labelKey:'personalization.markdown.h5', selector:'.nv-markdown-surface h5' },
+  { id:'h6', labelKey:'personalization.markdown.h6', selector:'.nv-markdown-surface h6' },
+  { id:'strong', labelKey:'personalization.markdown.bold', selector:'.nv-markdown-surface strong' },
+  { id:'emphasis', labelKey:'personalization.markdown.italic', selector:'.nv-markdown-surface em' },
+  { id:'strike', labelKey:'personalization.markdown.strike', selector:'.nv-markdown-surface del' },
+  { id:'link', labelKey:'personalization.markdown.link', selector:'.nv-markdown-surface a' },
+  { id:'inlineCode', labelKey:'personalization.markdown.inlineCode', selector:'.nv-markdown-surface :not(pre) > code' },
+  { id:'codeBlock', labelKey:'personalization.markdown.codeBlock', selector:'.nv-markdown-surface pre' },
+  { id:'quote', labelKey:'personalization.markdown.quote', selector:'.nv-markdown-surface blockquote' },
+  { id:'unorderedList', labelKey:'personalization.markdown.unorderedList', selector:'.nv-markdown-surface ul' },
+  { id:'orderedList', labelKey:'personalization.markdown.orderedList', selector:'.nv-markdown-surface ol' },
+  { id:'listItem', labelKey:'personalization.markdown.listItem', selector:'.nv-markdown-surface li' },
+  { id:'rule', labelKey:'personalization.markdown.rule', selector:'.nv-markdown-surface hr' },
+  { id:'table', labelKey:'personalization.markdown.table', selector:'.nv-markdown-surface table' },
+  { id:'tableHeader', labelKey:'personalization.markdown.tableHeader', selector:'.nv-markdown-surface th' },
+  { id:'tableCell', labelKey:'personalization.markdown.tableCell', selector:'.nv-markdown-surface td' },
+];
+const DEFAULT_MARKDOWN_STYLES = {
+  paragraph:{ color:'text', background:'none', border:'none', fontSize:14, fontWeight:400, fontStyle:'normal', lineHeight:1.75, radius:0, paddingY:0, paddingX:0, marginY:7 },
+  h1:{ color:'magenta', background:'none', border:'none', fontSize:24, fontWeight:800, fontStyle:'normal', lineHeight:1.25, radius:0, paddingY:0, paddingX:0, marginY:14 },
+  h2:{ color:'violet-2', background:'none', border:'none', fontSize:21, fontWeight:800, fontStyle:'normal', lineHeight:1.3, radius:0, paddingY:0, paddingX:0, marginY:12 },
+  h3:{ color:'text', background:'none', border:'none', fontSize:18, fontWeight:750, fontStyle:'normal', lineHeight:1.35, radius:0, paddingY:0, paddingX:0, marginY:10 },
+  h4:{ color:'text', background:'none', border:'none', fontSize:16, fontWeight:700, fontStyle:'normal', lineHeight:1.4, radius:0, paddingY:0, paddingX:0, marginY:9 },
+  h5:{ color:'text-dim', background:'none', border:'none', fontSize:14, fontWeight:700, fontStyle:'normal', lineHeight:1.45, radius:0, paddingY:0, paddingX:0, marginY:8 },
+  h6:{ color:'text-faint', background:'none', border:'none', fontSize:12, fontWeight:800, fontStyle:'normal', lineHeight:1.45, radius:0, paddingY:0, paddingX:0, marginY:8 },
+  strong:{ color:'text', background:'none', border:'none', fontSize:0, fontWeight:800, fontStyle:'normal', lineHeight:0, radius:0, paddingY:0, paddingX:0, marginY:0 },
+  emphasis:{ color:'text-dim', background:'none', border:'none', fontSize:0, fontWeight:400, fontStyle:'italic', lineHeight:0, radius:0, paddingY:0, paddingX:0, marginY:0 },
+  strike:{ color:'text-faint', background:'none', border:'none', fontSize:0, fontWeight:400, fontStyle:'normal', lineHeight:0, radius:0, paddingY:0, paddingX:0, marginY:0 },
+  link:{ color:'magenta', background:'none', border:'none', fontSize:0, fontWeight:650, fontStyle:'normal', lineHeight:0, radius:0, paddingY:0, paddingX:0, marginY:0 },
+  inlineCode:{ color:'magenta', background:'panel-2', border:'line', fontSize:13, fontWeight:600, fontStyle:'normal', lineHeight:1.55, radius:5, paddingY:2, paddingX:5, marginY:0 },
+  codeBlock:{ color:'text', background:'void', border:'line', fontSize:12, fontWeight:400, fontStyle:'normal', lineHeight:1.65, radius:10, paddingY:12, paddingX:14, marginY:10 },
+  quote:{ color:'text-dim', background:'panel-2', border:'violet-2', fontSize:14, fontWeight:400, fontStyle:'italic', lineHeight:1.7, radius:8, paddingY:10, paddingX:13, marginY:10 },
+  unorderedList:{ color:'text', background:'none', border:'none', fontSize:14, fontWeight:400, fontStyle:'normal', lineHeight:1.7, radius:0, paddingY:0, paddingX:0, marginY:8 },
+  orderedList:{ color:'text', background:'none', border:'none', fontSize:14, fontWeight:400, fontStyle:'normal', lineHeight:1.7, radius:0, paddingY:0, paddingX:0, marginY:8 },
+  listItem:{ color:'text', background:'none', border:'none', fontSize:14, fontWeight:400, fontStyle:'normal', lineHeight:1.7, radius:0, paddingY:0, paddingX:0, marginY:2 },
+  rule:{ color:'line', background:'none', border:'none', fontSize:1, fontWeight:400, fontStyle:'normal', lineHeight:1, radius:0, paddingY:0, paddingX:0, marginY:14 },
+  table:{ color:'text', background:'panel', border:'line', fontSize:13, fontWeight:400, fontStyle:'normal', lineHeight:1.55, radius:9, paddingY:0, paddingX:0, marginY:10 },
+  tableHeader:{ color:'text', background:'panel-2', border:'line', fontSize:12, fontWeight:800, fontStyle:'normal', lineHeight:1.5, radius:0, paddingY:8, paddingX:10, marginY:0 },
+  tableCell:{ color:'text-dim', background:'none', border:'line', fontSize:12, fontWeight:400, fontStyle:'normal', lineHeight:1.55, radius:0, paddingY:8, paddingX:10, marginY:0 },
+};
+
+function markdownTokenCss(token, fallback = 'text') {
+  const safe = MARKDOWN_STYLE_TOKENS.includes(token) ? token : fallback;
+  return `var(--${safe})`;
+}
+function normalizeMarkdownStyle(id, input = {}) {
+  const base = DEFAULT_MARKDOWN_STYLES[id] || DEFAULT_MARKDOWN_STYLES.paragraph;
+  const n = (value, fallback, min, max) => Math.min(max, Math.max(min, Number.isFinite(Number(value)) ? Number(value) : fallback));
+  const inheritsTypography = ['strong','emphasis','strike','link'].includes(id);
+  return {
+    color: MARKDOWN_STYLE_TOKENS.includes(input.color) ? input.color : base.color,
+    background: input.background === MARKDOWN_NONE || MARKDOWN_STYLE_TOKENS.includes(input.background) ? input.background : base.background,
+    border: input.border === MARKDOWN_NONE || MARKDOWN_STYLE_TOKENS.includes(input.border) ? input.border : base.border,
+    fontSize: n(input.fontSize, base.fontSize, inheritsTypography ? 0 : 8, 48),
+    fontWeight: n(input.fontWeight, base.fontWeight, 300, 900),
+    fontStyle: input.fontStyle === 'italic' ? 'italic' : 'normal',
+    lineHeight: n(input.lineHeight, base.lineHeight, inheritsTypography ? 0 : 1, 2.5),
+    radius: n(input.radius, base.radius, 0, 28),
+    paddingY: n(input.paddingY, base.paddingY, 0, 24),
+    paddingX: n(input.paddingX, base.paddingX, 0, 32),
+    marginY: n(input.marginY, base.marginY, 0, 32),
+  };
+}
+function getMarkdownPersonalization() {
+  const saved = readJson(STORAGE.markdownStyles, {});
+  return Object.fromEntries(MARKDOWN_STYLE_TYPES.map(type => [type.id, normalizeMarkdownStyle(type.id, saved?.[type.id] || {})]));
+}
+function saveMarkdownPersonalization(styles) {
+  writeJson(STORAGE.markdownStyles, Object.fromEntries(MARKDOWN_STYLE_TYPES.map(type => [type.id, normalizeMarkdownStyle(type.id, styles?.[type.id] || {})])));
+  applyMarkdownPersonalization();
+}
+function markdownRule(type, style) {
+  const background = style.background === MARKDOWN_NONE ? 'transparent' : markdownTokenCss(style.background, 'panel');
+  const border = style.border === MARKDOWN_NONE ? 'none' : `1px solid ${markdownTokenCss(style.border, 'line')}`;
+  const base = `color:${markdownTokenCss(style.color)};font-size:${style.fontSize === 0 ? 'inherit' : `${style.fontSize}px`};font-weight:${style.fontWeight};font-style:${style.fontStyle};line-height:${style.lineHeight === 0 ? 'inherit' : style.lineHeight};background:${background};border:${border};border-radius:${style.radius}px;padding:${style.paddingY}px ${style.paddingX}px;margin-top:${style.marginY}px;margin-bottom:${style.marginY}px;`;
+  if (type.id === 'quote') return `${type.selector}{${base}border-left:${style.border === MARKDOWN_NONE ? '3px solid transparent' : `3px solid ${markdownTokenCss(style.border,'violet-2')}`};}`;
+  if (type.id === 'rule') return `${type.selector}{height:0;border:0;border-top:1px solid ${markdownTokenCss(style.color,'line')};margin:${style.marginY}px 0;}`;
+  if (type.id === 'link') return `${type.selector}{${base}text-decoration:underline;text-underline-offset:3px;}`;
+  if (type.id === 'strike') return `${type.selector}{${base}text-decoration:line-through;}`;
+  if (type.id === 'unorderedList' || type.id === 'orderedList') return `${type.selector}{${base}padding-left:${Math.max(22, style.paddingX + 22)}px;}`;
+  return `${type.selector}{${base}}`;
+}
+function applyMarkdownPersonalization(styles = getMarkdownPersonalization()) {
+  let node = document.getElementById('nv-markdown-personalization-style');
+  if (!node) { node = document.createElement('style'); node.id = 'nv-markdown-personalization-style'; document.head.append(node); }
+  node.textContent = MARKDOWN_STYLE_TYPES.map(type => markdownRule(type, styles[type.id])).join('\n') + `\n.nv-markdown-surface ul>li::marker,.nv-markdown-surface ol>li::marker{color:${markdownTokenCss(styles.listItem.color)}}`;
+}
+function markdownColorOptions(value, allowNone = false) {
+  const options = allowNone ? [`<option value="none" ${value === 'none' ? 'selected' : ''}>${escapeHtml(t('personalization.none'))}</option>`] : [];
+  for (const token of MARKDOWN_STYLE_TOKENS) options.push(`<option value="${token}" ${value === token ? 'selected' : ''}>${escapeHtml(t(`personalization.token.${token}`))}</option>`);
+  return options.join('');
+}
+function markdownPreviewSample() {
+  return `# ${t('personalization.preview.h1')}\n## ${t('personalization.preview.h2')}\n### ${t('personalization.preview.h3')}\n\n${t('personalization.preview.paragraph')} **${t('personalization.preview.bold')}**, *${t('personalization.preview.italic')}*, ~~${t('personalization.preview.strike')}~~ ${t('personalization.preview.and')} [${t('personalization.preview.link')}](https://example.com).\n\n> ${t('personalization.preview.quote')}\n\n- ${t('personalization.preview.listOne')}\n- ${t('personalization.preview.listTwo')}\n\n1. ${t('personalization.preview.orderedOne')}\n2. ${t('personalization.preview.orderedTwo')}\n\nInline: \`const mood = "NastyVerse";\`\n\n\`\`\`js\nfunction hello(name) {\n  return \`Hello \${name}\`;\n}\n\`\`\`\n\n---\n\n| ${t('personalization.preview.tableA')} | ${t('personalization.preview.tableB')} |\n| --- | --- |\n| ChatML | 32K |\n| Mistral | 128K |`;
+}
+function renderPersonalization(typeId = 'paragraph') {
+  state.currentPage = 'personalization';
+  state.markdownStyleType = MARKDOWN_STYLE_TYPES.some(type => type.id === typeId) ? typeId : 'paragraph';
+  renderNavbar();
+  const styles = getMarkdownPersonalization();
+  const activeType = MARKDOWN_STYLE_TYPES.find(type => type.id === state.markdownStyleType) || MARKDOWN_STYLE_TYPES[0];
+  const style = styles[activeType.id];
+  const inheritsTypography = ['strong','emphasis','strike','link'].includes(activeType.id);
+  pageRoot.innerHTML = `<div class="personalization-page">
+    <div class="personalization-head"><div><h1>${escapeHtml(t('personalization.title'))}</h1><p>${escapeHtml(t('personalization.desc'))}</p></div><button class="btn btn-ghost" id="markdown-reset-all">${escapeHtml(t('personalization.resetAll'))}</button></div>
+    <div class="personalization-layout">
+      <aside class="personalization-elements">${MARKDOWN_STYLE_TYPES.map(type => `<button class="personalization-element ${type.id === activeType.id ? 'active' : ''}" data-md-type="${type.id}">${escapeHtml(t(type.labelKey))}</button>`).join('')}</aside>
+      <section class="personalization-editor">
+        <div class="personalization-editor-head"><div><span>${escapeHtml(t('personalization.editing'))}</span><h2>${escapeHtml(t(activeType.labelKey))}</h2></div><button class="btn btn-ghost btn-small" id="markdown-reset-current">${escapeHtml(t('personalization.resetCurrent'))}</button></div>
+        <div class="markdown-controls">
+          <label><span>${escapeHtml(t('personalization.color'))}</span><select data-md-field="color">${markdownColorOptions(style.color)}</select></label>
+          <label><span>${escapeHtml(t('personalization.background'))}</span><select data-md-field="background">${markdownColorOptions(style.background, true)}</select></label>
+          <label><span>${escapeHtml(t('personalization.border'))}</span><select data-md-field="border">${markdownColorOptions(style.border, true)}</select></label>
+          <label><span>${escapeHtml(t('personalization.size'))}${inheritsTypography ? ` <small>${escapeHtml(t('personalization.inheritHint'))}</small>` : ''}</span><input data-md-field="fontSize" type="number" min="${inheritsTypography ? 0 : 8}" max="48" step="1" value="${style.fontSize}"></label>
+          <label><span>${escapeHtml(t('personalization.weight'))}</span><select data-md-field="fontWeight">${[300,400,500,600,650,700,750,800,900].map(v => `<option value="${v}" ${Number(style.fontWeight)===v?'selected':''}>${v}</option>`).join('')}</select></label>
+          <label><span>${escapeHtml(t('personalization.style'))}</span><select data-md-field="fontStyle"><option value="normal" ${style.fontStyle==='normal'?'selected':''}>${escapeHtml(t('personalization.style.normal'))}</option><option value="italic" ${style.fontStyle==='italic'?'selected':''}>${escapeHtml(t('personalization.style.italic'))}</option></select></label>
+          <label><span>${escapeHtml(t('personalization.lineHeight'))}${inheritsTypography ? ` <small>${escapeHtml(t('personalization.inheritHint'))}</small>` : ''}</span><input data-md-field="lineHeight" type="number" min="${inheritsTypography ? 0 : 1}" max="2.5" step="0.05" value="${style.lineHeight}"></label>
+          <label><span>${escapeHtml(t('personalization.radius'))}</span><input data-md-field="radius" type="number" min="0" max="28" step="1" value="${style.radius}"></label>
+          <label><span>${escapeHtml(t('personalization.paddingY'))}</span><input data-md-field="paddingY" type="number" min="0" max="24" step="1" value="${style.paddingY}"></label>
+          <label><span>${escapeHtml(t('personalization.paddingX'))}</span><input data-md-field="paddingX" type="number" min="0" max="32" step="1" value="${style.paddingX}"></label>
+          <label><span>${escapeHtml(t('personalization.spacing'))}</span><input data-md-field="marginY" type="number" min="0" max="32" step="1" value="${style.marginY}"></label>
+        </div>
+        <div class="personalization-preview-wrap"><div class="personalization-preview-label">${escapeHtml(t('personalization.preview'))}</div><div class="personalization-preview message-bubble nv-markdown-surface" id="markdown-preview">${typeof nvMarkdown === 'function' ? nvMarkdown(markdownPreviewSample()) : ''}</div></div>
+      </section>
+    </div>
+  </div>`;
+  pageRoot.querySelectorAll('[data-md-type]').forEach(button => button.addEventListener('click', () => renderPersonalization(button.dataset.mdType)));
+  const preview = document.getElementById('markdown-preview');
+  const commit = () => {
+    const next = getMarkdownPersonalization();
+    const current = { ...next[activeType.id] };
+    pageRoot.querySelectorAll('[data-md-field]').forEach(input => { current[input.dataset.mdField] = ['fontSize','fontWeight','lineHeight','radius','paddingY','paddingX','marginY'].includes(input.dataset.mdField) ? Number(input.value) : input.value; });
+    next[activeType.id] = normalizeMarkdownStyle(activeType.id, current);
+    saveMarkdownPersonalization(next);
+    if (preview) preview.innerHTML = nvMarkdown(markdownPreviewSample());
+  };
+  pageRoot.querySelectorAll('[data-md-field]').forEach(input => input.addEventListener('input', commit));
+  document.getElementById('markdown-reset-current').addEventListener('click', () => {
+    const next = getMarkdownPersonalization(); next[activeType.id] = { ...DEFAULT_MARKDOWN_STYLES[activeType.id] }; saveMarkdownPersonalization(next); renderPersonalization(activeType.id);
+  });
+  document.getElementById('markdown-reset-all').addEventListener('click', () => { localStorage.removeItem(STORAGE.markdownStyles); applyMarkdownPersonalization(); renderPersonalization(activeType.id); });
+  applyMarkdownPersonalization(styles);
+}
+
 /* ===================================================================
    Model status
 =================================================================== */
@@ -4933,6 +5103,7 @@ async function bootstrap() {
   applyAccent();
   applyUiSettings();
   await initI18n();
+  applyMarkdownPersonalization();
   await loadContextPresetFactory();
   await loadInstructionPresetFactory();
   try { state.backendConfig = await invoke('load_backend_config'); } catch (error) { console.warn('[backend] Unable to load saved backend configuration.', error); }

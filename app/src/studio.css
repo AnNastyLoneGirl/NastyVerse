@@ -17,3 +17,25 @@
 .nv-workspace{grid-template-rows:minmax(0,1fr);overflow:hidden}.nv-chat-main{min-height:0;overflow:hidden}.nv-chat-head,.nv-chat-toolbar,.nv-compose-area,.nv-preview-note{flex-shrink:0}.nv-compose-area>.nv-media-strip{max-height:145px;overflow:auto}
 
 .nv-translation-footer{align-items:center;flex-wrap:wrap}.nv-translation-footer .nv-spacer{flex:1 1 auto}
+
+
+/* Markdown message renderer: visual structure only. User-customizable values are
+   injected by app.js using shared design-token names, never by mutating message text. */
+.nv-markdown-surface{min-width:0}
+.nv-markdown-surface>:first-child{margin-top:0!important}
+.nv-markdown-surface>:last-child{margin-bottom:0!important}
+.nv-markdown-surface h1,.nv-markdown-surface h2,.nv-markdown-surface h3,.nv-markdown-surface h4,.nv-markdown-surface h5,.nv-markdown-surface h6{overflow-wrap:anywhere}
+.nv-markdown-surface pre{display:block;max-width:100%;overflow:auto;white-space:pre;tab-size:2;font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+.nv-markdown-surface pre code{font:inherit;color:inherit;background:transparent;border:0;padding:0;margin:0}
+.nv-markdown-surface :not(pre)>code{font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;white-space:break-spaces}
+.nv-markdown-surface blockquote{quotes:none}
+.nv-markdown-surface ul,.nv-markdown-surface ol{list-style-position:outside}
+.nv-markdown-surface li+li{margin-top:.2em}
+.nv-markdown-surface a{overflow-wrap:anywhere}
+.nv-markdown-surface a:hover{filter:brightness(1.15)}
+.nv-md-image-link{display:inline-flex;align-items:center;gap:5px}
+.nv-md-table-wrap{max-width:100%;overflow:auto;margin:10px 0;border-radius:9px}
+.nv-markdown-surface table{width:100%;border-collapse:separate;border-spacing:0;overflow:hidden}
+.nv-markdown-surface th,.nv-markdown-surface td{text-align:left;vertical-align:top}
+.nv-markdown-surface th+th,.nv-markdown-surface td+td{border-left-width:0!important}
+.nv-markdown-surface tbody tr+tr td{border-top-width:0!important}

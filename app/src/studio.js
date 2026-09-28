@@ -156,11 +156,77 @@ function nvBuildChat(character, history, params) {
   }
   return assemble();
 }
+function nvMarkdownSafeUrl(url) {
+  const value = String(url || '').trim().replace(/&amp;/g, '&');
+  if (/^(https?:|mailto:)/i.test(value) || value.startsWith('#')) return value;
+  return '';
+}
+function nvMarkdownInline(content) {
+  let rendered = nvEscape(String(content ?? ''));
+  const protectedParts = [];
+  const hold = html => { const key = `\u0002${protectedParts.length}\u0002`; protectedParts.push(html); return key; };
+  rendered = rendered.replace(/`([^`\n]+)`/g, (_, code) => hold(`<code>${code}</code>`));
+  rendered = rendered.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;[^&]*?&quot;)?\)/g, (_, alt, href) => {
+    const safe = nvMarkdownSafeUrl(href); if (!safe) return `![${alt}](${href})`;
+    return hold(`<a class="nv-md-image-link" href="${nvEscape(safe)}" target="_blank" rel="noopener noreferrer" title="${nvEscape(alt)}">🖼 ${alt || nvText('Image','Image')}</a>`);
+  });
+  rendered = rendered.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+&quot;[^&]*?&quot;)?\)/g, (_, label, href) => {
+    const safe = nvMarkdownSafeUrl(href); if (!safe) return `[${label}](${href})`;
+    return hold(`<a href="${nvEscape(safe)}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+  });
+  rendered = rendered.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
+    .replace(/~~([^~\n]+)~~/g, '<del>$1</del>')
+    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>')
+    .replace(/(^|[^_])_([^_\n]+)_(?!_)/g, '$1<em>$2</em>');
+  return rendered.replace(/\u0002(\d+)\u0002/g, (_, i) => protectedParts[Number(i)] || '');
+}
+function nvMarkdownTableCells(line) {
+  let value = String(line || '').trim();
+  if (value.startsWith('|')) value = value.slice(1);
+  if (value.endsWith('|')) value = value.slice(0, -1);
+  return value.split('|').map(cell => cell.trim());
+}
 function nvMarkdown(content) {
-  const blocks = [];
-  let rendered = nvEscape(content).replace(/```[^\n]*\n([\s\S]*?)```/g, (_, code) => { const key = `\u0001${blocks.length}\u0001`; blocks.push(`<pre><code>${code}</code></pre>`); return key; });
-  rendered = rendered.replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>').replace(/\*([^*\n]+)\*/g, '<em>$1</em>').replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>').replace(/\n/g, '<br>');
-  return rendered.replace(/\u0001(\d+)\u0001/g, (_, i) => blocks[Number(i)] || '');
+  const lines = String(content ?? '').replace(/\r\n?/g, '\n').split('\n');
+  const html = [];
+  const isTableDivider = line => /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+  const isBlockStart = (line, next = '') => /^\s*```/.test(line) || /^\s{0,3}#{1,6}\s+/.test(line) || /^\s*>/.test(line) || /^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line) || /^\s*[-+*]\s+/.test(line) || /^\s*\d+[.)]\s+/.test(line) || (line.includes('|') && isTableDivider(next));
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i], next = lines[i + 1] || '';
+    if (!line.trim()) { i++; continue; }
+    const fence = line.match(/^\s*```\s*([^\s`]*)?.*$/);
+    if (fence) {
+      const language = fence[1] || ''; const code = []; i++;
+      while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) code.push(lines[i++]);
+      if (i < lines.length) i++;
+      html.push(`<pre${language ? ` data-language="${nvEscape(language)}"` : ''}><code>${nvEscape(code.join('\n'))}</code></pre>`); continue;
+    }
+    const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
+    if (heading) { const level = heading[1].length; html.push(`<h${level}>${nvMarkdownInline(heading[2])}</h${level}>`); i++; continue; }
+    if (/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)) { html.push('<hr>'); i++; continue; }
+    if (/^\s*>/.test(line)) {
+      const quote = []; while (i < lines.length && /^\s*>/.test(lines[i])) quote.push(lines[i++].replace(/^\s*>\s?/, ''));
+      html.push(`<blockquote>${quote.map(nvMarkdownInline).join('<br>')}</blockquote>`); continue;
+    }
+    if (line.includes('|') && isTableDivider(next)) {
+      const headers = nvMarkdownTableCells(line); i += 2; const rows = [];
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim()) rows.push(nvMarkdownTableCells(lines[i++]));
+      html.push(`<div class="nv-md-table-wrap"><table><thead><tr>${headers.map(cell => `<th>${nvMarkdownInline(cell)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${headers.map((_, index) => `<td>${nvMarkdownInline(row[index] || '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`); continue;
+    }
+    const unordered = line.match(/^\s*[-+*]\s+(.+)/), ordered = line.match(/^\s*\d+[.)]\s+(.+)/);
+    if (unordered || ordered) {
+      const orderedList = !!ordered, items = [];
+      const pattern = orderedList ? /^\s*\d+[.)]\s+(.+)/ : /^\s*[-+*]\s+(.+)/;
+      while (i < lines.length) { const match = lines[i].match(pattern); if (!match) break; items.push(match[1]); i++; }
+      const tag = orderedList ? 'ol' : 'ul'; html.push(`<${tag}>${items.map(item => `<li>${nvMarkdownInline(item)}</li>`).join('')}</${tag}>`); continue;
+    }
+    const paragraph = [line]; i++;
+    while (i < lines.length && lines[i].trim() && !isBlockStart(lines[i], lines[i + 1] || '')) paragraph.push(lines[i++]);
+    html.push(`<p>${paragraph.map(nvMarkdownInline).join('<br>')}</p>`);
+  }
+  return html.join('');
 }
 function nvCaptureChatScroll() {
   const scroller = document.querySelector('.messages[data-chat-session]');
@@ -234,7 +300,7 @@ function nvRenderChat(scrollSnapshot = null) {
   pageRoot.innerHTML = `<div class="nv-workspace"><aside class="nv-sidebar"><div class="nv-sidebar-head"><strong>${nvText('Conversations','Conversations')}</strong>${nvButton('new', '+', true)}</div><input id="nv-session-search" type="search" aria-label="${nvText('Rechercher une conversation','Search conversations')}" placeholder="${nvText('Retrouver une histoire…','Find a story…')}"><div class="nv-session-list">${sessions.map(s => `<button class="nv-session ${s.id === chat?.id ? 'active' : ''}" data-session="${nvEscape(s.id)}"><strong>${s.pinned ? '★ ' : ''}${nvEscape(s.title)}</strong><small>${s.targetId.startsWith('group:') ? nvText('Groupe','Group') : nvEscape(getCharacters().find(c => c.id === s.targetId)?.name || nvText('Personnage supprimé','Deleted character'))} · ${s.messages.length}</small></button>`).join('') || `<p class="nv-muted">${nvText('Vos histoires apparaîtront ici.','Your stories will appear here.')}</p>`}</div><div class="nv-sidebar-foot">${nvButton('library',nvText('Bibliothèque','Library'))}${nvButton('tools',nvText('Outils','Tools'))}</div></aside><section class="nv-chat-main">${chat ? `
     ${!TAURI ? `<div class="nv-preview-note">${nvText('Aperçu navigateur : les réponses sont simulées. Utilisez le lanceur pour votre modèle.','Browser preview: replies are simulated. Use the launcher for your model.')}</div>` : ''}
     <div class="nv-chat-toolbar"><input id="nv-message-search" type="search" value="${nvEscape(NV.search)}" placeholder="${nvText('Rechercher dans les messages…','Search messages…')}" aria-label="${nvText('Rechercher dans les messages','Search messages')}">${group ? `<select id="nv-speaker" aria-label="${nvText('Qui répond ?','Who replies?')}"><option value="">${group.mode === 'all' ? nvText('Tout le groupe','Whole group') : nvText('Tour automatique','Automatic turn')}</option>${group.members.map(id => getCharacters().find(c => c.id === id)).filter(Boolean).map(c => `<option value="${nvEscape(c.id)}">${nvEscape(c.name)}</option>`).join('')}</select>` : ''}${nvButton('bookmarks',nvText('Favoris','Bookmarks'))}${nvButton('inspect',nvText('Voir le prompt','Inspect prompt'))}${nvButton('persona',persona.name)}${nvButton('context',nvText('Contexte','Context'))}${nvButton('menu','•••')}</div>
-    <div class="messages" id="messages" data-chat-session="${nvEscape(chat.id)}" aria-live="polite">${chat.messages.map((m,index) => `<article class="message message-${m.role} ${m.hidden ? 'nv-excluded' : ''}" data-message="${nvEscape(m.id)}" ${NV.search && !nvMessageDisplayContent(m).toLocaleLowerCase().includes(NV.search.toLocaleLowerCase()) ? 'hidden' : ''}><div class="message-role">${nvEscape(m.name || (m.role === 'user' ? persona.name : character?.name || 'System'))}${m.bookmark ? ' ★' : ''}<small>${m.hidden ? nvText(' · Hors contexte',' · Excluded') : ''}</small></div><div class="message-bubble">${nvMarkdown(nvMessageDisplayContent(m))}${nvMediaMarkup(m.attachments)}</div><div class="nv-message-actions"><button data-message-action="edit">${nvText('Modifier','Edit')}</button><button data-message-action="branch">${nvText('Bifurquer','Branch')}</button><button data-message-action="bookmark" aria-label="${nvText('Marquer ce message','Bookmark message')}">☆</button><button data-message-action="more" aria-label="${nvText('Autres actions du message','More message actions')}">•••</button>${m.variants.length > 1 ? `<button data-message-action="previous" aria-label="${nvText('Variante précédente','Previous variant')}">‹</button><span>${m.variant + 1}/${m.variants.length}</span><button data-message-action="next" aria-label="${nvText('Variante suivante','Next variant')}">›</button>` : ''}${m.role === 'assistant' && index === chat.messages.length - 1 ? `<button data-message-action="regenerate">${nvText('Autre réponse','Another reply')}</button>` : ''}</div></article>`).join('')}${state.sending && NV.activeRequest?.sessionId === chat.id ? `<article class="message message-assistant"><div class="message-role">${nvEscape(NV.activeRequest.name)}</div><div id="nv-stream" class="message-bubble">${nvMarkdown(nvChatTranslationApplies('assistant') ? nvText('Écriture et traduction en cours…','Writing and translating…') : (NV.activeRequest.content || nvText('Écriture en cours…','Writing…')))}</div><details id="nv-thinking" ${NV.activeRequest.reasoning ? '' : 'hidden'}><summary>${nvText('Raisonnement du modèle','Model reasoning')}</summary><pre></pre></details></article>` : ''}</div>
+    <div class="messages" id="messages" data-chat-session="${nvEscape(chat.id)}" aria-live="polite">${chat.messages.map((m,index) => `<article class="message message-${m.role} ${m.hidden ? 'nv-excluded' : ''}" data-message="${nvEscape(m.id)}" ${NV.search && !nvMessageDisplayContent(m).toLocaleLowerCase().includes(NV.search.toLocaleLowerCase()) ? 'hidden' : ''}><div class="message-role">${nvEscape(m.name || (m.role === 'user' ? persona.name : character?.name || 'System'))}${m.bookmark ? ' ★' : ''}<small>${m.hidden ? nvText(' · Hors contexte',' · Excluded') : ''}</small></div><div class="message-bubble nv-markdown-surface">${nvMarkdown(nvMessageDisplayContent(m))}${nvMediaMarkup(m.attachments)}</div><div class="nv-message-actions"><button data-message-action="edit">${nvText('Modifier','Edit')}</button><button data-message-action="branch">${nvText('Bifurquer','Branch')}</button><button data-message-action="bookmark" aria-label="${nvText('Marquer ce message','Bookmark message')}">☆</button><button data-message-action="more" aria-label="${nvText('Autres actions du message','More message actions')}">•••</button>${m.variants.length > 1 ? `<button data-message-action="previous" aria-label="${nvText('Variante précédente','Previous variant')}">‹</button><span>${m.variant + 1}/${m.variants.length}</span><button data-message-action="next" aria-label="${nvText('Variante suivante','Next variant')}">›</button>` : ''}${m.role === 'assistant' && index === chat.messages.length - 1 ? `<button data-message-action="regenerate">${nvText('Autre réponse','Another reply')}</button>` : ''}</div></article>`).join('')}${state.sending && NV.activeRequest?.sessionId === chat.id ? `<article class="message message-assistant"><div class="message-role">${nvEscape(NV.activeRequest.name)}</div><div id="nv-stream" class="message-bubble nv-markdown-surface">${nvMarkdown(nvChatTranslationApplies('assistant') ? nvText('Écriture et traduction en cours…','Writing and translating…') : (NV.activeRequest.content || nvText('Écriture en cours…','Writing…')))}</div><details id="nv-thinking" ${NV.activeRequest.reasoning ? '' : 'hidden'}><summary>${nvText('Raisonnement du modèle','Model reasoning')}</summary><pre></pre></details></article>` : ''}</div>
     <div class="nv-compose-area"><div class="nv-quick-replies">${NV.data.replies.filter(r => r.enabled !== false).map(r => `<button class="btn btn-ghost btn-small" data-reply="${nvEscape(r.id)}">${nvEscape(r.name)}</button>`).join('')}</div>${nvMediaMarkup(chat.draftImages,true)}<form class="composer nv-composer-row" id="composer"><details class="nv-composer-menu"><summary class="nv-composer-icon" aria-label="${nvText('Outils du message','Message tools')}" title="${nvText('Outils du message','Message tools')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.64 5.64l2.12 2.12M16.24 16.24l2.12 2.12M18.36 5.64l-2.12 2.12M7.76 16.24l-2.12 2.12M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/></svg></summary><div class="nv-composer-popover"><button type="button" data-nv="illustrate">${nvText('Illustrer','Illustrate')}</button></div></details><button type="button" class="nv-composer-icon" data-nv="attach" aria-label="${nvText('Joindre une image','Attach image')}" title="${nvText('Joindre une image','Attach image')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button><textarea id="composer-input" rows="1" aria-label="${nvText('Votre message','Your message')}" placeholder="${nvText('Écrivez votre message… (/ pour les commandes)','Write a message… (/ for commands)')}" ${state.sending ? 'disabled' : ''}>${nvEscape(chat.draft || '')}</textarea><button type="button" class="nv-composer-icon" data-nv="voice" aria-label="${nvText('Dicter','Dictate')}" title="${nvText('Dicter','Dictate')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/><path d="M18 11a6 6 0 0 1-12 0M12 17v4M9 21h6"/></svg></button>${state.sending ? `<button type="button" class="composer-send" data-nv="stop">${nvText('Arrêter','Stop')}</button>` : `<button type="button" class="composer-send" data-nv="continue">${nvText('Continuer','Continue')}</button>`}<button type="submit" class="composer-send" ${state.sending ? 'disabled' : ''}>${nvText('Envoyer','Send')}</button></form></div>` : `<div class="chat-empty"><span class="nv-eyebrow">NASTYVERSE STUDIO</span><h2>${nvText('Une nouvelle histoire commence ici.','A new story starts here.')}</h2><p>${nvText('Choisissez un personnage, créez votre persona et entrez dans votre univers.','Choose a character, create your persona and enter your world.')}</p>${nvButton('new',nvText('Commencer une conversation','Start a conversation'),true)}${nvButton('library',nvText('Créer ou importer un personnage','Create or import a character'))}</div>`}</section></div>`;
   nvBind(pageRoot, { new: nvNewChat, library: () => goTo('library'), tools: () => goTo('configuration',{section:'studio'}), persona: () => nvChoosePersona(chat), context: () => nvContextEditor(chat), menu: () => nvChatMenu(chat), inspect: () => nvInspect(chat,character), bookmarks: () => nvBookmarks(chat), continue: () => nvGenerate(chat,'continue'), stop: nvStop, voice: () => nvDictate(chat) });
   pageRoot.querySelectorAll('[data-session]').forEach(b => b.onclick = () => nvSelectSession(NV.data.sessions.find(s => s.id === b.dataset.session)));

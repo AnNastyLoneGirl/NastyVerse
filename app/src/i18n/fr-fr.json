@@ -544,6 +544,11 @@
   "personalization.messages.noConversation": "Ouvrez une discussion avant de créer des réglages de messages propres à celle-ci.",
   "personalization.messages.resetGlobal": "Réinitialiser les messages globaux",
   "personalization.messages.resetConversation": "Réinitialiser cette discussion",
-  "personalization.messages.anchorX": "Ancrage X de l’avatar",
-  "personalization.messages.anchorY": "Ancrage Y de l’avatar"
+  "personalization.messages.anchorX": "Cadrage X",
+  "personalization.messages.anchorY": "Cadrage Y",
+  "personalization.messages.avatarFraming": "Cadrage de l’avatar",
+  "personalization.messages.avatarFramingHelp": "Faites glisser l’image dans le cadre pour choisir la zone visible. Utilisez le zoom pour resserrer le cadrage.",
+  "personalization.messages.avatarFramingNoImage": "Ajoutez un avatar à cette Persona ou ce Personnage pour prévisualiser et ajuster son cadrage.",
+  "personalization.messages.zoom": "Zoom",
+  "personalization.messages.centerFrame": "Centrer le cadrage"
 }

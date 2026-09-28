@@ -1,4 +1,4 @@
-# NastyVerse application 0.2.12
+# NastyVerse application 0.2.13
 
 The application is a replaceable HTML/CSS/JavaScript payload hosted by the single Tauri launcher (0.1.12). No second Tauri crate is introduced.
 
@@ -41,3 +41,5 @@ Chat translation 0.2.10: assistant translation no longer injects an English-lang
 Message personalization 0.2.11: Personalization is split into Text and Messages. Message presentation now supports configurable maximum width, spacing, bubble padding/radius, role-name visibility, and Persona/Character avatar layout. Character replies use the speaking Character Card avatar; user messages keep the Persona identity used when the message was sent. Persona editing now supports avatar upload/removal, with the asset stored in the existing IndexedDB avatar store and included in portable backups.
 
 Message personalization 0.2.12: Messages now have two scopes: global defaults and an optional override stored on the current conversation. Avatar framing adds independent X/Y anchors for Persona and Character images (object-position only; source assets are unchanged), and the same controls are available globally or per conversation.
+
+Message personalization 0.2.13: Persona and Character avatar framing now includes an interactive crop preview. Drag the image inside the frame, adjust zoom from 100–400%, fine-tune X/Y framing, or recenter it. Framing remains display-only, preserves the original avatar asset, and works in both global defaults and current-conversation overrides.

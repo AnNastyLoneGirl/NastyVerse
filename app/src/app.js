@@ -5059,6 +5059,8 @@ const DEFAULT_MESSAGE_APPEARANCE = {
   personaAvatarY: 50,
   characterAvatarX: 50,
   characterAvatarY: 50,
+  personaAvatarZoom: 100,
+  characterAvatarZoom: 100,
 };
 function normalizeMessageAppearance(input = {}) {
   const n = (value, fallback, min, max) => Math.min(max, Math.max(min, Number.isFinite(Number(value)) ? Number(value) : fallback));
@@ -5087,6 +5089,8 @@ function normalizeMessageAppearance(input = {}) {
     personaAvatarY: n(input.personaAvatarY, DEFAULT_MESSAGE_APPEARANCE.personaAvatarY, 0, 100),
     characterAvatarX: n(input.characterAvatarX, DEFAULT_MESSAGE_APPEARANCE.characterAvatarX, 0, 100),
     characterAvatarY: n(input.characterAvatarY, DEFAULT_MESSAGE_APPEARANCE.characterAvatarY, 0, 100),
+    personaAvatarZoom: n(input.personaAvatarZoom, DEFAULT_MESSAGE_APPEARANCE.personaAvatarZoom, 100, 400),
+    characterAvatarZoom: n(input.characterAvatarZoom, DEFAULT_MESSAGE_APPEARANCE.characterAvatarZoom, 100, 400),
   };
 }
 function getMessagePersonalization() {
@@ -5124,6 +5128,14 @@ async function saveConversationMessagePersonalization(settings, enabled = true, 
   applyMessagePersonalization(enabled ? normalized : getMessagePersonalization());
   return normalized;
 }
+function messageAvatarTransform(x, y, zoomPercent) {
+  const zoom = Math.max(1, Number(zoomPercent || 100) / 100);
+  if (zoom <= 1.0001) return 'scale(1)';
+  const maxPan = ((zoom - 1) / (2 * zoom)) * 100;
+  const translateX = ((50 - Number(x || 50)) / 50) * maxPan;
+  const translateY = ((50 - Number(y || 50)) / 50) * maxPan;
+  return `scale(${zoom.toFixed(4)}) translate(${translateX.toFixed(4)}%, ${translateY.toFixed(4)}%)`;
+}
 function applyMessagePersonalization(settings = getMessagePersonalization()) {
   const normalized = normalizeMessageAppearance(settings);
   const root = document.documentElement;
@@ -5141,6 +5153,8 @@ function applyMessagePersonalization(settings = getMessagePersonalization()) {
   root.style.setProperty('--nv-persona-avatar-y', `${normalized.personaAvatarY}%`);
   root.style.setProperty('--nv-character-avatar-x', `${normalized.characterAvatarX}%`);
   root.style.setProperty('--nv-character-avatar-y', `${normalized.characterAvatarY}%`);
+  root.style.setProperty('--nv-persona-avatar-transform', messageAvatarTransform(normalized.personaAvatarX, normalized.personaAvatarY, normalized.personaAvatarZoom));
+  root.style.setProperty('--nv-character-avatar-transform', messageAvatarTransform(normalized.characterAvatarX, normalized.characterAvatarY, normalized.characterAvatarZoom));
   root.dataset.nvMessageNames = normalized.showNames ? 'show' : 'hide';
   return normalized;
 }
@@ -5169,8 +5183,30 @@ function messagePersonalizationPreview(settings) {
   return `<div class="messages nv-personalization-message-preview">${item('assistant', characterName, characterAvatar, settings.characterAvatarSide, settings.characterAlign, settings.showCharacterAvatar, `<p>${escapeHtml(t('personalization.messages.preview.assistant'))}</p>`)}${item('user', personaName, personaAvatar, settings.personaAvatarSide, settings.personaAlign, settings.showPersonaAvatar, `<p>${escapeHtml(t('personalization.messages.preview.userMessage'))}</p>`)}</div>`;
 }
 function messageOutputSuffix(key) {
-  return ['maxWidth','avatarRadius','personaAvatarX','personaAvatarY','characterAvatarX','characterAvatarY'].includes(key) ? '%' : 'px';
+  return ['maxWidth','avatarRadius','personaAvatarX','personaAvatarY','characterAvatarX','characterAvatarY','personaAvatarZoom','characterAvatarZoom'].includes(key) ? '%' : 'px';
 }
+function messageAvatarCropMarkup(role, settings, source, name, disabled = false) {
+  const prefix = role === 'persona' ? 'persona' : 'character';
+  const x = settings[`${prefix}AvatarX`];
+  const y = settings[`${prefix}AvatarY`];
+  const zoom = settings[`${prefix}AvatarZoom`];
+  const transform = messageAvatarTransform(x, y, zoom);
+  const disabledAttr = disabled ? 'disabled' : '';
+  const visual = source
+    ? `<img src="${escapeHtml(source)}" alt="" style="object-position:${x}% ${y}%;transform:${transform}">`
+    : `<div class="message-avatar-crop-fallback">${escapeHtml((name || '?').slice(0,1).toUpperCase())}</div>`;
+  return `<div class="message-avatar-crop-editor ${disabled ? 'is-disabled' : ''}" data-avatar-crop-role="${prefix}">
+    <div class="message-avatar-crop-stage ${source ? 'has-image' : 'no-image'}" data-avatar-crop-stage="${prefix}" aria-label="${escapeHtml(t('personalization.messages.avatarFraming'))}" style="border-radius:${settings.avatarRadius}%">${visual}<div class="message-avatar-crop-reticle" aria-hidden="true"></div></div>
+    <div class="message-avatar-crop-copy"><strong>${escapeHtml(t('personalization.messages.avatarFraming'))}</strong><small>${escapeHtml(source ? t('personalization.messages.avatarFramingHelp') : t('personalization.messages.avatarFramingNoImage'))}</small></div>
+    <div class="message-avatar-crop-controls">
+      <label><span>${escapeHtml(t('personalization.messages.zoom'))}</span><input data-message-style="${prefix}AvatarZoom" type="range" min="100" max="400" step="1" value="${zoom}" ${disabledAttr}><output data-output="${prefix}AvatarZoom">${zoom}%</output></label>
+      <label><span>${escapeHtml(t('personalization.messages.anchorX'))}</span><input data-message-style="${prefix}AvatarX" type="range" min="0" max="100" step="1" value="${x}" ${disabledAttr}><output data-output="${prefix}AvatarX">${x}%</output></label>
+      <label><span>${escapeHtml(t('personalization.messages.anchorY'))}</span><input data-message-style="${prefix}AvatarY" type="range" min="0" max="100" step="1" value="${y}" ${disabledAttr}><output data-output="${prefix}AvatarY">${y}%</output></label>
+    </div>
+    <button type="button" class="btn btn-ghost btn-small message-avatar-center" data-avatar-center="${prefix}" ${disabledAttr}>${escapeHtml(t('personalization.messages.centerFrame'))}</button>
+  </div>`;
+}
+
 function renderMessagePersonalization(scope = state.messagePersonalizationScope || 'global') {
   state.currentPage = 'personalization';
   state.personalizationSection = 'messages';
@@ -5187,6 +5223,10 @@ function renderMessagePersonalization(scope = state.messagePersonalizationScope 
   const disabledAttr = disabled ? 'disabled' : '';
   const scopeTitle = isConversation ? t('personalization.messages.currentConversation') : t('personalization.messages.globalDefaults');
   const resetLabel = isConversation ? t('personalization.messages.resetConversation') : t('personalization.messages.resetGlobal');
+  const cropPersona = typeof nvPersona === 'function' ? nvPersona(chat) : null;
+  const cropCharacter = typeof activeCharacter === 'function' ? activeCharacter() : null;
+  const cropPersonaSource = resolvedAvatarSource(cropPersona);
+  const cropCharacterSource = resolvedAvatarSource(cropCharacter);
 
   pageRoot.innerHTML = `<div class="personalization-page">
     <div class="personalization-head"><div><h1>${escapeHtml(t('personalization.title'))}</h1><p>${escapeHtml(t('personalization.messages.desc'))}</p></div><button class="btn btn-ghost" id="message-style-reset">${escapeHtml(resetLabel)}</button></div>
@@ -5218,8 +5258,8 @@ function renderMessagePersonalization(scope = state.messagePersonalizationScope 
           </div>
         </div>
         <div class="personalization-subsection message-role-settings">
-          <div><h3>${escapeHtml(t('personalization.messages.character'))}</h3><label class="message-style-toggle"><span>${escapeHtml(t('personalization.messages.showAvatar'))}</span><input data-message-style="showCharacterAvatar" type="checkbox" ${s.showCharacterAvatar?'checked':''} ${disabledAttr}></label><label><span>${escapeHtml(t('personalization.messages.messageSide'))}</span>${messagePersonalizationSelect('characterAlign',s.characterAlign,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]],disabled)}</label><label><span>${escapeHtml(t('personalization.messages.avatarSide'))}</span>${messagePersonalizationSelect('characterAvatarSide',s.characterAvatarSide,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]],disabled)}</label><label><span>${escapeHtml(t('personalization.messages.anchorX'))}</span><input data-message-style="characterAvatarX" type="range" min="0" max="100" step="1" value="${s.characterAvatarX}" ${disabledAttr}><output data-output="characterAvatarX">${s.characterAvatarX}%</output></label><label><span>${escapeHtml(t('personalization.messages.anchorY'))}</span><input data-message-style="characterAvatarY" type="range" min="0" max="100" step="1" value="${s.characterAvatarY}" ${disabledAttr}><output data-output="characterAvatarY">${s.characterAvatarY}%</output></label></div>
-          <div><h3>${escapeHtml(t('personalization.messages.persona'))}</h3><label class="message-style-toggle"><span>${escapeHtml(t('personalization.messages.showAvatar'))}</span><input data-message-style="showPersonaAvatar" type="checkbox" ${s.showPersonaAvatar?'checked':''} ${disabledAttr}></label><label><span>${escapeHtml(t('personalization.messages.messageSide'))}</span>${messagePersonalizationSelect('personaAlign',s.personaAlign,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]],disabled)}</label><label><span>${escapeHtml(t('personalization.messages.avatarSide'))}</span>${messagePersonalizationSelect('personaAvatarSide',s.personaAvatarSide,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]],disabled)}</label><label><span>${escapeHtml(t('personalization.messages.anchorX'))}</span><input data-message-style="personaAvatarX" type="range" min="0" max="100" step="1" value="${s.personaAvatarX}" ${disabledAttr}><output data-output="personaAvatarX">${s.personaAvatarX}%</output></label><label><span>${escapeHtml(t('personalization.messages.anchorY'))}</span><input data-message-style="personaAvatarY" type="range" min="0" max="100" step="1" value="${s.personaAvatarY}" ${disabledAttr}><output data-output="personaAvatarY">${s.personaAvatarY}%</output></label></div>
+          <div><h3>${escapeHtml(t('personalization.messages.character'))}</h3><label class="message-style-toggle"><span>${escapeHtml(t('personalization.messages.showAvatar'))}</span><input data-message-style="showCharacterAvatar" type="checkbox" ${s.showCharacterAvatar?'checked':''} ${disabledAttr}></label><label><span>${escapeHtml(t('personalization.messages.messageSide'))}</span>${messagePersonalizationSelect('characterAlign',s.characterAlign,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]],disabled)}</label><label><span>${escapeHtml(t('personalization.messages.avatarSide'))}</span>${messagePersonalizationSelect('characterAvatarSide',s.characterAvatarSide,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]],disabled)}</label>${messageAvatarCropMarkup('character', s, cropCharacterSource, cropCharacter?.name || t('personalization.messages.preview.character'), disabled)}</div>
+          <div><h3>${escapeHtml(t('personalization.messages.persona'))}</h3><label class="message-style-toggle"><span>${escapeHtml(t('personalization.messages.showAvatar'))}</span><input data-message-style="showPersonaAvatar" type="checkbox" ${s.showPersonaAvatar?'checked':''} ${disabledAttr}></label><label><span>${escapeHtml(t('personalization.messages.messageSide'))}</span>${messagePersonalizationSelect('personaAlign',s.personaAlign,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]],disabled)}</label><label><span>${escapeHtml(t('personalization.messages.avatarSide'))}</span>${messagePersonalizationSelect('personaAvatarSide',s.personaAvatarSide,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]],disabled)}</label>${messageAvatarCropMarkup('persona', s, cropPersonaSource, cropPersona?.name || t('personalization.messages.preview.user'), disabled)}</div>
         </div>
       </section>
       <aside class="message-personalization-preview"><div class="personalization-preview-label">${escapeHtml(t('personalization.preview'))}</div><div id="message-style-preview">${messagePersonalizationPreview(s)}</div><p class="message-personalization-help">${escapeHtml(t('personalization.messages.avatarHelp'))}</p></aside>
@@ -5251,6 +5291,73 @@ function renderMessagePersonalization(scope = state.messagePersonalizationScope 
     if (preview) preview.innerHTML = messagePersonalizationPreview(saved);
   };
   pageRoot.querySelectorAll('[data-message-style]').forEach(input => input.addEventListener('input', collect));
+
+  const syncAvatarCropStage = role => {
+    const prefix = role === 'persona' ? 'persona' : 'character';
+    const stage = pageRoot.querySelector(`[data-avatar-crop-stage="${prefix}"]`);
+    const image = stage?.querySelector('img');
+    if (!stage || !image) return;
+    const xInput = pageRoot.querySelector(`[data-message-style="${prefix}AvatarX"]`);
+    const yInput = pageRoot.querySelector(`[data-message-style="${prefix}AvatarY"]`);
+    const zoomInput = pageRoot.querySelector(`[data-message-style="${prefix}AvatarZoom"]`);
+    const x = Number(xInput?.value ?? 50), y = Number(yInput?.value ?? 50), zoom = Number(zoomInput?.value ?? 100);
+    image.style.objectPosition = `${x}% ${y}%`;
+    image.style.transform = messageAvatarTransform(x, y, zoom);
+  };
+  for (const role of ['character','persona']) {
+    const prefix = role;
+    const stage = pageRoot.querySelector(`[data-avatar-crop-stage="${prefix}"]`);
+    const xInput = pageRoot.querySelector(`[data-message-style="${prefix}AvatarX"]`);
+    const yInput = pageRoot.querySelector(`[data-message-style="${prefix}AvatarY"]`);
+    const zoomInput = pageRoot.querySelector(`[data-message-style="${prefix}AvatarZoom"]`);
+    [xInput,yInput,zoomInput].filter(Boolean).forEach(input => input.addEventListener('input', () => syncAvatarCropStage(prefix)));
+    if (stage?.classList.contains('has-image') && !disabled) {
+      let dragging = false, startClientX = 0, startClientY = 0, startX = 50, startY = 50;
+      const finishDrag = event => {
+        if (!dragging) return;
+        dragging = false;
+        try { stage.releasePointerCapture?.(event.pointerId); } catch {}
+        collect();
+      };
+      stage.addEventListener('pointerdown', event => {
+        if (event.button !== 0) return;
+        dragging = true;
+        startClientX = event.clientX;
+        startClientY = event.clientY;
+        startX = Number(xInput?.value ?? 50);
+        startY = Number(yInput?.value ?? 50);
+        stage.setPointerCapture?.(event.pointerId);
+        event.preventDefault();
+      });
+      stage.addEventListener('pointermove', event => {
+        if (!dragging || !xInput || !yInput) return;
+        const rect = stage.getBoundingClientRect();
+        const nextX = Math.max(0, Math.min(100, startX - ((event.clientX - startClientX) / Math.max(1, rect.width)) * 100));
+        const nextY = Math.max(0, Math.min(100, startY - ((event.clientY - startClientY) / Math.max(1, rect.height)) * 100));
+        xInput.value = String(Math.round(nextX));
+        yInput.value = String(Math.round(nextY));
+        const xOutput = pageRoot.querySelector(`[data-output="${prefix}AvatarX"]`);
+        const yOutput = pageRoot.querySelector(`[data-output="${prefix}AvatarY"]`);
+        if (xOutput) xOutput.textContent = `${Math.round(nextX)}%`;
+        if (yOutput) yOutput.textContent = `${Math.round(nextY)}%`;
+        syncAvatarCropStage(prefix);
+      });
+      stage.addEventListener('pointerup', finishDrag);
+      stage.addEventListener('pointercancel', finishDrag);
+    }
+    pageRoot.querySelector(`[data-avatar-center="${prefix}"]`)?.addEventListener('click', async () => {
+      if (xInput) xInput.value = '50';
+      if (yInput) yInput.value = '50';
+      const xOutput = pageRoot.querySelector(`[data-output="${prefix}AvatarX"]`);
+      const yOutput = pageRoot.querySelector(`[data-output="${prefix}AvatarY"]`);
+      if (xOutput) xOutput.textContent = '50%';
+      if (yOutput) yOutput.textContent = '50%';
+      syncAvatarCropStage(prefix);
+      await collect();
+    });
+    syncAvatarCropStage(prefix);
+  }
+
   document.getElementById('message-style-reset')?.addEventListener('click', async () => {
     if (isConversation && chat) {
       delete chat.messageAppearanceOverride;

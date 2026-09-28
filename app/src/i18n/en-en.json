@@ -544,6 +544,11 @@
   "personalization.messages.noConversation": "Open a conversation before creating conversation-specific message settings.",
   "personalization.messages.resetGlobal": "Reset global messages",
   "personalization.messages.resetConversation": "Reset this conversation",
-  "personalization.messages.anchorX": "Avatar anchor X",
-  "personalization.messages.anchorY": "Avatar anchor Y"
+  "personalization.messages.anchorX": "Frame X",
+  "personalization.messages.anchorY": "Frame Y",
+  "personalization.messages.avatarFraming": "Avatar framing",
+  "personalization.messages.avatarFramingHelp": "Drag the image inside the frame to choose what stays visible. Use zoom for a tighter crop.",
+  "personalization.messages.avatarFramingNoImage": "Add an avatar to this Persona or Character to preview and adjust its framing.",
+  "personalization.messages.zoom": "Zoom",
+  "personalization.messages.centerFrame": "Center framing"
 }

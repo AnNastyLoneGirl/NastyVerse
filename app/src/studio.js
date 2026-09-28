@@ -399,8 +399,8 @@ function nvMessageRoleName(message, persona, fallbackCharacter) {
 function nvMessageArticle(message, index, chat, persona, fallbackCharacter, settings) {
   const layout = nvMessageLayout(message, persona, fallbackCharacter, settings);
   const hiddenBySearch = NV.search && !nvMessageDisplayContent(message).toLocaleLowerCase().includes(NV.search.toLocaleLowerCase());
-  const actions = `<div class="nv-message-actions"><button data-message-action="edit">${nvText('Modifier','Edit')}</button><button data-message-action="branch">${nvText('Bifurquer','Branch')}</button><button data-message-action="bookmark" aria-label="${nvText('Marquer ce message','Bookmark message')}">☆</button><button data-message-action="more" aria-label="${nvText('Autres actions du message','More message actions')}">•••</button>${message.variants.length > 1 ? `<button data-message-action="previous" aria-label="${nvText('Variante précédente','Previous variant')}">‹</button><span>${message.variant + 1}/${message.variants.length}</span><button data-message-action="next" aria-label="${nvText('Variante suivante','Next variant')}">›</button>` : ''}${message.role === 'assistant' && index === chat.messages.length - 1 ? `<button data-message-action="regenerate">${nvText('Autre réponse','Another reply')}</button>` : ''}</div>`;
-  return `<article class="message message-${message.role} nv-align-${layout.align} ${message.hidden ? 'nv-excluded' : ''}" data-message="${nvEscape(message.id)}" ${hiddenBySearch ? 'hidden' : ''}>${actions}<div class="nv-message-row nv-avatar-${layout.side} nv-avatar-v-${layout.vertical}">${layout.avatar}<div class="nv-message-body"><div class="message-role">${nvEscape(nvMessageRoleName(message, persona, fallbackCharacter))}${message.bookmark ? ' ★' : ''}<small>${message.hidden ? nvText(' · Hors contexte',' · Excluded') : ''}</small></div><div class="message-bubble nv-markdown-surface">${nvMarkdown(nvMessageDisplayContent(message))}${nvMediaMarkup(message.attachments)}</div></div></div></article>`;
+  const actions = `<div class="nv-message-actions"><button data-message-action="edit">${nvText('Modifier','Edit')}</button><button data-message-action="more" aria-label="${nvText('Autres actions du message','More message actions')}">•••</button>${message.variants.length > 1 ? `<button data-message-action="previous" aria-label="${nvText('Variante précédente','Previous variant')}">‹</button><span>${message.variant + 1}/${message.variants.length}</span><button data-message-action="next" aria-label="${nvText('Variante suivante','Next variant')}">›</button>` : ''}${message.role === 'assistant' && index === chat.messages.length - 1 ? `<button data-message-action="regenerate">${nvText('Autre réponse','Another reply')}</button>` : ''}</div>`;
+  return `<article class="message message-${message.role} nv-align-${layout.align} ${message.hidden ? 'nv-excluded' : ''}" data-message="${nvEscape(message.id)}" ${hiddenBySearch ? 'hidden' : ''}>${actions}<div class="nv-message-row nv-avatar-${layout.side} nv-avatar-v-${layout.vertical}">${layout.avatar}<div class="nv-message-body"><div class="message-role">${nvEscape(nvMessageRoleName(message, persona, fallbackCharacter))}<small>${message.hidden ? nvText(' · Hors contexte',' · Excluded') : ''}</small></div><div class="message-bubble nv-markdown-surface">${nvMarkdown(nvMessageDisplayContent(message))}${nvMediaMarkup(message.attachments)}</div></div></div></article>`;
 }
 function nvStreamingMessageArticle(chat, persona, fallbackCharacter, settings) {
   if (!(state.sending && NV.activeRequest?.sessionId === chat.id)) return '';
@@ -408,6 +408,291 @@ function nvStreamingMessageArticle(chat, persona, fallbackCharacter, settings) {
   const layout = nvMessageLayout(message, persona, fallbackCharacter, settings);
   return `<article class="message message-assistant nv-align-${layout.align}"><div class="nv-message-row nv-avatar-${layout.side} nv-avatar-v-${layout.vertical}">${layout.avatar}<div class="nv-message-body"><div class="message-role">${nvEscape(NV.activeRequest.name)}</div><div id="nv-stream" class="message-bubble nv-markdown-surface">${nvMarkdown(nvChatTranslationApplies('assistant') ? nvText('Écriture et traduction en cours…','Writing and translating…') : (NV.activeRequest.content || nvText('Écriture en cours…','Writing…')))}</div><details id="nv-thinking" ${NV.activeRequest.reasoning ? '' : 'hidden'}><summary>${nvText('Raisonnement du modèle','Model reasoning')}</summary><pre></pre></details></div></div></article>`;
 }
+
+function nvOpenTimeline(chat) {
+  if (!chat) return;
+  const sessions = NV.data.sessions.filter(session => session.targetId === chat.targetId).sort((a,b) => a.createdAt - b.createdAt || a.updatedAt - b.updatedAt);
+  const sessionById = new Map(sessions.map(session => [session.id, session]));
+  const tl = { zoom: 1, showSwipes: false, expanded: new Set(), selected: '', graph: null, ignoreClick: '', search: '' };
+  const title = chat.targetId.startsWith('group:')
+    ? (NV.data.groups.find(group => `group:${group.id}` === chat.targetId)?.name || chat.title)
+    : (getCharacters().find(character => character.id === chat.targetId)?.name || chat.title);
+  const dialog = nvDialog(`${nvText('Timeline','Timeline')} · ${title}`, `
+    <div class="nv-timeline-toolbar">
+      <button type="button" class="btn btn-ghost btn-small" data-tl="current">${nvText('Discussion actuelle','Current chat')}</button>
+      <button type="button" class="btn btn-ghost btn-small" data-tl="swipes">${nvText('Afficher les variantes','Show swipes')}</button>
+      <input type="search" data-tl-search placeholder="${nvEscape(nvText('Rechercher dans toutes les discussions…','Search all chats…'))}" aria-label="${nvEscape(nvText('Rechercher dans la timeline','Search timeline'))}">
+      <span class="nv-timeline-count" data-tl-count></span>
+      <button type="button" class="btn btn-ghost btn-small" data-tl="zoom-out" aria-label="${nvText('Dézoomer','Zoom out')}">−</button>
+      <button type="button" class="btn btn-ghost btn-small" data-tl="fit">${nvText('Ajuster','Fit')}</button>
+      <button type="button" class="btn btn-ghost btn-small" data-tl="zoom-in" aria-label="${nvText('Zoomer','Zoom in')}">+</button>
+    </div>
+    <div class="nv-timeline-layout">
+      <div class="nv-timeline-viewport" data-tl-viewport>
+        <div class="nv-timeline-space" data-tl-space><div class="nv-timeline-stage" data-tl-stage></div></div>
+        <div class="nv-timeline-tooltip" data-tl-tooltip hidden></div>
+      </div>
+      <aside class="nv-timeline-inspector" data-tl-inspector>
+        <span class="nv-eyebrow">TIMELINE</span>
+        <h3>${nvText('Naviguez dans vos branches','Navigate your branches')}</h3>
+        <p>${nvText('Cliquez sur un nœud pour voir ses occurrences. Double-cliquez pour y aller. Maintenez un nœud avec variantes pour les déplier.','Click a node to inspect its occurrences. Double-click to jump there. Hold a node with swipes to expand them.')}</p>
+      </aside>
+    </div>
+    <div class="nv-timeline-legend">
+      <span><i class="is-current"></i>${nvText('Discussion actuelle','Current chat')}</span>
+      <span><i class="is-user"></i>${nvText('Utilisateur','User')}</span>
+      <span><i class="is-assistant"></i>${nvText('Assistant','Assistant')}</span>
+      <span><i class="is-swipe"></i>${nvText('Variante','Swipe')}</span>
+    </div>`, true);
+  dialog.classList.add('nv-timeline-dialog');
+  const viewport = dialog.querySelector('[data-tl-viewport]');
+  const space = dialog.querySelector('[data-tl-space]');
+  const stage = dialog.querySelector('[data-tl-stage]');
+  const inspector = dialog.querySelector('[data-tl-inspector]');
+  const tooltip = dialog.querySelector('[data-tl-tooltip]');
+  const count = dialog.querySelector('[data-tl-count]');
+  const search = dialog.querySelector('[data-tl-search]');
+
+  const canonical = value => String(value || '').replace(/\r\n/g,'\n').trim();
+  const preview = value => canonical(value).replace(/\s+/g,' ').slice(0, 135) || nvText('(message vide)','(empty message)');
+  const termsMatch = (text, query) => {
+    const bag = String(text || '').toLocaleLowerCase();
+    const terms = String(query || '').toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
+    return !terms.length || terms.every(term => bag.includes(term));
+  };
+  const nodeCenter = node => ({ x: node.x + 88, y: node.y + 31 });
+
+  function buildGraph() {
+    const nodes = [];
+    const nodeByKey = new Map();
+    const lookup = new Map();
+    const edgeByKey = new Map();
+    sessions.forEach((session, lane) => {
+      let previous = null;
+      session.messages.forEach((message, index) => {
+        const selectedVariant = Math.max(0, Math.min(Number(message.variant) || 0, Math.max(0, (message.variants || []).length - 1)));
+        const selectedContent = canonical(message.variants?.[selectedVariant] ?? message.content);
+        const key = `${index}\u0000${message.role}\u0000${selectedContent}`;
+        let node = nodeByKey.get(key);
+        if (!node) {
+          node = { id:`n${nodes.length}`, key, depth:index, role:message.role, content:selectedContent, occurrences:[], lanes:[], hasSwipes:false, swipeCount:0, swipe:false };
+          nodes.push(node); nodeByKey.set(key,node);
+        }
+        const occurrence = { sessionId:session.id, messageId:message.id, index, variantIndex:selectedVariant, lane, isLast:index === session.messages.length - 1 };
+        node.occurrences.push(occurrence); node.lanes.push(lane);
+        node.hasSwipes ||= (message.variants?.length || 0) > 1;
+        node.swipeCount = Math.max(node.swipeCount, Math.max(0,(message.variants?.length || 1) - 1));
+        lookup.set(`${session.id}:${index}`,node.id);
+        if (previous) {
+          const edgeKey = `${previous}->${node.id}`;
+          let edge = edgeByKey.get(edgeKey);
+          if (!edge) { edge = { id:`e${edgeByKey.size}`, from:previous, to:node.id, sessions:new Set() }; edgeByKey.set(edgeKey,edge); }
+          edge.sessions.add(session.id);
+        }
+        previous = node.id;
+      });
+    });
+    const byDepth = new Map();
+    nodes.forEach(node => {
+      node.x = 82 + node.depth * 228;
+      node.rawY = 70 + ((node.lanes.reduce((a,b) => a+b,0) / Math.max(1,node.lanes.length)) * 132);
+      if (!byDepth.has(node.depth)) byDepth.set(node.depth,[]);
+      byDepth.get(node.depth).push(node);
+    });
+    byDepth.forEach(column => {
+      column.sort((a,b) => a.rawY - b.rawY);
+      let last = 20;
+      column.forEach(node => { node.y = Math.max(node.rawY,last); last = node.y + 92; });
+    });
+    const primaryById = new Map(nodes.map(node => [node.id,node]));
+    const swipeNodes = [];
+    const swipeEdges = [];
+    for (const node of nodes) {
+      if (!(tl.showSwipes || tl.expanded.has(node.id)) || !node.hasSwipes) continue;
+      const variants = new Map();
+      for (const occurrence of node.occurrences) {
+        const session = sessionById.get(occurrence.sessionId); const message = session?.messages?.[occurrence.index];
+        (message?.variants || []).forEach((variant, variantIndex) => {
+          if (variantIndex === occurrence.variantIndex) return;
+          const content = canonical(variant);
+          const key = `${message.role}\u0000${content}`;
+          if (!variants.has(key)) variants.set(key,{ content, role:message.role, occurrences:[] });
+          variants.get(key).occurrences.push({ ...occurrence, variantIndex, isLast:occurrence.index === session.messages.length - 1 });
+        });
+      }
+      let offset = 0;
+      for (const variant of variants.values()) {
+        const swipe = { id:`s${swipeNodes.length}:${node.id}`, role:variant.role, content:variant.content, occurrences:variant.occurrences, swipe:true, parentNodeId:node.id, hasSwipes:false, swipeCount:0, depth:node.depth, x:node.x + 26, y:node.y + 72 + offset * 68 };
+        swipeNodes.push(swipe); offset += 1;
+        const predecessors = new Set();
+        variant.occurrences.forEach(occurrence => { if (occurrence.index > 0) { const predecessor = lookup.get(`${occurrence.sessionId}:${occurrence.index - 1}`); if (predecessor) predecessors.add(predecessor); } });
+        if (!predecessors.size) predecessors.add(node.id);
+        predecessors.forEach(from => swipeEdges.push({ id:`se${swipeEdges.length}`, from, to:swipe.id, sessions:new Set(variant.occurrences.map(item => item.sessionId)), swipe:true }));
+      }
+    }
+    const allNodes = [...nodes,...swipeNodes];
+    const allById = new Map(allNodes.map(node => [node.id,node]));
+    const edges = [...edgeByKey.values(),...swipeEdges];
+    let width = 520, height = 360;
+    allNodes.forEach(node => { width = Math.max(width,node.x + 240); height = Math.max(height,node.y + 130); });
+    return { nodes, swipeNodes, allNodes, allById, edges, lookup, width, height, primaryById };
+  }
+
+  function edgePath(edge) {
+    const from = tl.graph.allById.get(edge.from), to = tl.graph.allById.get(edge.to);
+    if (!from || !to) return '';
+    const a = nodeCenter(from), b = nodeCenter(to);
+    const dx = Math.max(42,Math.abs(b.x-a.x)*.46);
+    return `M ${a.x} ${a.y} C ${a.x+dx} ${a.y}, ${b.x-dx} ${b.y}, ${b.x} ${b.y}`;
+  }
+
+  function applyZoom() {
+    if (!tl.graph) return;
+    tl.zoom = Math.max(.42,Math.min(1.8,tl.zoom));
+    stage.style.transform = `scale(${tl.zoom})`;
+    space.style.width = `${Math.ceil(tl.graph.width * tl.zoom)}px`;
+    space.style.height = `${Math.ceil(tl.graph.height * tl.zoom)}px`;
+  }
+
+  function scrollToNode(node, flash = false) {
+    if (!node) return;
+    const center = nodeCenter(node);
+    viewport.scrollTo({ left:Math.max(0,center.x*tl.zoom - viewport.clientWidth/2), top:Math.max(0,center.y*tl.zoom - viewport.clientHeight/2), behavior:'smooth' });
+    if (flash) {
+      const element = stage.querySelector(`[data-tl-node="${node.id}"]`);
+      element?.classList.add('is-flash'); setTimeout(() => element?.classList.remove('is-flash'),900);
+    }
+  }
+
+  function currentLastNode() {
+    return tl.graph?.nodes.filter(node => node.occurrences.some(occurrence => occurrence.sessionId === chat.id)).sort((a,b) => b.depth-a.depth)[0] || null;
+  }
+
+  function updateSearch(focus = false) {
+    const query = search.value;
+    tl.search = query;
+    let first = null, matches = 0;
+    stage.querySelectorAll('[data-tl-node]').forEach(element => {
+      const node = tl.graph.allById.get(element.dataset.tlNode);
+      const match = node && termsMatch(node.content,query);
+      element.classList.toggle('is-search-dim',Boolean(query) && !match);
+      element.classList.toggle('is-search-match',Boolean(query) && match);
+      if (match && query) { matches += 1; if (!first) first = node; }
+    });
+    count.textContent = query ? `${matches} ${nvText('résultat(s)','result(s)')}` : `${sessions.length} ${nvText('discussion(s)','chat(s)')} · ${tl.graph.nodes.length} ${nvText('nœud(s)','node(s)')}`;
+    if (focus && first) scrollToNode(first);
+  }
+
+  function renderInspector(node) {
+    if (!node) {
+      inspector.innerHTML = `<span class="nv-eyebrow">TIMELINE</span><h3>${nvText('Naviguez dans vos branches','Navigate your branches')}</h3><p>${nvText('Cliquez sur un nœud pour voir ses occurrences. Double-cliquez pour y aller. Maintenez un nœud avec variantes pour les déplier.','Click a node to inspect its occurrences. Double-click to jump there. Hold a node with swipes to expand them.')}</p>`;
+      return;
+    }
+    const rows = node.occurrences.map((occurrence,index) => {
+      const session = sessionById.get(occurrence.sessionId);
+      const canGo = !node.swipe || occurrence.isLast || session?.messages?.[occurrence.index]?.variant === occurrence.variantIndex;
+      return `<div class="nv-timeline-occurrence"><div><strong>${nvEscape(session?.title || nvText('Discussion','Chat'))}</strong><small>#${occurrence.index + 1}${occurrence.sessionId === chat.id ? ` · ${nvText('actuelle','current')}` : ''}</small></div><div><button type="button" class="btn btn-ghost btn-small" data-tl-go="${index}" ${canGo ? '' : 'disabled'}>${nvText('Aller au message','Go to message')}</button><button type="button" class="btn btn-ghost btn-small" data-tl-branch="${index}">${nvText('Créer une branche','Create branch')}</button></div></div>`;
+    }).join('');
+    inspector.innerHTML = `<span class="nv-eyebrow">${node.swipe ? nvText('VARIANTE','SWIPE') : nvText('MESSAGE','MESSAGE')}</span><h3>${nvEscape(node.role === 'user' ? nvText('Utilisateur','User') : node.role === 'assistant' ? nvText('Assistant','Assistant') : nvText('Système','System'))}</h3><div class="nv-timeline-fulltext">${nvEscape(node.content)}</div>${node.hasSwipes ? `<button type="button" class="btn btn-ghost btn-small" data-tl-expand>${tl.expanded.has(node.id) || tl.showSwipes ? nvText('Masquer les variantes','Hide swipes') : `${nvText('Afficher les variantes','Show swipes')} (${node.swipeCount})`}</button>` : ''}<div class="nv-timeline-occurrences">${rows}</div>`;
+    inspector.querySelectorAll('[data-tl-go]').forEach(button => button.onclick = nvGuard(() => goToOccurrence(node,node.occurrences[Number(button.dataset.tlGo)])));
+    inspector.querySelectorAll('[data-tl-branch]').forEach(button => button.onclick = nvGuard(() => branchFromOccurrence(node,node.occurrences[Number(button.dataset.tlBranch)])));
+    inspector.querySelector('[data-tl-expand]')?.addEventListener('click', () => { tl.expanded.has(node.id) ? tl.expanded.delete(node.id) : tl.expanded.add(node.id); renderGraph(node.id); });
+  }
+
+  function pickOccurrence(node) {
+    return [...node.occurrences].sort((a,b) => Number(b.sessionId === chat.id) - Number(a.sessionId === chat.id) || (sessionById.get(b.sessionId)?.updatedAt || 0) - (sessionById.get(a.sessionId)?.updatedAt || 0))[0];
+  }
+
+  async function switchSwipe(session, occurrence) {
+    const message = session?.messages?.[occurrence.index];
+    if (!message || occurrence.variantIndex == null || occurrence.variantIndex === message.variant) return;
+    nvCheckpoint(session); message.variant = occurrence.variantIndex; message.content = message.variants[message.variant] ?? message.content; nvClearMessageDisplay(message);
+    if (nvChatTranslationApplies(message.role) && String(nvChatTranslationConfig().targetLanguage).toLowerCase() !== 'en') {
+      try { const display = await nvTranslateChatText(message.content,nvChatTranslationConfig().targetLanguage,'en'); nvSetMessageDisplay(message,display,nvChatTranslationConfig().targetLanguage); } catch (error) { console.warn('[timeline] Swipe display translation failed.',error); }
+    }
+    session.updatedAt = Date.now(); await nvSave();
+  }
+
+  async function goToOccurrence(node, occurrence) {
+    const session = sessionById.get(occurrence?.sessionId); if (!session) return;
+    const message = session.messages[occurrence.index]; if (!message) return;
+    if (node.swipe && occurrence.variantIndex !== message.variant) {
+      if (!occurrence.isLast) return;
+      await switchSwipe(session,occurrence);
+    }
+    dialog.close(); nvSelectSession(session);
+    setTimeout(() => { const target = [...pageRoot.querySelectorAll('[data-message]')].find(element => element.dataset.message === message.id); target?.scrollIntoView({block:'center'}); target?.classList.add('nv-timeline-jump'); setTimeout(() => target?.classList.remove('nv-timeline-jump'),1100); },80);
+  }
+
+  async function branchFromOccurrence(node, occurrence) {
+    const session = sessionById.get(occurrence?.sessionId); const message = session?.messages?.[occurrence.index]; if (!session || !message) return;
+    const branchNumber = NV.data.sessions.filter(item => item.parentId === session.id).length + 1;
+    const branch = NVCore.branch(session,message.id,`${session.title} · ${nvText('branche','branch')} ${branchNumber}`);
+    if (node.swipe) {
+      const cloned = branch.messages.at(-1);
+      if (cloned && cloned.variants?.[occurrence.variantIndex] != null) { cloned.variant = occurrence.variantIndex; cloned.content = cloned.variants[occurrence.variantIndex]; nvClearMessageDisplay(cloned); }
+    }
+    NV.data.sessions.push(branch); await nvSave(); dialog.close(); nvSelectSession(branch);
+    setTimeout(() => { const target = pageRoot.querySelector('[data-message]:last-of-type'); target?.scrollIntoView({block:'center'}); },80);
+  }
+
+  async function activateNode(node) {
+    const occurrence = pickOccurrence(node); if (!occurrence) return;
+    if (node.swipe && !occurrence.isLast) return branchFromOccurrence(node,occurrence);
+    return goToOccurrence(node,occurrence);
+  }
+
+  function bindNodes() {
+    stage.querySelectorAll('[data-tl-node]').forEach(element => {
+      const node = tl.graph.allById.get(element.dataset.tlNode); if (!node) return;
+      let pressTimer = 0;
+      element.addEventListener('click', () => { if (tl.ignoreClick === node.id) { tl.ignoreClick = ''; return; } tl.selected = node.id; stage.querySelectorAll('[data-tl-node]').forEach(item => item.classList.toggle('is-selected',item.dataset.tlNode === node.id)); renderInspector(node); });
+      element.addEventListener('dblclick', event => { event.preventDefault(); activateNode(node); });
+      if (node.hasSwipes && !node.swipe) {
+        element.addEventListener('pointerdown', () => { pressTimer = window.setTimeout(() => { tl.ignoreClick = node.id; tl.expanded.has(node.id) ? tl.expanded.delete(node.id) : tl.expanded.add(node.id); renderGraph(node.id); },480); });
+        ['pointerup','pointercancel','pointerleave'].forEach(type => element.addEventListener(type,() => clearTimeout(pressTimer)));
+      }
+      element.addEventListener('pointerenter', () => { tooltip.hidden = false; tooltip.textContent = preview(node.content); stage.querySelectorAll('[data-tl-edge]').forEach(edge => edge.classList.toggle('is-hover',edge.dataset.from === node.id || edge.dataset.to === node.id)); });
+      element.addEventListener('pointermove', event => { const rect = viewport.getBoundingClientRect(); tooltip.style.left = `${Math.min(viewport.clientWidth - 250,Math.max(8,event.clientX - rect.left + 14))}px`; tooltip.style.top = `${Math.min(viewport.clientHeight - 90,Math.max(8,event.clientY - rect.top + 14))}px`; });
+      element.addEventListener('pointerleave', () => { tooltip.hidden = true; stage.querySelectorAll('[data-tl-edge]').forEach(edge => edge.classList.remove('is-hover')); });
+    });
+    stage.querySelectorAll('[data-tl-edge]').forEach(edge => {
+      edge.addEventListener('click', () => { const node = tl.graph.allById.get(edge.dataset.to); if (node) { tl.selected = node.id; renderInspector(node); scrollToNode(node); } });
+    });
+  }
+
+  function renderGraph(selectId = tl.selected) {
+    tl.graph = buildGraph();
+    const currentEdges = new Set(tl.graph.edges.filter(edge => edge.sessions.has(chat.id)).map(edge => edge.id));
+    const edgeMarkup = tl.graph.edges.map(edge => `<path class="nv-timeline-edge ${edge.swipe ? 'is-swipe' : ''} ${currentEdges.has(edge.id) ? 'is-current' : ''}" data-tl-edge="${edge.id}" data-from="${edge.from}" data-to="${edge.to}" d="${edgePath(edge)}"/>`).join('');
+    const nodeMarkup = tl.graph.allNodes.map(node => {
+      const current = node.occurrences.some(occurrence => occurrence.sessionId === chat.id);
+      const swipes = node.hasSwipes ? `<span class="nv-timeline-swipe-badge">+${node.swipeCount}</span>` : '';
+      return `<button type="button" class="nv-timeline-node role-${node.role} ${node.swipe ? 'is-swipe' : ''} ${current ? 'is-current' : ''} ${selectId === node.id ? 'is-selected' : ''}" data-tl-node="${node.id}" style="left:${node.x}px;top:${node.y}px"><small>${node.swipe ? nvText('Variante','Swipe') : `#${node.depth + 1}`}</small><strong>${nvEscape(preview(node.content))}</strong>${swipes}</button>`;
+    }).join('');
+    stage.style.width = `${tl.graph.width}px`; stage.style.height = `${tl.graph.height}px`;
+    stage.innerHTML = `<svg class="nv-timeline-edges" width="${tl.graph.width}" height="${tl.graph.height}" viewBox="0 0 ${tl.graph.width} ${tl.graph.height}" aria-hidden="true">${edgeMarkup}</svg>${nodeMarkup}`;
+    applyZoom(); bindNodes(); updateSearch(false);
+    if (selectId && tl.graph.allById.has(selectId)) { tl.selected = selectId; renderInspector(tl.graph.allById.get(selectId)); } else { tl.selected = ''; renderInspector(null); }
+  }
+
+  function fitGraph() {
+    if (!tl.graph) return;
+    const x = Math.max(.42,(viewport.clientWidth - 36) / Math.max(1,tl.graph.width));
+    const y = Math.max(.42,(viewport.clientHeight - 36) / Math.max(1,tl.graph.height));
+    tl.zoom = Math.min(1.35,x,y); applyZoom(); viewport.scrollTo({left:0,top:0,behavior:'smooth'});
+  }
+
+  dialog.querySelector('[data-tl="current"]').onclick = () => scrollToNode(currentLastNode(),true);
+  dialog.querySelector('[data-tl="swipes"]').onclick = event => { tl.showSwipes = !tl.showSwipes; event.currentTarget.textContent = tl.showSwipes ? nvText('Masquer les variantes','Hide swipes') : nvText('Afficher les variantes','Show swipes'); renderGraph(); };
+  dialog.querySelector('[data-tl="zoom-out"]').onclick = () => { tl.zoom -= .15; applyZoom(); };
+  dialog.querySelector('[data-tl="zoom-in"]').onclick = () => { tl.zoom += .15; applyZoom(); };
+  dialog.querySelector('[data-tl="fit"]').onclick = fitGraph;
+  search.oninput = () => updateSearch(true);
+  renderGraph();
+  requestAnimationFrame(() => { fitGraph(); const current = currentLastNode(); if (current) setTimeout(() => scrollToNode(current,true),120); });
+}
+
 function nvRenderChat(scrollSnapshot = null) {
   if (!NV.ready) return;
   const current = nvSession();
@@ -420,11 +705,11 @@ function nvRenderChat(scrollSnapshot = null) {
   const sessions = [...NV.data.sessions].sort((a,b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt);
   pageRoot.innerHTML = `<div class="nv-workspace"><aside class="nv-sidebar"><div class="nv-sidebar-head"><strong>${nvText('Conversations','Conversations')}</strong>${nvButton('new', '+', true)}</div><input id="nv-session-search" type="search" aria-label="${nvText('Rechercher une conversation','Search conversations')}" placeholder="${nvText('Retrouver une histoire…','Find a story…')}"><div class="nv-session-list">${sessions.map(s => `<button class="nv-session ${s.id === chat?.id ? 'active' : ''}" data-session="${nvEscape(s.id)}"><strong>${s.pinned ? '★ ' : ''}${nvEscape(s.title)}</strong><small>${s.targetId.startsWith('group:') ? nvText('Groupe','Group') : nvEscape(getCharacters().find(c => c.id === s.targetId)?.name || nvText('Personnage supprimé','Deleted character'))} · ${s.messages.length}</small></button>`).join('') || `<p class="nv-muted">${nvText('Vos histoires apparaîtront ici.','Your stories will appear here.')}</p>`}</div><div class="nv-sidebar-foot">${nvButton('library',nvText('Bibliothèque','Library'))}${nvButton('tools',nvText('Outils','Tools'))}</div></aside><section class="nv-chat-main">${chat ? `
     ${!TAURI ? `<div class="nv-preview-note">${nvText('Aperçu navigateur : les réponses sont simulées. Utilisez le lanceur pour votre modèle.','Browser preview: replies are simulated. Use the launcher for your model.')}</div>` : ''}
-    <div class="nv-chat-toolbar"><input id="nv-message-search" type="search" value="${nvEscape(NV.search)}" placeholder="${nvText('Rechercher dans les messages…','Search messages…')}" aria-label="${nvText('Rechercher dans les messages','Search messages')}">${group ? `<select id="nv-speaker" aria-label="${nvText('Qui répond ?','Who replies?')}"><option value="">${group.mode === 'all' ? nvText('Tout le groupe','Whole group') : nvText('Tour automatique','Automatic turn')}</option>${group.members.map(id => getCharacters().find(c => c.id === id)).filter(Boolean).map(c => `<option value="${nvEscape(c.id)}">${nvEscape(c.name)}</option>`).join('')}</select>` : ''}${nvButton('bookmarks',nvText('Favoris','Bookmarks'))}${nvButton('inspect',nvText('Voir le prompt','Inspect prompt'))}${nvButton('persona',persona.name)}${nvButton('context',nvText('Contexte','Context'))}${nvButton('menu','•••')}</div>
+    <div class="nv-chat-toolbar">${nvButton('timeline','Timeline')}<input id="nv-message-search" type="search" value="${nvEscape(NV.search)}" placeholder="${nvText('Rechercher dans les messages…','Search messages…')}" aria-label="${nvText('Rechercher dans les messages','Search messages')}">${group ? `<select id="nv-speaker" aria-label="${nvText('Qui répond ?','Who replies?')}"><option value="">${group.mode === 'all' ? nvText('Tout le groupe','Whole group') : nvText('Tour automatique','Automatic turn')}</option>${group.members.map(id => getCharacters().find(c => c.id === id)).filter(Boolean).map(c => `<option value="${nvEscape(c.id)}">${nvEscape(c.name)}</option>`).join('')}</select>` : ''}${nvButton('inspect',nvText('Voir le prompt','Inspect prompt'))}${nvButton('persona',persona.name)}${nvButton('context',nvText('Contexte','Context'))}${nvButton('menu','•••')}</div>
     <div class="messages" id="messages" data-chat-session="${nvEscape(chat.id)}" aria-live="polite">${chat.messages.map((m,index) => nvMessageArticle(m,index,chat,persona,character,messageAppearance)).join('')}${nvStreamingMessageArticle(chat,persona,character,messageAppearance)}</div>
     <div class="nv-compose-area"><div class="nv-quick-replies">${NV.data.replies.filter(r => r.enabled !== false).map(r => `<button class="btn btn-ghost btn-small" data-reply="${nvEscape(r.id)}">${nvEscape(r.name)}</button>`).join('')}</div>${nvMediaMarkup(chat.draftImages,true)}<form class="composer nv-composer-row" id="composer"><details class="nv-composer-menu"><summary class="nv-composer-icon" aria-label="${nvText('Outils du message','Message tools')}" title="${nvText('Outils du message','Message tools')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.64 5.64l2.12 2.12M16.24 16.24l2.12 2.12M18.36 5.64l-2.12 2.12M7.76 16.24l-2.12 2.12M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/></svg></summary><div class="nv-composer-popover"><button type="button" data-nv="illustrate">${nvText('Illustrer','Illustrate')}</button></div></details><button type="button" class="nv-composer-icon" data-nv="attach" aria-label="${nvText('Joindre une image','Attach image')}" title="${nvText('Joindre une image','Attach image')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button><textarea id="composer-input" rows="1" aria-label="${nvText('Votre message','Your message')}" placeholder="${nvText('Écrivez votre message… (/ pour les commandes)','Write a message… (/ for commands)')}" ${state.sending ? 'disabled' : ''}>${nvEscape(chat.draft || '')}</textarea><button type="button" class="nv-composer-icon" data-nv="voice" aria-label="${nvText('Dicter','Dictate')}" title="${nvText('Dicter','Dictate')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/><path d="M18 11a6 6 0 0 1-12 0M12 17v4M9 21h6"/></svg></button>${state.sending ? `<button type="button" class="composer-send" data-nv="stop">${nvText('Arrêter','Stop')}</button>` : `<button type="button" class="composer-send" data-nv="continue">${nvText('Continuer','Continue')}</button>`}<button type="submit" class="composer-send" ${state.sending ? 'disabled' : ''}>${nvText('Envoyer','Send')}</button></form></div>` : `<div class="chat-empty"><span class="nv-eyebrow">NASTYVERSE STUDIO</span><h2>${nvText('Une nouvelle histoire commence ici.','A new story starts here.')}</h2><p>${nvText('Choisissez un personnage, créez votre persona et entrez dans votre univers.','Choose a character, create your persona and enter your world.')}</p>${nvButton('new',nvText('Commencer une conversation','Start a conversation'),true)}${nvButton('library',nvText('Créer ou importer un personnage','Create or import a character'))}</div>`}</section></div>`;
   if (typeof refreshMessageAvatarFraming === 'function') requestAnimationFrame(() => refreshMessageAvatarFraming(messageAppearance, pageRoot));
-  nvBind(pageRoot, { new: nvNewChat, library: () => goTo('library'), tools: () => goTo('configuration',{section:'studio'}), persona: () => nvChoosePersona(chat), context: () => nvContextEditor(chat), menu: () => nvChatMenu(chat), inspect: () => nvInspect(chat,character), bookmarks: () => nvBookmarks(chat), continue: () => nvGenerate(chat,'continue'), stop: nvStop, voice: () => nvDictate(chat) });
+  nvBind(pageRoot, { new: nvNewChat, library: () => goTo('library'), tools: () => goTo('configuration',{section:'studio'}), timeline: () => nvOpenTimeline(chat), persona: () => nvChoosePersona(chat), context: () => nvContextEditor(chat), menu: () => nvChatMenu(chat), inspect: () => nvInspect(chat,character), continue: () => nvGenerate(chat,'continue'), stop: nvStop, voice: () => nvDictate(chat) });
   pageRoot.querySelectorAll('[data-session]').forEach(b => b.onclick = () => nvSelectSession(NV.data.sessions.find(s => s.id === b.dataset.session)));
   document.getElementById('nv-session-search').oninput = event => { pageRoot.querySelectorAll('[data-session]').forEach(b => b.hidden = !b.textContent.toLocaleLowerCase().includes(event.target.value.toLocaleLowerCase())); };
   if (!chat) return;

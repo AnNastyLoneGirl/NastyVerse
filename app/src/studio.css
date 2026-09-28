@@ -58,3 +58,45 @@
 .nv-persona-avatar-editor{display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2)}
 .nv-persona-avatar-preview{width:84px;height:84px;overflow:hidden;display:grid;place-items:center;border:1px solid var(--line);border-radius:26%;background:var(--panel);color:var(--text-dim);font-family:'Cinzel Decorative',serif;font-size:26px;font-weight:900}
 .nv-persona-avatar-preview img{width:100%;height:100%;object-fit:cover;display:block}.nv-persona-avatar-editor small{color:var(--text-faint);font-size:10px;text-align:center;line-height:1.45}
+
+/* Timeline navigation inspired by SillyTavern Timelines, implemented natively for NastyVerse. */
+.nv-timeline-dialog{width:min(1500px,calc(100vw - 28px))!important;height:min(900px,calc(100vh - 28px));max-height:calc(100vh - 28px)}
+.nv-timeline-dialog .nv-dialog-content{display:flex;flex-direction:column;gap:12px;height:calc(100% - 62px);padding:14px;box-sizing:border-box}
+.nv-timeline-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.nv-timeline-toolbar input{flex:1 1 340px;min-width:180px;padding:9px 11px;font-size:11px}
+.nv-timeline-count{font-size:10px;color:var(--text-dim);white-space:nowrap}
+.nv-timeline-layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:12px;min-height:0;flex:1}
+.nv-timeline-viewport{position:relative;min-width:0;min-height:0;overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--void)}
+.nv-timeline-space{position:relative;min-width:100%;min-height:100%}
+.nv-timeline-stage{position:absolute;left:0;top:0;transform-origin:0 0}
+.nv-timeline-edges{position:absolute;inset:0;overflow:visible}
+.nv-timeline-edge{fill:none;stroke:var(--line);stroke-width:2;opacity:.72;pointer-events:stroke;cursor:pointer;transition:stroke-width .12s,opacity .12s,stroke .12s}
+.nv-timeline-edge.is-current{stroke:var(--violet-2);opacity:.95;stroke-width:3}
+.nv-timeline-edge.is-swipe{stroke:var(--text-faint);stroke-dasharray:5 5;opacity:.55}
+.nv-timeline-edge.is-hover{stroke:var(--magenta);stroke-width:4;opacity:1}
+.nv-timeline-node{position:absolute;width:176px;min-height:62px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:4px;padding:9px 12px;text-align:left;border:1px solid var(--line);border-radius:11px;background:var(--panel);color:var(--text);cursor:pointer;box-shadow:0 7px 18px #0004;overflow:hidden;transition:border-color .12s,box-shadow .12s,opacity .12s,transform .12s}
+.nv-timeline-node small{font-size:9px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.07em}
+.nv-timeline-node strong{width:100%;font-size:10.5px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:650}
+.nv-timeline-node.role-user{background:color-mix(in srgb,var(--violet) 15%,var(--panel))}
+.nv-timeline-node.role-system{border-style:dashed;opacity:.82}
+.nv-timeline-node.is-current{border-color:var(--violet-2);box-shadow:0 0 0 2px color-mix(in srgb,var(--violet) 20%,transparent),0 8px 20px #0005}
+.nv-timeline-node.is-swipe{width:156px;min-height:54px;border-style:dashed;background:var(--panel-2)}
+.nv-timeline-node.is-selected{border-color:var(--magenta);box-shadow:0 0 0 2px color-mix(in srgb,var(--magenta) 18%,transparent),0 8px 24px #0006;z-index:3}
+.nv-timeline-node:hover{transform:translateY(-1px);border-color:var(--violet-2);z-index:2}
+.nv-timeline-node.is-search-dim{opacity:.18}
+.nv-timeline-node.is-search-match{border-color:var(--magenta);box-shadow:0 0 0 2px color-mix(in srgb,var(--magenta) 16%,transparent)}
+.nv-timeline-node.is-flash,.message.nv-timeline-jump{animation:nvTimelineFlash .85s ease-out}
+@keyframes nvTimelineFlash{0%,30%{box-shadow:0 0 0 5px color-mix(in srgb,var(--magenta) 42%,transparent)}100%{box-shadow:0 0 0 0 transparent}}
+.nv-timeline-swipe-badge{position:absolute;right:6px;top:5px;display:grid;place-items:center;min-width:21px;height:18px;padding:0 5px;border-radius:99px;background:var(--violet);color:var(--text);font-size:8px;font-weight:800}
+.nv-timeline-inspector{min-width:0;overflow:auto;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2)}
+.nv-timeline-inspector h3{margin:6px 0 9px;font-size:15px}.nv-timeline-inspector>p{font-size:11px;line-height:1.55;color:var(--text-dim)}
+.nv-timeline-fulltext{max-height:230px;overflow:auto;padding:12px;margin:12px 0;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--line);border-radius:9px;background:var(--void);font-size:11px;line-height:1.55}
+.nv-timeline-occurrences{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.nv-timeline-occurrence{display:flex;flex-direction:column;gap:9px;padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--panel)}
+.nv-timeline-occurrence>div:first-child{display:flex;justify-content:space-between;gap:8px;align-items:baseline}.nv-timeline-occurrence strong{font-size:10px;overflow-wrap:anywhere}.nv-timeline-occurrence small{font-size:9px;color:var(--text-faint)}
+.nv-timeline-occurrence>div:last-child{display:flex;gap:6px;flex-wrap:wrap}.nv-timeline-occurrence button{font-size:9px}
+.nv-timeline-tooltip{position:absolute;z-index:15;width:min(235px,calc(100% - 16px));pointer-events:none;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:0 8px 22px #0008;color:var(--text);font-size:10px;line-height:1.45}
+.nv-timeline-legend{display:flex;gap:16px;flex-wrap:wrap;align-items:center;padding:0 4px;font-size:9px;color:var(--text-dim)}
+.nv-timeline-legend span{display:flex;align-items:center;gap:6px}.nv-timeline-legend i{width:11px;height:11px;border:1px solid var(--line);border-radius:3px;background:var(--panel);display:inline-block}
+.nv-timeline-legend i.is-current{border-color:var(--violet-2);box-shadow:0 0 0 1px var(--violet-2)}.nv-timeline-legend i.is-user{background:color-mix(in srgb,var(--violet) 25%,var(--panel))}.nv-timeline-legend i.is-assistant{background:var(--panel)}.nv-timeline-legend i.is-swipe{border-style:dashed;background:var(--panel-2)}
+@media(max-width:900px){.nv-timeline-layout{grid-template-columns:1fr;grid-template-rows:minmax(420px,1fr) auto}.nv-timeline-inspector{max-height:260px}.nv-timeline-dialog{width:calc(100vw - 16px)!important;height:calc(100vh - 16px)}}

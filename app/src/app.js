@@ -5049,6 +5049,7 @@ const DEFAULT_MESSAGE_APPEARANCE = {
   characterAlign: 'left',
   personaAvatarSide: 'right',
   characterAvatarSide: 'left',
+  avatarShape: 'square',
   avatarSize: 38,
   avatarRadius: 32,
   avatarGap: 10,
@@ -5079,7 +5080,8 @@ function normalizeMessageAppearance(input = {}) {
     characterAlign: side(input.characterAlign || DEFAULT_MESSAGE_APPEARANCE.characterAlign),
     personaAvatarSide: side(input.personaAvatarSide || DEFAULT_MESSAGE_APPEARANCE.personaAvatarSide),
     characterAvatarSide: side(input.characterAvatarSide || DEFAULT_MESSAGE_APPEARANCE.characterAvatarSide),
-    avatarSize: n(input.avatarSize, DEFAULT_MESSAGE_APPEARANCE.avatarSize, 24, 88),
+    avatarShape: input.avatarShape === 'portrait' ? 'portrait' : 'square',
+    avatarSize: Math.max(16, Number.isFinite(Number(input.avatarSize)) ? Number(input.avatarSize) : DEFAULT_MESSAGE_APPEARANCE.avatarSize),
     avatarRadius: n(input.avatarRadius, DEFAULT_MESSAGE_APPEARANCE.avatarRadius, 0, 50),
     avatarGap: n(input.avatarGap, DEFAULT_MESSAGE_APPEARANCE.avatarGap, 2, 28),
     avatarVertical: vertical,
@@ -5191,7 +5193,12 @@ function applyMessagePersonalization(settings = getMessagePersonalization()) {
   root.style.setProperty('--nv-message-radius', `${normalized.bubbleRadius}px`);
   root.style.setProperty('--nv-message-pad-y', `${normalized.bubblePaddingY}px`);
   root.style.setProperty('--nv-message-pad-x', `${normalized.bubblePaddingX}px`);
-  root.style.setProperty('--nv-avatar-size', `${normalized.avatarSize}px`);
+  const avatarWidth = normalized.avatarSize;
+  const avatarHeight = normalized.avatarShape === 'portrait' ? normalized.avatarSize * 1.5 : normalized.avatarSize;
+  root.style.setProperty('--nv-avatar-size', `${avatarWidth}px`);
+  root.style.setProperty('--nv-avatar-width', `${avatarWidth}px`);
+  root.style.setProperty('--nv-avatar-height', `${avatarHeight}px`);
+  root.style.setProperty('--nv-avatar-aspect', normalized.avatarShape === 'portrait' ? '2 / 3' : '1 / 1');
   root.style.setProperty('--nv-avatar-radius', `${normalized.avatarRadius}%`);
   root.style.setProperty('--nv-avatar-gap', `${normalized.avatarGap}px`);
   root.style.setProperty('--nv-avatar-border-width', `${normalized.avatarBorderWidth}px`);
@@ -5243,7 +5250,7 @@ function messageAvatarCropMarkup(role, settings, source, name, disabled = false)
     ? `<img src="${escapeHtml(source)}" alt="" style="${inlineStyle}">`
     : `<div class="message-avatar-crop-fallback">${escapeHtml((name || '?').slice(0,1).toUpperCase())}</div>`;
   return `<div class="message-avatar-crop-editor ${disabled ? 'is-disabled' : ''}" data-avatar-crop-role="${prefix}">
-    <div class="message-avatar-crop-stage ${source ? 'has-image' : 'no-image'}" data-avatar-crop-stage="${prefix}" aria-label="${escapeHtml(t('personalization.messages.avatarFraming'))}" style="border-radius:${settings.avatarRadius}%">${visual}<div class="message-avatar-crop-reticle" aria-hidden="true"></div></div>
+    <div class="message-avatar-crop-stage ${source ? 'has-image' : 'no-image'} nv-avatar-shape-${settings.avatarShape}" data-avatar-crop-stage="${prefix}" aria-label="${escapeHtml(t('personalization.messages.avatarFraming'))}" style="border-radius:${settings.avatarRadius}%;aspect-ratio:${settings.avatarShape === 'portrait' ? '2 / 3' : '1 / 1'}">${visual}<div class="message-avatar-crop-reticle" aria-hidden="true"></div></div>
     <div class="message-avatar-crop-copy"><strong>${escapeHtml(t('personalization.messages.avatarFraming'))}</strong><small>${escapeHtml(source ? t('personalization.messages.avatarFramingHelp') : t('personalization.messages.avatarFramingNoImage'))}</small></div>
     <div class="message-avatar-crop-controls">
       <label><span>${escapeHtml(t('personalization.messages.zoom'))}</span><input data-message-style="${prefix}AvatarZoom" type="range" min="100" max="400" step="1" value="${zoom}" ${disabledAttr}><output data-output="${prefix}AvatarZoom">${zoom}%</output></label>
@@ -5296,7 +5303,8 @@ function renderMessagePersonalization(scope = state.messagePersonalizationScope 
         </div>
         <div class="personalization-subsection"><div class="personalization-editor-head"><div><span>${escapeHtml(t('personalization.messages.avatars'))}</span><h2>${escapeHtml(t('personalization.messages.avatarStyle'))}</h2></div></div>
           <div class="message-style-grid">
-            <label><span>${escapeHtml(t('personalization.messages.avatarSize'))}</span><input data-message-style="avatarSize" type="range" min="24" max="88" step="1" value="${s.avatarSize}" ${disabledAttr}><output data-output="avatarSize">${s.avatarSize}px</output></label>
+            <label><span>${escapeHtml(t('personalization.messages.avatarShape'))}</span>${messagePersonalizationSelect('avatarShape',s.avatarShape,[['square',t('personalization.messages.avatarShape.square')],['portrait',t('personalization.messages.avatarShape.portrait')]], disabled)}</label>
+            <label><span>${escapeHtml(t('personalization.messages.avatarSize'))}</span><input data-message-style="avatarSize" type="number" min="16" step="1" value="${s.avatarSize}" ${disabledAttr}><small>${escapeHtml(t('personalization.messages.avatarSizeHelp'))}</small></label>
             <label><span>${escapeHtml(t('personalization.messages.avatarRoundness'))}</span><input data-message-style="avatarRadius" type="range" min="0" max="50" step="1" value="${s.avatarRadius}" ${disabledAttr}><output data-output="avatarRadius">${s.avatarRadius}%</output></label>
             <label><span>${escapeHtml(t('personalization.messages.avatarGap'))}</span><input data-message-style="avatarGap" type="range" min="2" max="28" step="1" value="${s.avatarGap}" ${disabledAttr}><output data-output="avatarGap">${s.avatarGap}px</output></label>
             <label><span>${escapeHtml(t('personalization.messages.avatarVertical'))}</span>${messagePersonalizationSelect('avatarVertical',s.avatarVertical,[['top',t('personalization.messages.top')],['center',t('personalization.messages.center')],['bottom',t('personalization.messages.bottom')]], disabled)}</label>
@@ -5337,6 +5345,12 @@ function renderMessagePersonalization(scope = state.messagePersonalizationScope 
       output.textContent = `${value}${messageOutputSuffix(key)}`;
     }
     applyMessagePersonalization(normalized);
+    pageRoot.querySelectorAll('[data-avatar-crop-stage]').forEach(stage => {
+      stage.style.aspectRatio = normalized.avatarShape === 'portrait' ? '2 / 3' : '1 / 1';
+      stage.classList.toggle('nv-avatar-shape-portrait', normalized.avatarShape === 'portrait');
+      stage.classList.toggle('nv-avatar-shape-square', normalized.avatarShape !== 'portrait');
+    });
+    requestAnimationFrame(() => refreshMessageAvatarFraming(normalized, pageRoot));
     const preview = document.getElementById('message-style-preview');
     if (preview) {
       preview.innerHTML = messagePersonalizationPreview(normalized);

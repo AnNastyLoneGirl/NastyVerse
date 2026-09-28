@@ -50,7 +50,7 @@
 .nv-message-body{min-width:0;max-width:100%;flex:1}
 .nv-chat-main .message-bubble{padding:var(--nv-message-pad-y,13px) var(--nv-message-pad-x,15px);border-radius:var(--nv-message-radius,14px)}
 .nv-chat-main .message-user .message-bubble{border-radius:var(--nv-message-radius,14px)}
-.nv-message-avatar{position:relative;flex:0 0 var(--nv-avatar-size,38px);width:var(--nv-avatar-size,38px);height:var(--nv-avatar-size,38px);overflow:hidden;border:var(--nv-avatar-border-width,1px) solid var(--nv-avatar-border-color,var(--line));border-radius:var(--nv-avatar-radius,32%);background:var(--panel-2);display:grid;place-items:center;color:var(--text-dim);font-size:calc(var(--nv-avatar-size,38px) * .34);font-weight:800}
+.nv-message-avatar{position:relative;flex:0 0 var(--nv-avatar-width,var(--nv-avatar-size,38px));width:var(--nv-avatar-width,var(--nv-avatar-size,38px));height:var(--nv-avatar-height,var(--nv-avatar-size,38px));aspect-ratio:var(--nv-avatar-aspect,1 / 1);overflow:hidden;border:var(--nv-avatar-border-width,1px) solid var(--nv-avatar-border-color,var(--line));border-radius:var(--nv-avatar-radius,32%);background:var(--panel-2);display:grid;place-items:center;color:var(--text-dim);font-size:calc(var(--nv-avatar-width,var(--nv-avatar-size,38px)) * .34);font-weight:800}
 .nv-message-avatar img{position:absolute;display:block;max-width:none;max-height:none;object-fit:fill;will-change:left,top,width,height}
 .nv-avatar-fallback{font-family:'Cinzel Decorative',serif;background:color-mix(in srgb,var(--violet) 20%,var(--panel-2))}
 .nv-align-right .message-role{text-align:right}.nv-align-right .nv-message-actions{justify-content:flex-end}

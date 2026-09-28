@@ -373,8 +373,9 @@ function nvMessageAvatarMarkup(message, persona, fallbackCharacter, settings) {
   if (!visible) return '';
   const name = message.name || owner?.name || '?';
   const source = typeof resolvedAvatarSource === 'function' ? resolvedAvatarSource(owner) : '';
-  if (source) return `<div class="nv-message-avatar" title="${nvEscape(name)}"><img src="${nvEscape(source)}" alt=""></div>`;
-  return `<div class="nv-message-avatar nv-avatar-fallback" title="${nvEscape(name)}" aria-hidden="true">${nvEscape(String(name || '?').slice(0,1).toUpperCase())}</div>`;
+  const roleClass = message.role === 'user' ? 'nv-avatar-persona' : 'nv-avatar-character';
+  if (source) return `<div class="nv-message-avatar ${roleClass}" title="${nvEscape(name)}"><img src="${nvEscape(source)}" alt=""></div>`;
+  return `<div class="nv-message-avatar ${roleClass} nv-avatar-fallback" title="${nvEscape(name)}" aria-hidden="true">${nvEscape(String(name || '?').slice(0,1).toUpperCase())}</div>`;
 }
 function nvMessageLayout(message, persona, fallbackCharacter, settings) {
   const isUser = message?.role === 'user';
@@ -412,7 +413,7 @@ function nvRenderChat(scrollSnapshot = null) {
   const character = (group ? getCharacters().find(c => group.members.includes(c.id)) : activeCharacter()) || (current ? {id:current.targetId,name:current.messages.find(m => m.role === 'assistant')?.name || current.title,description:''} : null);
   const chat = character || group ? nvEnsureSession(character) : null;
   const persona = nvPersona(chat);
-  const messageAppearance = typeof getMessagePersonalization === 'function' ? getMessagePersonalization() : {};
+  const messageAppearance = typeof getEffectiveMessagePersonalization === 'function' ? getEffectiveMessagePersonalization(chat) : (typeof getMessagePersonalization === 'function' ? getMessagePersonalization() : {});
   if (typeof applyMessagePersonalization === 'function') applyMessagePersonalization(messageAppearance);
   const sessions = [...NV.data.sessions].sort((a,b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt);
   pageRoot.innerHTML = `<div class="nv-workspace"><aside class="nv-sidebar"><div class="nv-sidebar-head"><strong>${nvText('Conversations','Conversations')}</strong>${nvButton('new', '+', true)}</div><input id="nv-session-search" type="search" aria-label="${nvText('Rechercher une conversation','Search conversations')}" placeholder="${nvText('Retrouver une histoire…','Find a story…')}"><div class="nv-session-list">${sessions.map(s => `<button class="nv-session ${s.id === chat?.id ? 'active' : ''}" data-session="${nvEscape(s.id)}"><strong>${s.pinned ? '★ ' : ''}${nvEscape(s.title)}</strong><small>${s.targetId.startsWith('group:') ? nvText('Groupe','Group') : nvEscape(getCharacters().find(c => c.id === s.targetId)?.name || nvText('Personnage supprimé','Deleted character'))} · ${s.messages.length}</small></button>`).join('') || `<p class="nv-muted">${nvText('Vos histoires apparaîtront ici.','Your stories will appear here.')}</p>`}</div><div class="nv-sidebar-foot">${nvButton('library',nvText('Bibliothèque','Library'))}${nvButton('tools',nvText('Outils','Tools'))}</div></aside><section class="nv-chat-main">${chat ? `

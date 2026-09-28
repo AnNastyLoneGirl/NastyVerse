@@ -1198,9 +1198,9 @@ input,textarea,select{font:inherit}input,textarea,select{background:var(--panel-
 .message-style-grid{display:grid;grid-template-columns:repeat(3,minmax(135px,1fr));gap:10px}
 .message-style-grid label,.message-role-settings label{display:flex;flex-direction:column;gap:6px;min-width:0;padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--panel-2)}
 .message-style-grid label>span,.message-role-settings label>span{font-size:10px;color:var(--text-faint);font-weight:700}
-.message-style-grid input[type="range"]{width:100%}
+.message-style-grid input[type="range"],.message-role-settings input[type="range"]{width:100%}
 .message-style-grid select,.message-role-settings select{width:100%;padding:8px 9px;font-size:11px}
-.message-style-grid output{font-size:10px;color:var(--text-dim);font-variant-numeric:tabular-nums}
+.message-style-grid output,.message-role-settings output{font-size:10px;color:var(--text-dim);font-variant-numeric:tabular-nums}
 .message-style-toggle{flex-direction:row!important;align-items:center;justify-content:space-between}
 .message-style-toggle input{width:auto!important}
 .message-role-settings{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding-top:14px;border-top:1px solid var(--line)}
@@ -1216,3 +1216,15 @@ input,textarea,select{font:inherit}input,textarea,select{background:var(--panel-
 .nv-personalization-message-preview{gap:var(--nv-message-gap,18px)}
 @media(max-width:1050px){.message-personalization-layout{grid-template-columns:1fr}.message-personalization-preview{position:static}.message-style-grid{grid-template-columns:repeat(2,minmax(130px,1fr))}}
 @media(max-width:720px){.message-role-settings{grid-template-columns:1fr}.message-role-settings>div{grid-template-columns:1fr}.message-style-grid{grid-template-columns:1fr}.personalization-tabs{display:flex}.personalization-tabs button{flex:1;min-width:0}}
+
+.message-scope-tabs{display:inline-flex;gap:4px;margin:0 0 14px;padding:4px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.message-scope-tabs button{padding:8px 13px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--text-dim);font:inherit;font-size:11px;font-weight:700;cursor:pointer}
+.message-scope-tabs button:hover:not(:disabled){color:var(--text);background:var(--panel-2)}
+.message-scope-tabs button.active{color:var(--text);border-color:var(--violet);background:color-mix(in srgb,var(--violet) 18%,var(--panel-2))}
+.message-scope-tabs button:disabled{opacity:.42;cursor:not-allowed}
+.conversation-appearance-toggle{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 14px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.conversation-appearance-toggle strong{display:block;font-size:12px;color:var(--text)}
+.conversation-appearance-toggle small{display:block;margin-top:4px;color:var(--text-faint);font-size:10.5px;line-height:1.45}
+.conversation-appearance-empty{margin:0 0 14px;padding:12px 14px;border:1px dashed var(--line);border-radius:10px;color:var(--text-faint);font-size:11px;background:var(--panel)}
+.message-personalization-editor.is-disabled{opacity:.58}
+.message-personalization-editor.is-disabled input:disabled,.message-personalization-editor.is-disabled select:disabled{cursor:not-allowed}

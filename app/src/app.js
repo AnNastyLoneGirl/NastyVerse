@@ -577,6 +577,7 @@ const state = {
   translationConfig: null,
   markdownStyleType: 'paragraph',
   personalizationSection: 'text',
+  messagePersonalizationScope: 'global',
 };
 
 const pageRoot = document.getElementById('page-root');
@@ -5054,6 +5055,10 @@ const DEFAULT_MESSAGE_APPEARANCE = {
   avatarVertical: 'top',
   avatarBorderWidth: 1,
   avatarBorder: 'line',
+  personaAvatarX: 50,
+  personaAvatarY: 50,
+  characterAvatarX: 50,
+  characterAvatarY: 50,
 };
 function normalizeMessageAppearance(input = {}) {
   const n = (value, fallback, min, max) => Math.min(max, Math.max(min, Number.isFinite(Number(value)) ? Number(value) : fallback));
@@ -5078,6 +5083,10 @@ function normalizeMessageAppearance(input = {}) {
     avatarVertical: vertical,
     avatarBorderWidth: n(input.avatarBorderWidth, DEFAULT_MESSAGE_APPEARANCE.avatarBorderWidth, 0, 4),
     avatarBorder: MARKDOWN_STYLE_TOKENS.includes(input.avatarBorder) ? input.avatarBorder : DEFAULT_MESSAGE_APPEARANCE.avatarBorder,
+    personaAvatarX: n(input.personaAvatarX, DEFAULT_MESSAGE_APPEARANCE.personaAvatarX, 0, 100),
+    personaAvatarY: n(input.personaAvatarY, DEFAULT_MESSAGE_APPEARANCE.personaAvatarY, 0, 100),
+    characterAvatarX: n(input.characterAvatarX, DEFAULT_MESSAGE_APPEARANCE.characterAvatarX, 0, 100),
+    characterAvatarY: n(input.characterAvatarY, DEFAULT_MESSAGE_APPEARANCE.characterAvatarY, 0, 100),
   };
 }
 function getMessagePersonalization() {
@@ -5089,20 +5098,51 @@ function saveMessagePersonalization(settings) {
   applyMessagePersonalization(normalized);
   return normalized;
 }
+function currentMessagePersonalizationConversation() {
+  return typeof nvSession === 'function' ? nvSession() : null;
+}
+function getConversationMessagePersonalization(chat = currentMessagePersonalizationConversation()) {
+  const global = getMessagePersonalization();
+  const raw = chat?.messageAppearanceOverride;
+  const rawSettings = raw && typeof raw === 'object' && raw.settings && typeof raw.settings === 'object' ? raw.settings : {};
+  return {
+    enabled: raw?.enabled === true,
+    settings: normalizeMessageAppearance({ ...global, ...rawSettings }),
+  };
+}
+function getEffectiveMessagePersonalization(chat = currentMessagePersonalizationConversation()) {
+  const global = getMessagePersonalization();
+  const local = getConversationMessagePersonalization(chat);
+  return local.enabled ? local.settings : global;
+}
+async function saveConversationMessagePersonalization(settings, enabled = true, chat = currentMessagePersonalizationConversation()) {
+  if (!chat) return getMessagePersonalization();
+  const normalized = normalizeMessageAppearance(settings);
+  chat.messageAppearanceOverride = { enabled: Boolean(enabled), settings: normalized };
+  chat.updatedAt = Date.now();
+  if (typeof nvSave === 'function') await nvSave();
+  applyMessagePersonalization(enabled ? normalized : getMessagePersonalization());
+  return normalized;
+}
 function applyMessagePersonalization(settings = getMessagePersonalization()) {
+  const normalized = normalizeMessageAppearance(settings);
   const root = document.documentElement;
-  root.style.setProperty('--nv-message-max-width', `${settings.maxWidth}%`);
-  root.style.setProperty('--nv-message-gap', `${settings.gap}px`);
-  root.style.setProperty('--nv-message-radius', `${settings.bubbleRadius}px`);
-  root.style.setProperty('--nv-message-pad-y', `${settings.bubblePaddingY}px`);
-  root.style.setProperty('--nv-message-pad-x', `${settings.bubblePaddingX}px`);
-  root.style.setProperty('--nv-avatar-size', `${settings.avatarSize}px`);
-  root.style.setProperty('--nv-avatar-radius', `${settings.avatarRadius}%`);
-  root.style.setProperty('--nv-avatar-gap', `${settings.avatarGap}px`);
-  root.style.setProperty('--nv-avatar-border-width', `${settings.avatarBorderWidth}px`);
-  root.style.setProperty('--nv-avatar-border-color', markdownTokenCss(settings.avatarBorder, 'line'));
-  root.dataset.nvMessageNames = settings.showNames ? 'show' : 'hide';
-  return settings;
+  root.style.setProperty('--nv-message-max-width', `${normalized.maxWidth}%`);
+  root.style.setProperty('--nv-message-gap', `${normalized.gap}px`);
+  root.style.setProperty('--nv-message-radius', `${normalized.bubbleRadius}px`);
+  root.style.setProperty('--nv-message-pad-y', `${normalized.bubblePaddingY}px`);
+  root.style.setProperty('--nv-message-pad-x', `${normalized.bubblePaddingX}px`);
+  root.style.setProperty('--nv-avatar-size', `${normalized.avatarSize}px`);
+  root.style.setProperty('--nv-avatar-radius', `${normalized.avatarRadius}%`);
+  root.style.setProperty('--nv-avatar-gap', `${normalized.avatarGap}px`);
+  root.style.setProperty('--nv-avatar-border-width', `${normalized.avatarBorderWidth}px`);
+  root.style.setProperty('--nv-avatar-border-color', markdownTokenCss(normalized.avatarBorder, 'line'));
+  root.style.setProperty('--nv-persona-avatar-x', `${normalized.personaAvatarX}%`);
+  root.style.setProperty('--nv-persona-avatar-y', `${normalized.personaAvatarY}%`);
+  root.style.setProperty('--nv-character-avatar-x', `${normalized.characterAvatarX}%`);
+  root.style.setProperty('--nv-character-avatar-y', `${normalized.characterAvatarY}%`);
+  root.dataset.nvMessageNames = normalized.showNames ? 'show' : 'hide';
+  return normalized;
 }
 function personalizationTabs(active) {
   return `<div class="personalization-tabs" role="tablist"><button type="button" class="${active === 'text' ? 'active' : ''}" data-personalization-section="text">${escapeHtml(t('personalization.section.text'))}</button><button type="button" class="${active === 'messages' ? 'active' : ''}" data-personalization-section="messages">${escapeHtml(t('personalization.section.messages'))}</button></div>`;
@@ -5110,8 +5150,8 @@ function personalizationTabs(active) {
 function bindPersonalizationTabs() {
   pageRoot.querySelectorAll('[data-personalization-section]').forEach(button => button.addEventListener('click', () => renderPersonalization(state.markdownStyleType || 'paragraph', button.dataset.personalizationSection)));
 }
-function messagePersonalizationSelect(field, value, options) {
-  return `<select data-message-style="${field}">${options.map(([id,label]) => `<option value="${id}" ${value === id ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select>`;
+function messagePersonalizationSelect(field, value, options, disabled = false) {
+  return `<select data-message-style="${field}" ${disabled ? 'disabled' : ''}>${options.map(([id,label]) => `<option value="${id}" ${value === id ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select>`;
 }
 function messagePersonalizationPreview(settings) {
   const persona = typeof nvPersona === 'function' ? nvPersona(typeof nvSession === 'function' ? nvSession() : null) : { name: t('personalization.messages.preview.user'), avatar: '' };
@@ -5119,65 +5159,111 @@ function messagePersonalizationPreview(settings) {
   const personaName = persona?.name || t('personalization.messages.preview.user');
   const characterName = character?.name || t('personalization.messages.preview.character');
   const avatar = (source, name, role) => {
-    if (!source) return `<div class="nv-message-avatar nv-avatar-fallback" aria-hidden="true">${escapeHtml((name || '?').slice(0,1).toUpperCase())}</div>`;
-    return `<div class="nv-message-avatar"><img src="${escapeHtml(source)}" alt=""></div>`;
+    const roleClass = role === 'user' ? 'nv-avatar-persona' : 'nv-avatar-character';
+    if (!source) return `<div class="nv-message-avatar ${roleClass} nv-avatar-fallback" aria-hidden="true">${escapeHtml((name || '?').slice(0,1).toUpperCase())}</div>`;
+    return `<div class="nv-message-avatar ${roleClass}"><img src="${escapeHtml(source)}" alt=""></div>`;
   };
   const personaAvatar = resolvedAvatarSource(persona);
   const characterAvatar = resolvedAvatarSource(character);
   const item = (role, name, source, side, align, visible, body) => `<article class="message message-${role} nv-align-${align}"><div class="nv-message-row nv-avatar-${side} ${settings.avatarVertical === 'center' ? 'nv-avatar-v-center' : settings.avatarVertical === 'bottom' ? 'nv-avatar-v-bottom' : 'nv-avatar-v-top'}">${visible ? avatar(source,name,role) : ''}<div class="nv-message-body"><div class="message-role">${escapeHtml(name)}</div><div class="message-bubble nv-markdown-surface">${body}</div></div></div></article>`;
   return `<div class="messages nv-personalization-message-preview">${item('assistant', characterName, characterAvatar, settings.characterAvatarSide, settings.characterAlign, settings.showCharacterAvatar, `<p>${escapeHtml(t('personalization.messages.preview.assistant'))}</p>`)}${item('user', personaName, personaAvatar, settings.personaAvatarSide, settings.personaAlign, settings.showPersonaAvatar, `<p>${escapeHtml(t('personalization.messages.preview.userMessage'))}</p>`)}</div>`;
 }
-function renderMessagePersonalization() {
+function messageOutputSuffix(key) {
+  return ['maxWidth','avatarRadius','personaAvatarX','personaAvatarY','characterAvatarX','characterAvatarY'].includes(key) ? '%' : 'px';
+}
+function renderMessagePersonalization(scope = state.messagePersonalizationScope || 'global') {
   state.currentPage = 'personalization';
   state.personalizationSection = 'messages';
+  state.messagePersonalizationScope = scope === 'conversation' ? 'conversation' : 'global';
   renderNavbar();
-  const s = getMessagePersonalization();
+
+  const chat = currentMessagePersonalizationConversation();
+  const globalSettings = getMessagePersonalization();
+  const conversation = getConversationMessagePersonalization(chat);
+  const isConversation = state.messagePersonalizationScope === 'conversation';
+  const conversationEnabled = Boolean(chat && conversation.enabled);
+  const disabled = isConversation && !conversationEnabled;
+  const s = isConversation ? (conversationEnabled ? conversation.settings : globalSettings) : globalSettings;
+  const disabledAttr = disabled ? 'disabled' : '';
+  const scopeTitle = isConversation ? t('personalization.messages.currentConversation') : t('personalization.messages.globalDefaults');
+  const resetLabel = isConversation ? t('personalization.messages.resetConversation') : t('personalization.messages.resetGlobal');
+
   pageRoot.innerHTML = `<div class="personalization-page">
-    <div class="personalization-head"><div><h1>${escapeHtml(t('personalization.title'))}</h1><p>${escapeHtml(t('personalization.messages.desc'))}</p></div><button class="btn btn-ghost" id="message-style-reset">${escapeHtml(t('personalization.messages.reset'))}</button></div>
+    <div class="personalization-head"><div><h1>${escapeHtml(t('personalization.title'))}</h1><p>${escapeHtml(t('personalization.messages.desc'))}</p></div><button class="btn btn-ghost" id="message-style-reset">${escapeHtml(resetLabel)}</button></div>
     ${personalizationTabs('messages')}
+    <div class="message-scope-tabs" role="tablist">
+      <button type="button" class="${!isConversation ? 'active' : ''}" data-message-scope="global">${escapeHtml(t('personalization.messages.globalDefaults'))}</button>
+      <button type="button" class="${isConversation ? 'active' : ''}" data-message-scope="conversation" ${chat ? '' : 'disabled'}>${escapeHtml(t('personalization.messages.currentConversation'))}</button>
+    </div>
+    ${isConversation ? (chat ? `<div class="conversation-appearance-toggle"><div><strong>${escapeHtml(chat.title || t('personalization.messages.currentConversation'))}</strong><small>${escapeHtml(t('personalization.messages.conversationHelp'))}</small></div><label class="message-style-toggle"><span>${escapeHtml(t('personalization.messages.overrideConversation'))}</span><input type="checkbox" id="message-conversation-override" ${conversationEnabled ? 'checked' : ''}></label></div>` : `<div class="conversation-appearance-empty">${escapeHtml(t('personalization.messages.noConversation'))}</div>`) : ''}
     <div class="message-personalization-layout">
-      <section class="personalization-editor message-personalization-editor">
-        <div class="personalization-editor-head"><div><span>${escapeHtml(t('personalization.messages.global'))}</span><h2>${escapeHtml(t('personalization.messages.layout'))}</h2></div></div>
+      <section class="personalization-editor message-personalization-editor ${disabled ? 'is-disabled' : ''}">
+        <div class="personalization-editor-head"><div><span>${escapeHtml(scopeTitle)}</span><h2>${escapeHtml(t('personalization.messages.layout'))}</h2></div></div>
         <div class="message-style-grid">
-          <label><span>${escapeHtml(t('personalization.messages.maxWidth'))}</span><input data-message-style="maxWidth" type="range" min="40" max="100" step="1" value="${s.maxWidth}"><output data-output="maxWidth">${s.maxWidth}%</output></label>
-          <label><span>${escapeHtml(t('personalization.messages.gap'))}</span><input data-message-style="gap" type="range" min="4" max="48" step="1" value="${s.gap}"><output data-output="gap">${s.gap}px</output></label>
-          <label><span>${escapeHtml(t('personalization.messages.radius'))}</span><input data-message-style="bubbleRadius" type="range" min="0" max="32" step="1" value="${s.bubbleRadius}"><output data-output="bubbleRadius">${s.bubbleRadius}px</output></label>
-          <label><span>${escapeHtml(t('personalization.messages.paddingY'))}</span><input data-message-style="bubblePaddingY" type="range" min="4" max="28" step="1" value="${s.bubblePaddingY}"><output data-output="bubblePaddingY">${s.bubblePaddingY}px</output></label>
-          <label><span>${escapeHtml(t('personalization.messages.paddingX'))}</span><input data-message-style="bubblePaddingX" type="range" min="6" max="36" step="1" value="${s.bubblePaddingX}"><output data-output="bubblePaddingX">${s.bubblePaddingX}px</output></label>
-          <label class="message-style-toggle"><span>${escapeHtml(t('personalization.messages.showNames'))}</span><input data-message-style="showNames" type="checkbox" ${s.showNames ? 'checked' : ''}></label>
+          <label><span>${escapeHtml(t('personalization.messages.maxWidth'))}</span><input data-message-style="maxWidth" type="range" min="40" max="100" step="1" value="${s.maxWidth}" ${disabledAttr}><output data-output="maxWidth">${s.maxWidth}%</output></label>
+          <label><span>${escapeHtml(t('personalization.messages.gap'))}</span><input data-message-style="gap" type="range" min="4" max="48" step="1" value="${s.gap}" ${disabledAttr}><output data-output="gap">${s.gap}px</output></label>
+          <label><span>${escapeHtml(t('personalization.messages.radius'))}</span><input data-message-style="bubbleRadius" type="range" min="0" max="32" step="1" value="${s.bubbleRadius}" ${disabledAttr}><output data-output="bubbleRadius">${s.bubbleRadius}px</output></label>
+          <label><span>${escapeHtml(t('personalization.messages.paddingY'))}</span><input data-message-style="bubblePaddingY" type="range" min="4" max="28" step="1" value="${s.bubblePaddingY}" ${disabledAttr}><output data-output="bubblePaddingY">${s.bubblePaddingY}px</output></label>
+          <label><span>${escapeHtml(t('personalization.messages.paddingX'))}</span><input data-message-style="bubblePaddingX" type="range" min="6" max="36" step="1" value="${s.bubblePaddingX}" ${disabledAttr}><output data-output="bubblePaddingX">${s.bubblePaddingX}px</output></label>
+          <label class="message-style-toggle"><span>${escapeHtml(t('personalization.messages.showNames'))}</span><input data-message-style="showNames" type="checkbox" ${s.showNames ? 'checked' : ''} ${disabledAttr}></label>
         </div>
         <div class="personalization-subsection"><div class="personalization-editor-head"><div><span>${escapeHtml(t('personalization.messages.avatars'))}</span><h2>${escapeHtml(t('personalization.messages.avatarStyle'))}</h2></div></div>
           <div class="message-style-grid">
-            <label><span>${escapeHtml(t('personalization.messages.avatarSize'))}</span><input data-message-style="avatarSize" type="range" min="24" max="88" step="1" value="${s.avatarSize}"><output data-output="avatarSize">${s.avatarSize}px</output></label>
-            <label><span>${escapeHtml(t('personalization.messages.avatarRoundness'))}</span><input data-message-style="avatarRadius" type="range" min="0" max="50" step="1" value="${s.avatarRadius}"><output data-output="avatarRadius">${s.avatarRadius}%</output></label>
-            <label><span>${escapeHtml(t('personalization.messages.avatarGap'))}</span><input data-message-style="avatarGap" type="range" min="2" max="28" step="1" value="${s.avatarGap}"><output data-output="avatarGap">${s.avatarGap}px</output></label>
-            <label><span>${escapeHtml(t('personalization.messages.avatarVertical'))}</span>${messagePersonalizationSelect('avatarVertical',s.avatarVertical,[['top',t('personalization.messages.top')],['center',t('personalization.messages.center')],['bottom',t('personalization.messages.bottom')]])}</label>
-            <label><span>${escapeHtml(t('personalization.messages.avatarBorderWidth'))}</span><input data-message-style="avatarBorderWidth" type="range" min="0" max="4" step="1" value="${s.avatarBorderWidth}"><output data-output="avatarBorderWidth">${s.avatarBorderWidth}px</output></label>
-            <label><span>${escapeHtml(t('personalization.messages.avatarBorder'))}</span><select data-message-style="avatarBorder">${markdownColorOptions(s.avatarBorder)}</select></label>
+            <label><span>${escapeHtml(t('personalization.messages.avatarSize'))}</span><input data-message-style="avatarSize" type="range" min="24" max="88" step="1" value="${s.avatarSize}" ${disabledAttr}><output data-output="avatarSize">${s.avatarSize}px</output></label>
+            <label><span>${escapeHtml(t('personalization.messages.avatarRoundness'))}</span><input data-message-style="avatarRadius" type="range" min="0" max="50" step="1" value="${s.avatarRadius}" ${disabledAttr}><output data-output="avatarRadius">${s.avatarRadius}%</output></label>
+            <label><span>${escapeHtml(t('personalization.messages.avatarGap'))}</span><input data-message-style="avatarGap" type="range" min="2" max="28" step="1" value="${s.avatarGap}" ${disabledAttr}><output data-output="avatarGap">${s.avatarGap}px</output></label>
+            <label><span>${escapeHtml(t('personalization.messages.avatarVertical'))}</span>${messagePersonalizationSelect('avatarVertical',s.avatarVertical,[['top',t('personalization.messages.top')],['center',t('personalization.messages.center')],['bottom',t('personalization.messages.bottom')]], disabled)}</label>
+            <label><span>${escapeHtml(t('personalization.messages.avatarBorderWidth'))}</span><input data-message-style="avatarBorderWidth" type="range" min="0" max="4" step="1" value="${s.avatarBorderWidth}" ${disabledAttr}><output data-output="avatarBorderWidth">${s.avatarBorderWidth}px</output></label>
+            <label><span>${escapeHtml(t('personalization.messages.avatarBorder'))}</span><select data-message-style="avatarBorder" ${disabledAttr}>${markdownColorOptions(s.avatarBorder)}</select></label>
           </div>
         </div>
-        <div class="personalization-subsection message-role-settings"><div><h3>${escapeHtml(t('personalization.messages.character'))}</h3><label class="message-style-toggle"><span>${escapeHtml(t('personalization.messages.showAvatar'))}</span><input data-message-style="showCharacterAvatar" type="checkbox" ${s.showCharacterAvatar?'checked':''}></label><label><span>${escapeHtml(t('personalization.messages.messageSide'))}</span>${messagePersonalizationSelect('characterAlign',s.characterAlign,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]])}</label><label><span>${escapeHtml(t('personalization.messages.avatarSide'))}</span>${messagePersonalizationSelect('characterAvatarSide',s.characterAvatarSide,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]])}</label></div><div><h3>${escapeHtml(t('personalization.messages.persona'))}</h3><label class="message-style-toggle"><span>${escapeHtml(t('personalization.messages.showAvatar'))}</span><input data-message-style="showPersonaAvatar" type="checkbox" ${s.showPersonaAvatar?'checked':''}></label><label><span>${escapeHtml(t('personalization.messages.messageSide'))}</span>${messagePersonalizationSelect('personaAlign',s.personaAlign,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]])}</label><label><span>${escapeHtml(t('personalization.messages.avatarSide'))}</span>${messagePersonalizationSelect('personaAvatarSide',s.personaAvatarSide,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]])}</label></div></div>
+        <div class="personalization-subsection message-role-settings">
+          <div><h3>${escapeHtml(t('personalization.messages.character'))}</h3><label class="message-style-toggle"><span>${escapeHtml(t('personalization.messages.showAvatar'))}</span><input data-message-style="showCharacterAvatar" type="checkbox" ${s.showCharacterAvatar?'checked':''} ${disabledAttr}></label><label><span>${escapeHtml(t('personalization.messages.messageSide'))}</span>${messagePersonalizationSelect('characterAlign',s.characterAlign,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]],disabled)}</label><label><span>${escapeHtml(t('personalization.messages.avatarSide'))}</span>${messagePersonalizationSelect('characterAvatarSide',s.characterAvatarSide,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]],disabled)}</label><label><span>${escapeHtml(t('personalization.messages.anchorX'))}</span><input data-message-style="characterAvatarX" type="range" min="0" max="100" step="1" value="${s.characterAvatarX}" ${disabledAttr}><output data-output="characterAvatarX">${s.characterAvatarX}%</output></label><label><span>${escapeHtml(t('personalization.messages.anchorY'))}</span><input data-message-style="characterAvatarY" type="range" min="0" max="100" step="1" value="${s.characterAvatarY}" ${disabledAttr}><output data-output="characterAvatarY">${s.characterAvatarY}%</output></label></div>
+          <div><h3>${escapeHtml(t('personalization.messages.persona'))}</h3><label class="message-style-toggle"><span>${escapeHtml(t('personalization.messages.showAvatar'))}</span><input data-message-style="showPersonaAvatar" type="checkbox" ${s.showPersonaAvatar?'checked':''} ${disabledAttr}></label><label><span>${escapeHtml(t('personalization.messages.messageSide'))}</span>${messagePersonalizationSelect('personaAlign',s.personaAlign,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]],disabled)}</label><label><span>${escapeHtml(t('personalization.messages.avatarSide'))}</span>${messagePersonalizationSelect('personaAvatarSide',s.personaAvatarSide,[['left',t('personalization.messages.left')],['right',t('personalization.messages.right')]],disabled)}</label><label><span>${escapeHtml(t('personalization.messages.anchorX'))}</span><input data-message-style="personaAvatarX" type="range" min="0" max="100" step="1" value="${s.personaAvatarX}" ${disabledAttr}><output data-output="personaAvatarX">${s.personaAvatarX}%</output></label><label><span>${escapeHtml(t('personalization.messages.anchorY'))}</span><input data-message-style="personaAvatarY" type="range" min="0" max="100" step="1" value="${s.personaAvatarY}" ${disabledAttr}><output data-output="personaAvatarY">${s.personaAvatarY}%</output></label></div>
+        </div>
       </section>
       <aside class="message-personalization-preview"><div class="personalization-preview-label">${escapeHtml(t('personalization.preview'))}</div><div id="message-style-preview">${messagePersonalizationPreview(s)}</div><p class="message-personalization-help">${escapeHtml(t('personalization.messages.avatarHelp'))}</p></aside>
     </div>
   </div>`;
+
   bindPersonalizationTabs();
-  const collect = () => {
-    const next = {...getMessagePersonalization()};
+  pageRoot.querySelectorAll('[data-message-scope]').forEach(button => button.addEventListener('click', () => renderMessagePersonalization(button.dataset.messageScope)));
+  document.getElementById('message-conversation-override')?.addEventListener('change', async event => {
+    const settings = conversation.settings || globalSettings;
+    await saveConversationMessagePersonalization(settings, event.target.checked, chat);
+    renderMessagePersonalization('conversation');
+  });
+
+  const collect = async () => {
+    const base = isConversation ? getConversationMessagePersonalization(chat).settings : getMessagePersonalization();
+    const next = { ...base };
     pageRoot.querySelectorAll('[data-message-style]').forEach(input => {
       const key = input.dataset.messageStyle;
       next[key] = input.type === 'checkbox' ? input.checked : input.type === 'range' || input.type === 'number' ? Number(input.value) : input.value;
     });
-    const saved = saveMessagePersonalization(next);
+    const saved = isConversation ? await saveConversationMessagePersonalization(next, true, chat) : saveMessagePersonalization(next);
     for (const output of pageRoot.querySelectorAll('[data-output]')) {
       const key = output.dataset.output, value = saved[key];
-      output.textContent = key === 'avatarRadius' ? `${value}%` : key === 'maxWidth' ? `${value}%` : `${value}px`;
+      output.textContent = `${value}${messageOutputSuffix(key)}`;
     }
+    applyMessagePersonalization(saved);
     const preview = document.getElementById('message-style-preview');
     if (preview) preview.innerHTML = messagePersonalizationPreview(saved);
   };
   pageRoot.querySelectorAll('[data-message-style]').forEach(input => input.addEventListener('input', collect));
-  document.getElementById('message-style-reset')?.addEventListener('click', () => { localStorage.removeItem(STORAGE.messageAppearance); applyMessagePersonalization(); renderMessagePersonalization(); });
+  document.getElementById('message-style-reset')?.addEventListener('click', async () => {
+    if (isConversation && chat) {
+      delete chat.messageAppearanceOverride;
+      chat.updatedAt = Date.now();
+      if (typeof nvSave === 'function') await nvSave();
+      applyMessagePersonalization(getMessagePersonalization());
+      renderMessagePersonalization('conversation');
+      return;
+    }
+    localStorage.removeItem(STORAGE.messageAppearance);
+    applyMessagePersonalization();
+    renderMessagePersonalization('global');
+  });
   applyMessagePersonalization(s);
 }
 function renderPersonalization(typeId = 'paragraph', section = 'text') {

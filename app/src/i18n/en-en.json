@@ -504,7 +504,7 @@
   "personalization.preview.dialogueAlt": "another spoken line",
   "personalization.section.text": "Text",
   "personalization.section.messages": "Messages",
-  "personalization.messages.desc": "Control the global message layout, maximum width, spacing, and Persona/Character avatar presentation.",
+  "personalization.messages.desc": "Control global message presentation or override it for the current conversation, including message layout and Persona/Character avatar framing.",
   "personalization.messages.reset": "Reset messages",
   "personalization.messages.global": "Messages",
   "personalization.messages.layout": "Global layout",
@@ -536,5 +536,14 @@
   "personalization.messages.preview.user": "You",
   "personalization.messages.preview.character": "Character",
   "personalization.messages.preview.assistant": "“This is what a character reply looks like with the current settings.”",
-  "personalization.messages.preview.userMessage": "An example message sent with your Persona."
+  "personalization.messages.preview.userMessage": "An example message sent with your Persona.",
+  "personalization.messages.globalDefaults": "Global messages",
+  "personalization.messages.currentConversation": "Current conversation",
+  "personalization.messages.overrideConversation": "Customize this conversation",
+  "personalization.messages.conversationHelp": "When enabled, these settings override the global message appearance only for this conversation.",
+  "personalization.messages.noConversation": "Open a conversation before creating conversation-specific message settings.",
+  "personalization.messages.resetGlobal": "Reset global messages",
+  "personalization.messages.resetConversation": "Reset this conversation",
+  "personalization.messages.anchorX": "Avatar anchor X",
+  "personalization.messages.anchorY": "Avatar anchor Y"
 }

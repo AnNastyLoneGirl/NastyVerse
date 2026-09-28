@@ -504,7 +504,7 @@
   "personalization.preview.dialogueAlt": "une autre réplique",
   "personalization.section.text": "Texte",
   "personalization.section.messages": "Messages",
-  "personalization.messages.desc": "Réglez la mise en page globale des messages, leur largeur, leur espacement et la présence des avatars Persona/Personnage.",
+  "personalization.messages.desc": "Réglez l’apparence globale des messages ou surchargez-la pour la discussion actuelle, y compris la mise en page et le cadrage des avatars Persona/Personnage.",
   "personalization.messages.reset": "Réinitialiser les messages",
   "personalization.messages.global": "Messages",
   "personalization.messages.layout": "Mise en page globale",
@@ -536,5 +536,14 @@
   "personalization.messages.preview.user": "Vous",
   "personalization.messages.preview.character": "Personnage",
   "personalization.messages.preview.assistant": "« Voilà à quoi ressemble une réponse du personnage avec les réglages actuels. »",
-  "personalization.messages.preview.userMessage": "Un exemple de message envoyé avec votre Persona."
+  "personalization.messages.preview.userMessage": "Un exemple de message envoyé avec votre Persona.",
+  "personalization.messages.globalDefaults": "Messages globaux",
+  "personalization.messages.currentConversation": "Discussion actuelle",
+  "personalization.messages.overrideConversation": "Personnaliser cette discussion",
+  "personalization.messages.conversationHelp": "Une fois activés, ces réglages remplacent l’apparence globale des messages uniquement pour cette discussion.",
+  "personalization.messages.noConversation": "Ouvrez une discussion avant de créer des réglages de messages propres à celle-ci.",
+  "personalization.messages.resetGlobal": "Réinitialiser les messages globaux",
+  "personalization.messages.resetConversation": "Réinitialiser cette discussion",
+  "personalization.messages.anchorX": "Ancrage X de l’avatar",
+  "personalization.messages.anchorY": "Ancrage Y de l’avatar"
 }

@@ -443,6 +443,7 @@
   "personalization.paddingY": "Vertical padding",
   "personalization.paddingX": "Horizontal padding",
   "personalization.spacing": "Vertical spacing",
+  "personalization.syntax": "Markdown syntax",
   "personalization.preview": "Live preview",
   "personalization.markdown.paragraph": "Paragraph",
   "personalization.markdown.h1": "Heading 1",

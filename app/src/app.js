@@ -4913,27 +4913,27 @@ const MARKDOWN_STYLE_TOKENS = [
 ];
 const MARKDOWN_NONE = 'none';
 const MARKDOWN_STYLE_TYPES = [
-  { id:'paragraph', labelKey:'personalization.markdown.paragraph', selector:'.nv-markdown-surface p' },
-  { id:'h1', labelKey:'personalization.markdown.h1', selector:'.nv-markdown-surface h1' },
-  { id:'h2', labelKey:'personalization.markdown.h2', selector:'.nv-markdown-surface h2' },
-  { id:'h3', labelKey:'personalization.markdown.h3', selector:'.nv-markdown-surface h3' },
-  { id:'h4', labelKey:'personalization.markdown.h4', selector:'.nv-markdown-surface h4' },
-  { id:'h5', labelKey:'personalization.markdown.h5', selector:'.nv-markdown-surface h5' },
-  { id:'h6', labelKey:'personalization.markdown.h6', selector:'.nv-markdown-surface h6' },
-  { id:'strong', labelKey:'personalization.markdown.bold', selector:'.nv-markdown-surface strong' },
-  { id:'emphasis', labelKey:'personalization.markdown.italic', selector:'.nv-markdown-surface em' },
-  { id:'strike', labelKey:'personalization.markdown.strike', selector:'.nv-markdown-surface del' },
-  { id:'link', labelKey:'personalization.markdown.link', selector:'.nv-markdown-surface a' },
-  { id:'inlineCode', labelKey:'personalization.markdown.inlineCode', selector:'.nv-markdown-surface :not(pre) > code' },
-  { id:'codeBlock', labelKey:'personalization.markdown.codeBlock', selector:'.nv-markdown-surface pre' },
-  { id:'quote', labelKey:'personalization.markdown.quote', selector:'.nv-markdown-surface blockquote' },
-  { id:'unorderedList', labelKey:'personalization.markdown.unorderedList', selector:'.nv-markdown-surface ul' },
-  { id:'orderedList', labelKey:'personalization.markdown.orderedList', selector:'.nv-markdown-surface ol' },
-  { id:'listItem', labelKey:'personalization.markdown.listItem', selector:'.nv-markdown-surface li' },
-  { id:'rule', labelKey:'personalization.markdown.rule', selector:'.nv-markdown-surface hr' },
-  { id:'table', labelKey:'personalization.markdown.table', selector:'.nv-markdown-surface table' },
-  { id:'tableHeader', labelKey:'personalization.markdown.tableHeader', selector:'.nv-markdown-surface th' },
-  { id:'tableCell', labelKey:'personalization.markdown.tableCell', selector:'.nv-markdown-surface td' },
+  { id:'paragraph', labelKey:'personalization.markdown.paragraph', selector:'.nv-markdown-surface p', example:'...' },
+  { id:'h1', labelKey:'personalization.markdown.h1', selector:'.nv-markdown-surface h1', example:'# ...' },
+  { id:'h2', labelKey:'personalization.markdown.h2', selector:'.nv-markdown-surface h2', example:'## ...' },
+  { id:'h3', labelKey:'personalization.markdown.h3', selector:'.nv-markdown-surface h3', example:'### ...' },
+  { id:'h4', labelKey:'personalization.markdown.h4', selector:'.nv-markdown-surface h4', example:'#### ...' },
+  { id:'h5', labelKey:'personalization.markdown.h5', selector:'.nv-markdown-surface h5', example:'##### ...' },
+  { id:'h6', labelKey:'personalization.markdown.h6', selector:'.nv-markdown-surface h6', example:'###### ...' },
+  { id:'strong', labelKey:'personalization.markdown.bold', selector:'.nv-markdown-surface strong', example:'**...**' },
+  { id:'emphasis', labelKey:'personalization.markdown.italic', selector:'.nv-markdown-surface em', example:'*...*' },
+  { id:'strike', labelKey:'personalization.markdown.strike', selector:'.nv-markdown-surface del', example:'~~...~~' },
+  { id:'link', labelKey:'personalization.markdown.link', selector:'.nv-markdown-surface a', example:'[...](https://example.com)' },
+  { id:'inlineCode', labelKey:'personalization.markdown.inlineCode', selector:'.nv-markdown-surface :not(pre) > code', example:'`...`' },
+  { id:'codeBlock', labelKey:'personalization.markdown.codeBlock', selector:'.nv-markdown-surface pre', example:'```\n...\n```' },
+  { id:'quote', labelKey:'personalization.markdown.quote', selector:'.nv-markdown-surface blockquote', example:'> ...' },
+  { id:'unorderedList', labelKey:'personalization.markdown.unorderedList', selector:'.nv-markdown-surface ul', example:'- ...\n- ...' },
+  { id:'orderedList', labelKey:'personalization.markdown.orderedList', selector:'.nv-markdown-surface ol', example:'1. ...\n2. ...' },
+  { id:'listItem', labelKey:'personalization.markdown.listItem', selector:'.nv-markdown-surface li', example:'- ...' },
+  { id:'rule', labelKey:'personalization.markdown.rule', selector:'.nv-markdown-surface hr', example:'---' },
+  { id:'table', labelKey:'personalization.markdown.table', selector:'.nv-markdown-surface table', example:'| A | B |\n| --- | --- |\n| ... | ... |' },
+  { id:'tableHeader', labelKey:'personalization.markdown.tableHeader', selector:'.nv-markdown-surface th', example:'| A | B |\n| --- | --- |' },
+  { id:'tableCell', labelKey:'personalization.markdown.tableCell', selector:'.nv-markdown-surface td', example:'| ... | ... |' },
 ];
 const DEFAULT_MARKDOWN_STYLES = {
   paragraph:{ color:'text', background:'none', border:'none', fontSize:14, fontWeight:400, fontStyle:'normal', lineHeight:1.75, radius:0, paddingY:0, paddingX:0, marginY:7 },
@@ -5027,6 +5027,7 @@ function renderPersonalization(typeId = 'paragraph') {
       <aside class="personalization-elements">${MARKDOWN_STYLE_TYPES.map(type => `<button class="personalization-element ${type.id === activeType.id ? 'active' : ''}" data-md-type="${type.id}">${escapeHtml(t(type.labelKey))}</button>`).join('')}</aside>
       <section class="personalization-editor">
         <div class="personalization-editor-head"><div><span>${escapeHtml(t('personalization.editing'))}</span><h2>${escapeHtml(t(activeType.labelKey))}</h2></div><button class="btn btn-ghost btn-small" id="markdown-reset-current">${escapeHtml(t('personalization.resetCurrent'))}</button></div>
+        <div class="markdown-syntax-example"><span>${escapeHtml(t('personalization.syntax'))}</span><pre><code>${escapeHtml(activeType.example || '')}</code></pre></div>
         <div class="markdown-controls">
           <label><span>${escapeHtml(t('personalization.color'))}</span><select data-md-field="color">${markdownColorOptions(style.color)}</select></label>
           <label><span>${escapeHtml(t('personalization.background'))}</span><select data-md-field="background">${markdownColorOptions(style.background, true)}</select></label>

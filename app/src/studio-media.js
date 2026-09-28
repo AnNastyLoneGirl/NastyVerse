@@ -307,7 +307,7 @@ async function openChatTranslationSettings() {
   return dialog;
 }
 function nvMediaBind(chat) {
-  nvBind(pageRoot,{attach:()=>nvAttach(chat),illustrate:()=>nvIllustrate(chat)});
+  nvBind(pageRoot,{attach:()=>nvAttach(chat),illustrate:()=>{pageRoot.querySelector('.nv-composer-menu')?.removeAttribute('open');return nvIllustrate(chat);}});
   pageRoot.querySelectorAll('[data-remove-image]').forEach(b=>b.onclick=()=>{chat.draftImages.splice(Number(b.dataset.removeImage),1);nvChanged(chat);});
   pageRoot.querySelectorAll('[data-image-index]').forEach(b=>b.onclick=()=>{
     const message=chat.messages.find(m=>m.id===b.closest('[data-message]')?.dataset.message);

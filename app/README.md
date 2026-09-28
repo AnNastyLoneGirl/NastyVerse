@@ -1,6 +1,8 @@
-# NastyVerse application 0.2.27
+# NastyVerse application 0.2.28
 
 Per-message prompt inspection 0.2.27: the global “View prompt” toolbar action is removed. Assistant messages now expose a prompt icon that opens a SillyTavern-inspired itemization view with estimated section token counts and the exact saved request payload when available; older messages are reconstructed from their preceding history.
+Chat top bar 0.2.28: the existing message search remains unchanged. Everything to its right is replaced by a compact icon-only action group inspired by SillyTavern Chat Top Info Bar: chat manager, new chat, rename current chat, delete current chat, and close current chat. Connection-profile controls, message counters, Persona, Context, and the overflow menu are not included in this top bar.
+
 
 The application is a replaceable HTML/CSS/JavaScript payload hosted by the single Tauri launcher (0.1.12). No second Tauri crate is introduced.
 

@@ -408,7 +408,13 @@ function nvMessageVariantNav(message) {
 function nvMessageArticle(message, index, chat, persona, fallbackCharacter, settings) {
   const layout = nvMessageLayout(message, persona, fallbackCharacter, settings);
   const hiddenBySearch = NV.search && !nvMessageDisplayContent(message).toLocaleLowerCase().includes(NV.search.toLocaleLowerCase());
-  const actions = `<div class="nv-message-actions"><button data-message-action="edit">${nvText('Modifier','Edit')}</button><button data-message-action="more" aria-label="${nvText('Autres actions du message','More message actions')}">•••</button></div>`;
+  const deleteIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6.5 7l.8 13h9.4l.8-13M10 11v5M14 11v5"/></svg>`;
+  const editIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10.8-10.8a2.1 2.1 0 0 0-3-3L5 17v3ZM14.5 7.5l3 3"/></svg>`;
+  const contextIcon = message.hidden
+    ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10.6 10.6 0 0 1 12 5c5.5 0 9 7 9 7a16 16 0 0 1-2.3 3.2M6.6 6.6C4.2 8.2 3 12 3 12s3.5 7 9 7a9.6 9.6 0 0 0 3.4-.6"/></svg>`
+    : `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-7 9-7 9 7 9 7-3.5 7-9 7-9-7-9-7Z"/><circle cx="12" cy="12" r="2.5"/></svg>`;
+  const contextLabel = message.hidden ? nvText('Afficher dans le contexte','Include in context') : nvText('Cacher du contexte','Hide from context');
+  const actions = `<div class="nv-message-actions"><button type="button" data-message-action="delete" aria-label="${nvText('Supprimer le message','Delete message')}" title="${nvText('Supprimer le message','Delete message')}">${deleteIcon}</button><button type="button" data-message-action="edit" aria-label="${nvText('Éditer le message','Edit message')}" title="${nvText('Éditer le message','Edit message')}">${editIcon}</button><button type="button" class="nv-context-toggle ${message.hidden ? 'is-hidden' : 'is-visible'}" data-message-action="hide" aria-pressed="${message.hidden ? 'true' : 'false'}" aria-label="${contextLabel}" title="${contextLabel}">${contextIcon}</button></div>`;
   const variantNav = nvMessageVariantNav(message);
   return `<article class="message message-${message.role} nv-align-${layout.align} ${message.hidden ? 'nv-excluded' : ''}" data-message="${nvEscape(message.id)}" ${hiddenBySearch ? 'hidden' : ''}>${actions}<div class="nv-message-row nv-avatar-${layout.side} nv-avatar-v-${layout.vertical}">${layout.avatar}<div class="nv-message-body"><div class="message-role">${nvEscape(nvMessageRoleName(message, persona, fallbackCharacter))}<small>${message.hidden ? nvText(' · Hors contexte',' · Excluded') : ''}</small></div><div class="message-bubble nv-markdown-surface ${variantNav ? 'nv-has-variant-nav' : ''}">${nvMarkdown(nvMessageDisplayContent(message))}${nvMediaMarkup(message.attachments)}${variantNav}</div></div></div></article>`;
 }
@@ -1020,10 +1026,6 @@ async function nvStop() { const run = NV.activeRequest; if (!run) return; run.ca
 async function nvMessageAction(chat,m,action) {
   if (!m) return;
   if (state.sending && NV.activeRequest?.sessionId === chat.id) return toast(nvText('Arrêtez la génération avant de modifier cette conversation.','Stop generation before editing this conversation.'));
-  if (action === 'more') {
-    const dialog = nvDialog(nvText('Actions du message','Message actions'),`<div class="nv-menu">${[['copy',nvText('Copier','Copy')],['speak',nvText('Lire à voix haute','Read aloud')],['hide',m.hidden ? nvText('Inclure dans le contexte','Include in context') : nvText('Exclure du contexte','Exclude from context')],['delete',nvText('Supprimer ce message','Delete this message')]].map(([key,label]) => nvButton(key,label)).join('')}<p class="nv-muted">${m.model ? nvEscape(m.model)+' · ' : ''}~${estimateTokens(m.content)} tokens · ${Math.round(m.duration/1000)} s</p></div>`);
-    nvBind(dialog,Object.fromEntries(['copy','speak','hide','delete'].map(a => [a,() => { dialog.close(); return nvMessageAction(chat,m,a); }]))); return;
-  }
   if (action === 'copy') return navigator.clipboard.writeText(nvMessageDisplayContent(m));
   if (action === 'speak') return nvSpeak(nvMessageDisplayContent(m));
   if (action === 'regenerate') return nvGenerate(chat,'regenerate');

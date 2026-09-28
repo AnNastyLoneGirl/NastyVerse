@@ -1,4 +1,4 @@
-# NastyVerse application 0.2.23
+# NastyVerse application 0.2.24
 
 The application is a replaceable HTML/CSS/JavaScript payload hosted by the single Tauri launcher (0.1.12). No second Tauri crate is introduced.
 
@@ -62,3 +62,5 @@ Timeline viewport sizing 0.2.22: the Timeline dialog now fits entirely inside th
 
 
 Message variants 0.2.23: response variants are now controlled from the bottom-right corner inside each assistant message bubble. A single `›` creates a new variant; once variants exist the control becomes `‹ current/total ›`. Previous navigation is bounded, next advances through existing variants, and pressing next on the last variant generates a new alternative for that specific assistant message, including older messages. The former `Another reply` action was removed from the message action bar.
+
+Message actions 0.2.24: the per-message action row is now icon-only and intentionally limited to three actions, ordered Delete, Edit, and Context visibility. The former overflow menu was removed. Context visibility is a persistent toggle: excluded messages remain visible in the conversation but continue to be filtered out of prompt/history assembly until re-enabled.

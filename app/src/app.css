@@ -1235,7 +1235,7 @@ input,textarea,select{font:inherit}input,textarea,select{background:var(--panel-
 .message-avatar-crop-stage{grid-area:stage;width:180px;height:180px;position:relative;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--void);cursor:grab;touch-action:none;user-select:none}
 .message-avatar-crop-stage:active{cursor:grabbing}
 .message-avatar-crop-stage.no-image{cursor:default}
-.message-avatar-crop-stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;transform-origin:center center;will-change:transform;pointer-events:none}
+.message-avatar-crop-stage img{position:absolute;display:block;max-width:none;max-height:none;object-fit:fill;will-change:left,top,width,height;pointer-events:none}
 .message-avatar-crop-fallback{position:absolute;inset:0;display:grid;place-items:center;font-family:'Cinzel Decorative',serif;font-size:42px;font-weight:900;color:var(--text-dim);background:color-mix(in srgb,var(--violet) 18%,var(--panel-2))}
 .message-avatar-crop-reticle{position:absolute;left:50%;top:50%;width:18px;height:18px;transform:translate(-50%,-50%);border:1px solid var(--text-dim);border-radius:50%;pointer-events:none;opacity:.75}
 .message-avatar-crop-reticle::before,.message-avatar-crop-reticle::after{content:'';position:absolute;background:var(--text-dim);opacity:.75}

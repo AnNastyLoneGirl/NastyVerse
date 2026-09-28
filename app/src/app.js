@@ -5128,17 +5128,60 @@ async function saveConversationMessagePersonalization(settings, enabled = true, 
   applyMessagePersonalization(enabled ? normalized : getMessagePersonalization());
   return normalized;
 }
-function messageAvatarTransform(_x, _y, zoomPercent) {
-  const zoom = Math.max(1, Number(zoomPercent || 100) / 100);
-  return `scale(${zoom.toFixed(4)})`;
-}
-function messageAvatarInlineStyle(role, settings = getMessagePersonalization()) {
+function messageAvatarFrameValues(role, settings = getMessagePersonalization()) {
   const normalized = normalizeMessageAppearance(settings || {});
   const prefix = role === 'persona' || role === 'user' ? 'persona' : 'character';
-  const x = normalized[`${prefix}AvatarX`];
-  const y = normalized[`${prefix}AvatarY`];
-  const zoom = normalized[`${prefix}AvatarZoom`];
-  return `object-position:${x}% ${y}%;transform-origin:${x}% ${y}%;transform:${messageAvatarTransform(x, y, zoom)}`;
+  return {
+    x: normalized[`${prefix}AvatarX`],
+    y: normalized[`${prefix}AvatarY`],
+    zoom: normalized[`${prefix}AvatarZoom`],
+  };
+}
+function applyMessageAvatarFrame(image, role, settings = getMessagePersonalization()) {
+  if (!(image instanceof HTMLImageElement)) return;
+  const frame = image.parentElement;
+  if (!frame) return;
+  const render = () => {
+    const frameWidth = frame.clientWidth;
+    const frameHeight = frame.clientHeight;
+    const naturalWidth = image.naturalWidth;
+    const naturalHeight = image.naturalHeight;
+    if (!(frameWidth > 0 && frameHeight > 0 && naturalWidth > 0 && naturalHeight > 0)) return;
+    const { x, y, zoom } = messageAvatarFrameValues(role, settings);
+    const coverScale = Math.max(frameWidth / naturalWidth, frameHeight / naturalHeight);
+    const scale = coverScale * Math.max(1, Number(zoom || 100) / 100);
+    const renderedWidth = naturalWidth * scale;
+    const renderedHeight = naturalHeight * scale;
+    const overflowX = Math.max(0, renderedWidth - frameWidth);
+    const overflowY = Math.max(0, renderedHeight - frameHeight);
+    const left = -overflowX * (Number(x || 0) / 100);
+    const top = -overflowY * (Number(y || 0) / 100);
+    image.style.position = 'absolute';
+    image.style.inset = 'auto';
+    image.style.left = `${left.toFixed(3)}px`;
+    image.style.top = `${top.toFixed(3)}px`;
+    image.style.width = `${renderedWidth.toFixed(3)}px`;
+    image.style.height = `${renderedHeight.toFixed(3)}px`;
+    image.style.maxWidth = 'none';
+    image.style.maxHeight = 'none';
+    image.style.objectFit = 'fill';
+    image.style.objectPosition = '50% 50%';
+    image.style.transform = 'none';
+    image.style.transformOrigin = 'center center';
+  };
+  if (image.complete && image.naturalWidth) render();
+  else image.addEventListener('load', render, { once: true });
+}
+function refreshMessageAvatarFraming(settings = getMessagePersonalization(), root = document) {
+  const normalized = normalizeMessageAppearance(settings || {});
+  root.querySelectorAll?.('.nv-message-avatar.nv-avatar-persona img').forEach(image => applyMessageAvatarFrame(image, 'persona', normalized));
+  root.querySelectorAll?.('.nv-message-avatar.nv-avatar-character img').forEach(image => applyMessageAvatarFrame(image, 'character', normalized));
+  root.querySelectorAll?.('[data-avatar-crop-stage="persona"] img').forEach(image => applyMessageAvatarFrame(image, 'persona', normalized));
+  root.querySelectorAll?.('[data-avatar-crop-stage="character"] img').forEach(image => applyMessageAvatarFrame(image, 'character', normalized));
+}
+function messageAvatarInlineStyle() {
+  // Framing is applied from the image's natural dimensions after it loads.
+  return 'position:absolute;inset:auto;max-width:none;max-height:none;object-fit:fill;transform:none';
 }
 function applyMessagePersonalization(settings = getMessagePersonalization()) {
   const normalized = normalizeMessageAppearance(settings);
@@ -5157,8 +5200,7 @@ function applyMessagePersonalization(settings = getMessagePersonalization()) {
   root.style.setProperty('--nv-persona-avatar-y', `${normalized.personaAvatarY}%`);
   root.style.setProperty('--nv-character-avatar-x', `${normalized.characterAvatarX}%`);
   root.style.setProperty('--nv-character-avatar-y', `${normalized.characterAvatarY}%`);
-  root.style.setProperty('--nv-persona-avatar-transform', messageAvatarTransform(normalized.personaAvatarX, normalized.personaAvatarY, normalized.personaAvatarZoom));
-  root.style.setProperty('--nv-character-avatar-transform', messageAvatarTransform(normalized.characterAvatarX, normalized.characterAvatarY, normalized.characterAvatarZoom));
+  requestAnimationFrame(() => refreshMessageAvatarFraming(normalized));
   root.dataset.nvMessageNames = normalized.showNames ? 'show' : 'hide';
   return normalized;
 }
@@ -5296,7 +5338,10 @@ function renderMessagePersonalization(scope = state.messagePersonalizationScope 
     }
     applyMessagePersonalization(normalized);
     const preview = document.getElementById('message-style-preview');
-    if (preview) preview.innerHTML = messagePersonalizationPreview(normalized);
+    if (preview) {
+      preview.innerHTML = messagePersonalizationPreview(normalized);
+      requestAnimationFrame(() => refreshMessageAvatarFraming(normalized, preview));
+    }
     return normalized;
   };
   const collect = async () => {
@@ -5315,10 +5360,8 @@ function renderMessagePersonalization(scope = state.messagePersonalizationScope 
     const xInput = pageRoot.querySelector(`[data-message-style="${prefix}AvatarX"]`);
     const yInput = pageRoot.querySelector(`[data-message-style="${prefix}AvatarY"]`);
     const zoomInput = pageRoot.querySelector(`[data-message-style="${prefix}AvatarZoom"]`);
-    const x = Number(xInput?.value ?? 50), y = Number(yInput?.value ?? 50), zoom = Number(zoomInput?.value ?? 100);
-    image.style.objectPosition = `${x}% ${y}%`;
-    image.style.transformOrigin = `${x}% ${y}%`;
-    image.style.transform = messageAvatarTransform(x, y, zoom);
+    const current = readMessageStyleForm();
+    applyMessageAvatarFrame(image, prefix, current);
   };
   for (const role of ['character','persona']) {
     const prefix = role;

@@ -1,4 +1,4 @@
-# NastyVerse application 0.2.15
+# NastyVerse application 0.2.16
 
 The application is a replaceable HTML/CSS/JavaScript payload hosted by the single Tauri launcher (0.1.12). No second Tauri crate is introduced.
 
@@ -47,3 +47,5 @@ Message personalization 0.2.14: Avatar framing is now applied directly to live p
 
 
 Message personalization 0.2.15: Avatar framing now uses one shared focal-point renderer across the crop editor, live preview, and chat. X/Y are applied as the image object-position and zoom uses the same focal point as transform-origin. The live preview updates synchronously while dragging, and the Character/Persona framing controls are stacked into full-width cards for a clearer responsive layout.
+
+Message personalization 0.2.16: avatar framing now uses explicit cover geometry from the source image natural size. The crop editor, live preview, and chat all share the same renderer, so X/Y/zoom expose the exact same image region at every avatar size.

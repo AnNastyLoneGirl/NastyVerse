@@ -8,7 +8,7 @@
   const number = (value, fallback, min, max) => Number.isFinite(Number(value)) ? Math.max(min, Math.min(max, Number(value))) : fallback;
   const tokens = value => Math.ceil(text(value).length / 3.5);
   const words = value => text(value).toLocaleLowerCase().match(/[\p{L}\p{N}_]+/gu) || [];
-  const defaults = () => ({ version: 1, sessions: [], active: {}, personas: [], defaultPersona: '', books: [], groups: [], documents: [], replies: [], rules: [], profiles: [], appearance: { theme: 'violet', background: '', autoSpeak: false, voice: '', rate: 1 }, lore: { scanDepth: 8, budget: 1200, recursive: true }, generation: { stream: true }, lastSession: '' });
+  const defaults = () => ({ version: 1, sessions: [], active: {}, personas: [], defaultPersona: '', books: [], groups: [], documents: [], replies: [], rules: [], profiles: [], globalVariables: {}, appearance: { theme: 'violet', background: '', autoSpeak: false, voice: '', rate: 1 }, lore: { scanDepth: 8, budget: 1200, recursive: true }, generation: { stream: true }, lastSession: '' });
   function message(raw = {}) {
     const content = text(raw.content ?? raw.mes);
     const variants = Array.isArray(raw.variants ?? raw.swipes) ? (raw.variants ?? raw.swipes).map(text) : [content];
@@ -20,7 +20,7 @@
     return { id: text(raw.id || id()), role: ['user', 'system', 'assistant'].includes(raw.role) ? raw.role : raw.is_user ? 'user' : raw.is_system ? 'system' : 'assistant', content, name: text(raw.name), characterId: text(raw.characterId), personaId: text(raw.personaId), createdAt: Number(raw.createdAt) || Date.parse(raw.send_date) || Date.now(), variants: variants.length ? variants : [content], variant: selected, hidden: !!raw.hidden, bookmark: !!raw.bookmark, model: text(raw.model), promptRecords, attachments: (Array.isArray(raw.attachments) ? raw.attachments : []).filter(a => a && typeof a.assetId === 'string').slice(0,4).map(a => ({id:text(a.id||id()),assetId:text(a.assetId),name:text(a.name||'Image'),sendToModel:!!a.sendToModel})), displayText: text(raw.displayText ?? raw.display_text ?? legacyTranslation?.content), displaySource: text(raw.displaySource ?? raw.display_source ?? legacyTranslation?.source), displayLanguage: text(raw.displayLanguage ?? raw.display_language ?? legacyTranslation?.language), duration: number(raw.duration, 0, 0, 86400000) };
   }
   function session(targetId, name, messages = []) {
-    return { id: id(), targetId, title: name || 'Conversation', createdAt: Date.now(), updatedAt: Date.now(), messages: messages.map(message), personaId: '', bookIds: [], documentIds: [], note: '', noteDepth: 2, noteInterval: 1, memory: '', scenario: '', pinned: false, draft: '', draftImages: [] };
+    return { id: id(), targetId, title: name || 'Conversation', createdAt: Date.now(), updatedAt: Date.now(), messages: messages.map(message), personaId: '', bookIds: [], documentIds: [], variables: {}, note: '', noteDepth: 2, noteInterval: 1, memory: '', scenario: '', pinned: false, draft: '', draftImages: [] };
   }
   function migrate(characters, conversations) {
     const data = defaults();
@@ -39,11 +39,12 @@
     }
     data.sessions = data.sessions.map(s => {
       if (!s || typeof s.targetId !== 'string' || !Array.isArray(s.messages)) throw new Error('Invalid conversation');
-      return { ...session(s.targetId, s.title), ...s, messages: s.messages.map(message), draftImages: message({attachments:s.draftImages}).attachments, bookIds: Array.isArray(s.bookIds) ? s.bookIds : [], documentIds: Array.isArray(s.documentIds) ? s.documentIds : [] };
+      return { ...session(s.targetId, s.title), ...s, messages: s.messages.map(message), draftImages: message({attachments:s.draftImages}).attachments, bookIds: Array.isArray(s.bookIds) ? s.bookIds : [], documentIds: Array.isArray(s.documentIds) ? s.documentIds : [], variables: s.variables && typeof s.variables === 'object' && !Array.isArray(s.variables) ? s.variables : {} };
     });
     const ids = new Set();
     for (const chat of data.sessions) { if (ids.has(chat.id)) throw new Error('Duplicate conversation ID'); ids.add(chat.id); }
     data.active = data.active && typeof data.active === 'object' && !Array.isArray(data.active) ? data.active : {};
+    data.globalVariables = data.globalVariables && typeof data.globalVariables === 'object' && !Array.isArray(data.globalVariables) ? data.globalVariables : {};
     data.appearance = { ...defaults().appearance, ...data.appearance };
     data.lore = { ...defaults().lore, ...data.lore };
     data.generation = { ...defaults().generation, ...data.generation };
@@ -142,10 +143,12 @@
     const result = session(target, title, messages);
     result.memory = text(metadata.memory ?? metadata.chat_metadata?.memory);
     result.note = text(metadata.note ?? metadata.chat_metadata?.note);
+    const importedVariables = metadata.variables ?? metadata.chat_metadata?.variables ?? metadata.nastyverse?.variables ?? metadata.chat_metadata?.nastyverse?.variables;
+    result.variables = importedVariables && typeof importedVariables === 'object' && !Array.isArray(importedVariables) ? clone(importedVariables) : {};
     return result;
   }
   function exportChat(chat, user = 'User', character = 'Assistant') {
-    return [JSON.stringify({ user_name: user, character_name: character, create_date: new Date(chat.createdAt).toISOString(), chat_metadata: { memory: chat.memory, note: chat.note, nastyverse: { title: chat.title, personaId: chat.personaId } } }), ...chat.messages.map(m => JSON.stringify({ name: m.name || (m.role === 'user' ? user : character), is_user: m.role === 'user', is_system: m.role === 'system', send_date: new Date(m.createdAt).toISOString(), mes: m.content, swipes: m.variants, swipe_id: m.variant, extra: { isSmallSys: false }, hidden: m.hidden, bookmark: m.bookmark }))].join('\n');
+    return [JSON.stringify({ user_name: user, character_name: character, create_date: new Date(chat.createdAt).toISOString(), chat_metadata: { memory: chat.memory, note: chat.note, variables: clone(chat.variables || {}), nastyverse: { title: chat.title, personaId: chat.personaId, variables: clone(chat.variables || {}) } } }), ...chat.messages.map(m => JSON.stringify({ name: m.name || (m.role === 'user' ? user : character), is_user: m.role === 'user', is_system: m.role === 'system', send_date: new Date(m.createdAt).toISOString(), mes: m.content, swipes: m.variants, swipe_id: m.variant, extra: { isSmallSys: false }, hidden: m.hidden, bookmark: m.bookmark }))].join('\n');
   }
   function branch(chat, messageId, title) {
     const index = chat.messages.findIndex(m => m.id === messageId);

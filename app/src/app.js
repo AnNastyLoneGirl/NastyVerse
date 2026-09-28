@@ -4381,9 +4381,13 @@ function buildTextCompletionRequest(character, history = [], params = getGenerat
     assembled = assembleSelectedTextCompletionPrompt(components, selectedNewestFirst, selectedExamples, preset, formatting, instruction);
   }
 
+  const finalPrompt = typeof nvVariableExecute === 'function'
+    ? nvVariableExecute(assembled.prompt, typeof nvContextSession === 'function' ? nvContextSession(character) : null).text
+    : assembled.prompt;
+
   return {
     mode: 'text',
-    prompt: assembled.prompt,
+    prompt: finalPrompt,
     story: components.story,
     examples: selectedExamples.join(''),
     chat: assembled.chat,
@@ -4393,9 +4397,9 @@ function buildTextCompletionRequest(character, history = [], params = getGenerat
     preset,
     instruction,
     formatting,
-    promptTokens: estimateTokens(assembled.prompt),
+    promptTokens: estimateTokens(finalPrompt),
     promptBudget,
-    overBudget: estimateTokens(assembled.prompt) > promptBudget,
+    overBudget: estimateTokens(finalPrompt) > promptBudget,
     droppedExamples: components.formattedExamples.length - selectedExamples.length,
     droppedMessages: components.entries.length - selectedNewestFirst.length,
     exampleMessagesBehavior: behavior,

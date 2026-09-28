@@ -196,7 +196,7 @@ function nvVariableAdd(chat, name, increment, globalScope = false) {
   try {
     const parsed = JSON.parse(String(current ?? ''));
     if (Array.isArray(parsed)) {
-      parsed.push(nvVariableConvert(increment,'auto'));
+      parsed.push(increment);
       nvVariableSet(chat, key, JSON.stringify(parsed), globalScope);
       return parsed;
     }
@@ -256,11 +256,18 @@ function nvVariableMacroParts(payload, count = 2, colonSyntax = true) {
 function nvVariableMacroCommand(command) {
   const aliases = {
     varexists:'hasvar', deletevar:'flushvar', setvarindex:'setvarkey', getvarindex:'getvarkey',
+    setchatvar:'setvar', getchatvar:'getvar', addchatvar:'addvar', incchatvar:'incvar', decchatvar:'decvar',
     globalvarexists:'hasglobalvar', deleteglobalvar:'flushglobalvar',
     setglobalvarindex:'setglobalvarkey', getglobalvarindex:'getglobalvarkey'
   };
   const key = String(command || '').toLowerCase();
   return aliases[key] || key;
+}
+function nvVariableIsFalsy(value) {
+  const raw = nvVariableOutput(value).trim();
+  if (!raw) return true;
+  if (!Number.isNaN(Number(raw)) && Number(raw) === 0) return true;
+  return /^(?:false|off|no|null|undefined)$/i.test(raw);
 }
 function nvApplyVariableMacro(command, payload, chat, mutate, colonSyntax = true) {
   const cmd = nvVariableMacroCommand(command);
@@ -281,7 +288,10 @@ function nvApplyVariableMacro(command, payload, chat, mutate, colonSyntax = true
   if (isGet) return { output:nvVariableOutput(nvVariableGet(chat,name,globalScope)), changed:false };
   if (isHas) return { output:nvVariableHas(chat,name,globalScope) ? 'true' : 'false', changed:false };
   if (isGetKey) return { output:nvVariableOutput(nvVariableGet(chat,name,globalScope,parts[1])), changed:false };
-  if (!mutate) return { output:'', changed:false };
+  if (!mutate) {
+    if (isInc || isDec) return { output:nvVariableOutput(nvVariableGet(chat,name,globalScope)), changed:false };
+    return { output:'', changed:false };
+  }
   if (isSet) { nvVariableSet(chat,name,parts[1] ?? '',globalScope); return { output:'', changed:true }; }
   if (isAdd) { nvVariableAdd(chat,name,parts[1] ?? '',globalScope); return { output:'', changed:true }; }
   if (isInc) return { output:nvVariableOutput(nvVariableAdd(chat,name,1,globalScope)), changed:true };
@@ -296,6 +306,44 @@ const NV_VARIABLE_MACRO_COMMANDS = [
   'setvarkey','getvarkey','setvarindex','getvarindex',
   'setvar','addvar','incvar','decvar','getvar','hasvar','varexists','deletevar','flushvar'
 ];
+function nvVariableShorthandOperation(chat, globalScope, name, operator, rawValue, mutate) {
+  const current = nvVariableGet(chat,name,globalScope);
+  const resolveValue = () => nvProcessVariableMacros(String(rawValue ?? ''),chat,mutate).text;
+  if (!operator) return { output:nvVariableOutput(current), changed:false };
+  if (operator === '||') return { output:nvVariableIsFalsy(current) ? resolveValue() : nvVariableOutput(current), changed:false };
+  if (operator === '??') return { output:nvVariableHas(chat,name,globalScope) ? nvVariableOutput(current) : resolveValue(), changed:false };
+  if (operator === '==') return { output:nvVariableOutput(current) === nvVariableOutput(resolveValue()) ? 'true' : 'false', changed:false };
+  if (operator === '!=') return { output:nvVariableOutput(current) !== nvVariableOutput(resolveValue()) ? 'true' : 'false', changed:false };
+  if (['>','>=','<','<='].includes(operator)) {
+    const left = Number(current), right = Number(resolveValue());
+    if (Number.isNaN(left) || Number.isNaN(right)) return { output:'false', changed:false };
+    const ok = operator === '>' ? left > right : operator === '>=' ? left >= right : operator === '<' ? left < right : left <= right;
+    return { output:ok ? 'true' : 'false', changed:false };
+  }
+  if (!mutate) return { output:(operator === '++' || operator === '--') ? nvVariableOutput(current) : '', changed:false };
+  if (operator === '=') { nvVariableSet(chat,name,resolveValue(),globalScope); return { output:'', changed:true }; }
+  if (operator === '+=') { nvVariableAdd(chat,name,resolveValue(),globalScope); return { output:'', changed:true }; }
+  if (operator === '-=') {
+    const amount = Number(resolveValue());
+    if (!Number.isNaN(amount)) nvVariableAdd(chat,name,-amount,globalScope);
+    return { output:'', changed:!Number.isNaN(amount) };
+  }
+  if (operator === '++') return { output:nvVariableOutput(nvVariableAdd(chat,name,1,globalScope)), changed:true };
+  if (operator === '--') return { output:nvVariableOutput(nvVariableAdd(chat,name,-1,globalScope)), changed:true };
+  if (operator === '||=') {
+    if (nvVariableIsFalsy(current)) {
+      const value = resolveValue(); nvVariableSet(chat,name,value,globalScope); return { output:nvVariableOutput(value), changed:true };
+    }
+    return { output:nvVariableOutput(current), changed:false };
+  }
+  if (operator === '??=') {
+    if (!nvVariableHas(chat,name,globalScope)) {
+      const value = resolveValue(); nvVariableSet(chat,name,value,globalScope); return { output:nvVariableOutput(value), changed:true };
+    }
+    return { output:nvVariableOutput(current), changed:false };
+  }
+  return { output:'', changed:false };
+}
 function nvProcessVariableMacros(source, chat = nvSession(), mutate = true) {
   let changed = false;
   let text = String(source ?? '');
@@ -310,42 +358,19 @@ function nvProcessVariableMacros(source, chat = nvSession(), mutate = true) {
     changed ||= result.changed;
     return result.output;
   });
-  text = text.replace(/\{\{\s*\$([A-Za-z_][\w.-]*)(?:(\+\+|--)|(\+=|-=|=)\s*([\s\S]*?))?\s*\}\}/g, (full, name, unaryOperator, valueOperator, value) => {
-    const operator = unaryOperator || valueOperator || '';
-    if (!operator) return nvVariableOutput(nvVariableGet(chat,name,true));
-    if (!mutate) return '';
-    changed = true;
-    if (operator === '=') { nvVariableSet(chat,name,value ?? '',true); return ''; }
-    if (operator === '+=') { nvVariableAdd(chat,name,value ?? '',true); return ''; }
-    if (operator === '-=') {
-      const amount = Number(value ?? 0);
-      return nvVariableOutput(nvVariableAdd(chat,name,Number.isNaN(amount) ? 0 : -amount,true));
-    }
-    if (operator === '++') return nvVariableOutput(nvVariableAdd(chat,name,1,true));
-    if (operator === '--') return nvVariableOutput(nvVariableAdd(chat,name,-1,true));
-    return '';
-  });
-  // Dot shorthand is intentionally handled separately so regular {{char}}-style
-  // NastyVerse macros are never mistaken for variables.
-  text = text.replace(/\{\{\s*\.([A-Za-z_][\w.-]*)(?:(\+\+|--)|(\+=|-=|=)\s*([\s\S]*?))?\s*\}\}/g, (full, name, unaryOperator, valueOperator, value) => {
-    const operator = unaryOperator || valueOperator || '';
-    if (!operator) return nvVariableOutput(nvVariableGet(chat,name,false));
-    if (!mutate) return '';
-    changed = true;
-    if (operator === '=') { nvVariableSet(chat,name,value ?? '',false); return ''; }
-    if (operator === '+=') { nvVariableAdd(chat,name,value ?? '',false); return ''; }
-    if (operator === '-=') {
-      const amount = Number(value ?? 0);
-      return nvVariableOutput(nvVariableAdd(chat,name,Number.isNaN(amount) ? 0 : -amount,false));
-    }
-    if (operator === '++') return nvVariableOutput(nvVariableAdd(chat,name,1,false));
-    if (operator === '--') return nvVariableOutput(nvVariableAdd(chat,name,-1,false));
-    return '';
+  const shorthand = /\{\{\s*([.$])([A-Za-z_][\w.-]*)(?:\s*(\?\?=|\|\|=|\+\+|--|\+=|-=|==|!=|>=|<=|=|\|\||\?\?|>|<)\s*([\s\S]*?))?\s*\}\}/g;
+  text = text.replace(shorthand, (full, scope, name, operator, value) => {
+    const result = nvVariableShorthandOperation(chat,scope === '$',name,operator || '',value,mutate);
+    changed ||= result.changed;
+    return result.output;
   });
   return { text, changed };
 }
+// Macro evaluation happens at explicit lifecycle points only: once when a chat
+// message enters storage, or once while a prompt field is assembled. Rendering
+// a stored message never calls this function, so stateful macros cannot replay.
 function nvVariableExpand(source, chat = nvSession()) {
-  return nvProcessVariableMacros(source, chat, false).text;
+  return nvProcessVariableMacros(source, chat, true).text;
 }
 function nvVariableExecute(source, chat = nvSession()) {
   return nvProcessVariableMacros(source, chat, true);
@@ -392,19 +417,18 @@ function nvPromptData(character, history = NV.promptHistory || nvContextSession(
   const lore = NVCore.lore(books, history, NV.data.lore, `${chat?.id || ''}:${history.length}`);
   const macroContext = { char: character.name, user: persona.name, persona: persona.description, description: character.description, scenario: chat?.scenario || character.scenario, lastMessage: history.at(-1)?.content };
   const expandBase = source => NVCore.expand(source, macroContext);
-  // Prompt templates are dynamic: read-only variable macros are resolved at
-  // assembly time so {{getvar::...}} always reflects the current state.
-  const expand = source => nvVariableExpand(expandBase(source), chat);
-  // Stored chat messages have already executed variable macros once on entry.
-  // Never execute them again while rerendering or rebuilding history.
+  // SillyTavern evaluates variable macros when a prompt field is assembled.
+  // Stateful macros therefore run once per field/per generation, never during UI rendering.
+  const expand = source => nvVariableExecute(expandBase(source), chat).text;
+  // Stored chat messages have already executed their variable macros on entry.
   const expandMessage = source => expandBase(source);
   const sources = NVCore.retrieve(NV.data.documents.filter(d => chat?.documentIds?.includes(d.id)), history.filter(m => m.role === 'user').slice(-2).map(m => m.content).join('\n'));
   const memory = chat?.memory ? `[${nvText('Mémoire de la conversation','Conversation memory')}]\n${chat.memory}` : '';
   const documents = sources.length ? `[${nvText('Extraits de documents de référence','Reference document excerpts')}]\n${sources.map(d => `[${d.name} #${d.index + 1}]\n${d.content}`).join('\n\n')}` : '';
-  return { persona, lore, sources, before: expand(lore.before), after: expand([lore.after, memory, documents].filter(Boolean).join('\n\n')), expand, expandMessage };
+  return { persona, lore, sources, before:lore.before, after:[lore.after, memory, documents].filter(Boolean).join('\n\n'), expand, expandMessage };
 }
-function nvPreparedHistory(character, history) {
-  const chat = nvContextSession(character); const data = nvPromptData(character, history);
+function nvPreparedHistory(character, history, data = nvPromptData(character, history)) {
+  const chat = nvContextSession(character);
   let entries = history.filter(m => !m.hidden).map(m => ({ ...m, content: data.expandMessage(m.content) }));
   if (chat?.targetId.startsWith('group:')) entries = entries.map(m => ({ ...m, content: m.role === 'assistant' && m.name && m.name !== character.name ? `${m.name}: ${m.content}` : m.content }));
   if (chat?.note && history.filter(m => m.role === 'user').length % Math.max(1, Number(chat.noteInterval) || 1) === 0) {
@@ -415,9 +439,10 @@ function nvPreparedHistory(character, history) {
 function nvBuildChat(character, history, params) {
   const data = nvPromptData(character, history), chat = nvContextSession(character);
   const permanent = [effectiveSystemPrompt(character), data.before, character.description, character.personality, chat?.scenario || character.scenario, data.persona.description, data.after].filter(Boolean).map(content => ({ role: 'system', content: data.expand(content) }));
-  let examples = parseSillyTavernExamples(character.exampleMessages, character, getActiveContextPreset(), false).flatMap(block => parseExampleDialogueBlock(block, character)).map(m => ({ role: m.role, content: m.content }));
-  let recent = nvPreparedHistory(character, history).map(m => ({ role: m.attachments?.some(a => a.sendToModel) ? 'user' : m.role, content: nvMultimodalContent(m) }));
-  const tail = effectivePostHistoryInstructions(character) ? [{ role: 'system', content: effectivePostHistoryInstructions(character) }] : [];
+  let examples = parseSillyTavernExamples(character.exampleMessages, character, getActiveContextPreset(), false).flatMap(block => parseExampleDialogueBlock(block, character)).map(m => ({ role: m.role, content: data.expand(m.content) }));
+  let recent = nvPreparedHistory(character, history, data).map(m => ({ role: m.attachments?.some(a => a.sendToModel) ? 'user' : m.role, content: nvMultimodalContent(m) }));
+  const postHistory = effectivePostHistoryInstructions(character);
+  const tail = postHistory ? [{ role: 'system', content: data.expand(postHistory) }] : [];
   const budget = Math.max(128, params.contextTokens - params.maxTokens);
   if (getContextFormatting().exampleMessagesBehavior === 'strip') examples = [];
   const assemble = () => [...permanent, ...examples, ...recent, ...tail];
@@ -672,7 +697,7 @@ function nvPromptInspectionRecord(character, history, chat, request, params, rec
   const persona = data.persona || {};
   const scenario = chat?.scenario || character.scenario || '';
   const documentsText = (data.sources || []).map(source => source.content || '').join('\n\n');
-  const historyText = nvPreparedHistory(character, history).filter(entry => !entry.injectedStory).map(entry => entry.content || '').join('\n\n');
+  const historyText = history.filter(entry => !entry.hidden).map(entry => entry.content || '').join('\n\n');
   const characterItems = {
     description: estimateTokens(character.description),
     personality: estimateTokens(character.personality),
@@ -1459,7 +1484,7 @@ async function nvGenerate(chat,mode = 'reply') {
       if (!canonicalAssistant.trim() && variableAssistant.changed) { chat.updatedAt=Date.now(); await nvSave(); run.content=''; continue; }
       if (mode === 'impersonate') {
         try { const display = await nvPrepareAssistantTranslation(canonicalAssistant); chat.draft = display?.content || canonicalAssistant; }
-        catch (error) { console.warn('[translate] Impersonation translation failed.', error); chat.draft = nvText('[Traduction indisponible]','[Translation unavailable]'); }
+        catch (error) { console.warn('[translate] Impersonation translation failed.', error); chat.draft = canonicalAssistant; }
       } else if (mode === 'regenerate' && last?.role === 'assistant') {
         last.variants.push(canonicalAssistant); last.variant = last.variants.length - 1; last.content = canonicalAssistant;
         last.promptRecords = Array.isArray(last.promptRecords) ? last.promptRecords : [];

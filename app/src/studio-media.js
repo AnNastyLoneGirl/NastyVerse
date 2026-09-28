@@ -131,41 +131,23 @@ function nvChatTranslationApplies(role, config = nvChatTranslationConfig()) {
   if (role === 'assistant') return config.mode === 'responses' || config.mode === 'both';
   return false;
 }
-function nvTranslationMessageSource(message) {
-  // Variable macros are executed exactly once before a chat message is stored.
-  // Translation must therefore consume the canonical stored content directly;
-  // re-evaluating macros here would duplicate side effects and invalidate the
-  // display translation cache on every render.
-  return String(message?.content || '');
+function nvTranslationPlaceholder(value) {
+  return /^\[(?:Traduction indisponible|Translation unavailable)\]$/i.test(String(value || '').trim());
 }
-function nvTranslationDisplayFailed(message) {
-  return /^\[(?:Traduction indisponible|Translation unavailable)\]$/i.test(String(message?.displayText || '').trim());
-}
-const nvTranslationFailures = new WeakMap();
-function nvTranslationFailureMatches(message, source, language) {
-  const failure = nvTranslationFailures.get(message);
-  return !!failure && failure.source === String(source || '') && failure.language === String(language || '');
-}
-function nvSetTranslationFailure(message, source, language, error = null) {
-  nvTranslationFailures.set(message, { source:String(source || ''), language:String(language || ''), error:String(error?.message || error || '') });
-}
-function nvMessageDisplayContent(message, chat = null) {
+function nvMessageDisplayContent(message) {
   const config = nvChatTranslationConfig();
-  const source = nvTranslationMessageSource(message);
+  const source = String(message?.content || '');
   if (!nvChatTranslationApplies(message?.role, config)) return source;
   if (String(config.targetLanguage).toLowerCase() === 'en') return source;
-  if (message?.displayText && !nvTranslationDisplayFailed(message) && message.displaySource === source && message.displayLanguage === config.targetLanguage) return message.displayText;
-  if (nvTranslationFailureMatches(message, source, config.targetLanguage)) return nvText('[Traduction indisponible]','[Translation unavailable]');
+  if (message?.displayText && !nvTranslationPlaceholder(message.displayText) && message.displaySource === source && message.displayLanguage === config.targetLanguage) return message.displayText;
   return nvText('Traduction…','Translating…');
 }
-function nvSetMessageDisplay(message, displayText, language, sourceText = null) {
-  nvTranslationFailures.delete(message);
+function nvSetMessageDisplay(message, displayText, language) {
   message.displayText = String(displayText || '');
-  message.displaySource = String(sourceText == null ? message.content || '' : sourceText);
+  message.displaySource = String(message.content || '');
   message.displayLanguage = String(language || '');
 }
 function nvClearMessageDisplay(message) {
-  nvTranslationFailures.delete(message);
   message.displayText = '';
   message.displaySource = '';
   message.displayLanguage = '';
@@ -173,18 +155,13 @@ function nvClearMessageDisplay(message) {
 async function nvTranslateChatText(text, targetLanguage, sourceLanguage = null) {
   const source = String(text || '');
   if (!source || String(targetLanguage || '').toLowerCase() === String(sourceLanguage || '').toLowerCase()) return source;
-  // Match SillyTavern's Translate extension behavior: markdown image links are
-  // kept byte-for-byte and only surrounding text is sent to the provider.
+  // Keep embedded Markdown images byte-for-byte, matching SillyTavern's Translate extension.
   const regex = /!\[.*?\]\([^)]*\)/g;
   const matches = [...source.matchAll(regex)];
   const chunks = source.split(regex);
   let result = '';
-  const translateChunk = chunk => Promise.race([
-    invoke('translate_text', { text: chunk, targetLanguage, sourceLanguage }),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('Translation request timed out')), 45000)),
-  ]);
   for (let index = 0; index < chunks.length; index += 1) {
-    if (chunks[index]) result += await translateChunk(chunks[index]);
+    if (chunks[index]) result += await invoke('translate_text', { text: chunks[index], targetLanguage, sourceLanguage });
     if (index < matches.length) result += matches[index][0];
   }
   return result;
@@ -201,9 +178,7 @@ async function nvPrepareAssistantCanonical(text) {
   const source = String(text || '');
   const config = nvChatTranslationConfig();
   if (!nvChatTranslationApplies('assistant', config)) return source;
-  // Keep the prompt/context free of translation instructions. The raw model
-  // response is normalized after generation instead, so the stored assistant
-  // message remains English while display translation stays UI-only.
+  // The model output is normalized after generation instead of injecting a language instruction into the prompt.
   try { return await nvTranslateChatText(source, 'en', null); }
   catch (error) { console.warn('[translate] Assistant English normalization failed.', error); return source; }
 }
@@ -212,20 +187,16 @@ async function nvPrepareAssistantTranslation(text) {
   if (!nvChatTranslationApplies('assistant', config) || String(config.targetLanguage).toLowerCase() === 'en') return null;
   return { content: await nvTranslateChatText(text, config.targetLanguage, 'en'), language: config.targetLanguage };
 }
-async function nvApplyAssistantDisplay(message, chat = null) {
+async function nvApplyAssistantDisplay(message) {
   try {
-    const source = nvTranslationMessageSource(message);
-    const display = await nvPrepareAssistantTranslation(source);
-    if (display) nvSetMessageDisplay(message, display.content, display.language, source);
+    const display = await nvPrepareAssistantTranslation(message.content);
+    if (display) nvSetMessageDisplay(message, display.content, display.language);
     else nvClearMessageDisplay(message);
-    return display?.content || source;
+    return display?.content || message.content;
   } catch (error) {
+    // Do not persist a fake translation into the message. SillyTavern keeps the source
+    // message intact when a provider fails; the display translation can be retried later.
     console.warn('[translate] Assistant display translation failed.', error);
-    if (nvChatTranslationApplies('assistant')) {
-      nvClearMessageDisplay(message);
-      nvSetTranslationFailure(message, nvTranslationMessageSource(message), nvChatTranslationConfig().targetLanguage, error);
-      return nvText('[Traduction indisponible]','[Translation unavailable]');
-    }
     nvClearMessageDisplay(message);
     return message.content;
   }
@@ -249,25 +220,30 @@ const nvTranslationRefresh = new Set();
 async function nvEnsureChatDisplayTranslations(chat) {
   const config = nvChatTranslationConfig();
   if (!chat || !config.enabled || String(config.targetLanguage).toLowerCase() === 'en' || nvTranslationRefresh.has(chat.id)) return;
-  const pending = chat.messages.map(message => ({ message, source: nvTranslationMessageSource(message) })).filter(({ message, source }) => nvChatTranslationApplies(message.role, config) && source && !nvTranslationFailureMatches(message, source, config.targetLanguage) && (!message.displayText || nvTranslationDisplayFailed(message) || message.displaySource !== source || message.displayLanguage !== config.targetLanguage));
+  const pending = chat.messages.filter(message => {
+    if (!nvChatTranslationApplies(message.role, config) || !message.content) return false;
+    if (nvTranslationPlaceholder(message.displayText)) return true;
+    return !message.displayText || message.displaySource !== message.content || message.displayLanguage !== config.targetLanguage;
+  });
   if (!pending.length) return;
   nvTranslationRefresh.add(chat.id);
   try {
     let changed = false;
-    for (const { message, source } of pending) {
+    for (const message of pending) {
       try {
-        // Stored chat content is canonical English and variable macros have already
-        // been executed once before storage, so translation uses it verbatim.
-        const display = await nvTranslateChatText(source, config.targetLanguage, 'en');
+        // Use auto-detection for stored messages, exactly like SillyTavern's provider layer.
+        // The canonical source remains message.content and is never re-run through variable macros.
+        const display = await nvTranslateChatText(message.content, config.targetLanguage, null);
         if (!NV.data.sessions.includes(chat) || !chat.messages.includes(message)) continue;
-        nvSetMessageDisplay(message, display, config.targetLanguage, source);
+        nvSetMessageDisplay(message, display, config.targetLanguage);
         changed = true;
       } catch (error) {
         console.warn('[translate] Unable to translate existing message.', error);
-        if (!NV.data.sessions.includes(chat) || !chat.messages.includes(message)) continue;
-        nvClearMessageDisplay(message);
-        nvSetTranslationFailure(message, source, config.targetLanguage, error);
-        changed = true;
+        // Clear placeholders created by the broken 0.2.32/0.2.33 path so a later render can retry.
+        if (nvTranslationPlaceholder(message.displayText)) {
+          nvClearMessageDisplay(message);
+          changed = true;
+        }
       }
     }
     if (changed) {
@@ -278,6 +254,7 @@ async function nvEnsureChatDisplayTranslations(chat) {
     nvTranslationRefresh.delete(chat.id);
   }
 }
+
 async function openChatTranslationSettings() {
   let current;
   try { current = state.translationConfig || await invoke('load_translation_config'); }

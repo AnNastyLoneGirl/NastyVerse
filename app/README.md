@@ -1,3 +1,3 @@
-# NastyVerse application 0.2.33
+# NastyVerse application 0.2.34
 
-Chat workspace 0.2.33: rebuilds the variable lifecycle to match SillyTavern more closely. Chat/global variables support get/set/add/inc/dec/has/delete plus JSON key/index access and message macros, mutations execute once before a message is stored, prompt-time reads stay dynamic without replaying message side effects, slash commands remain local commands with no generation, and chat translation now consumes the canonical stored message instead of re-evaluating variable macros during rendering.
+Chat workspace 0.2.34: fixes the variable/translation regression by restoring the pre-variable translation pipeline and isolating variable evaluation from display rendering. Message macros execute once before storage; prompt macros execute only during prompt assembly; stored messages are never macro-expanded during rendering or translation. Local/global macros and slash commands support get/set/add/inc/dec/has/delete, JSON key/index access, SillyTavern aliases, and variable shorthand operators. Legacy translation-failure placeholders are invalidated and retried instead of being persisted as display text.

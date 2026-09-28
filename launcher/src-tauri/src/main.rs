@@ -5,6 +5,7 @@ mod bootstrap;
 mod installer;
 mod launcher_updater;
 mod protocol;
+mod translation;
 
 use std::process::Command;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
@@ -335,6 +336,30 @@ async fn get_model_status(app: tauri::AppHandle) -> backend::ModelStatus {
     backend::get_model_status(&app).await
 }
 
+
+#[tauri::command]
+fn load_translation_config(app: tauri::AppHandle) -> Result<translation::TranslationConfig, String> {
+    translation::load(&app)
+}
+
+#[tauri::command]
+fn save_translation_config(
+    app: tauri::AppHandle,
+    config: translation::TranslationConfig,
+) -> Result<translation::TranslationConfig, String> {
+    translation::save(&app, config)
+}
+
+#[tauri::command]
+async fn translate_text(
+    app: tauri::AppHandle,
+    text: String,
+    target_language: String,
+    source_language: Option<String>,
+) -> Result<String, String> {
+    translation::translate(&app, text, target_language, source_language).await
+}
+
 #[tauri::command]
 fn load_image_config(app:tauri::AppHandle)->Result<Option<backend::images::ImageConfig>,String>{backend::images::load(&app)}
 #[tauri::command]
@@ -381,6 +406,9 @@ fn main() {
             get_model_status,
             stream_completion,
             cancel_completion,
+            load_translation_config,
+            save_translation_config,
+            translate_text,
             load_image_config,
             save_image_config,
             generate_image

@@ -417,5 +417,11 @@
   "models.analysis.source.chat-template-extended-pattern": "Inspection étendue du chat template",
   "models.analysis.source.runtime-behavioral-probe": "Calibration comportementale sur le modèle chargé",
   "models.analysis.source.runtime-probe-ambiguous": "Calibration comportementale (aucun gagnant clair)",
-  "config.studio": "Outils & sauvegardes"
+  "config.studio": "Outils & sauvegardes",
+  "general.chatTranslation": "Traduire le chat",
+  "general.chatTranslation.desc": "Conserve l’anglais comme source du prompt tout en affichant les messages dans la langue choisie.",
+  "general.chatTranslation.configure": "Configurer",
+  "general.chatTranslation.summaryEnabled": "Activé · {provider} · {language}",
+  "general.chatTranslation.summaryDisabled": "Désactivé",
+  "general.chatTranslation.launcherUpdateRequired": "La traduction du chat nécessite NastyVerse Launcher 0.1.12 ou une version plus récente."
 }

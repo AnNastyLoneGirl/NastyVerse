@@ -13,6 +13,9 @@ const invoke = TAURI?.core?.invoke
       if (cmd === 'load_backend_config') return null;
       if (cmd === 'test_backend_connection') return { ok: true, message: t('preview.connection'), models: ['preview-model'], modelName: 'preview-model', modelDetails: [{ id: 'preview-model', name: 'Preview model', contextLength: 32768, priceLabel: null, subscriptionIncluded: true, subscriptionInputMultiplier: 2, vision: true, reasoning: true, tools: true }] };
       if (cmd === 'analyze_backend_model') return { provider: 'koboldcpp', modelId: 'preview-model', modelName: 'Preview model', architecture: 'llama', contextLength: 32768, priceLabel: null, subscriptionIncluded: true, subscriptionInputMultiplier: 2, vision: true, reasoning: true, tools: true, modelPath: '/models/preview-model.gguf', chatTemplate: "{% for message in messages %}<|im_start|>{{ message['role'] }}\n{{ message['content'] }}<|im_end|>{% endfor %}", chatTemplateHash: 'preview', detectedTemplate: 'ChatML', contextPreset: 'ChatML', instructionPreset: 'ChatML', confidence: 'high', source: 'chat-template-pattern', notes: [] };
+      if (cmd === 'load_translation_config') return { enabled: false, provider: 'google', targetLanguage: 'en', mode: 'both', apiKey: null, url: null, deeplEndpoint: 'free' };
+      if (cmd === 'save_translation_config') return args?.config || null;
+      if (cmd === 'translate_text') return args?.text || '';
       if (cmd === 'save_backend_config') return args?.config || null;
       if (cmd === 'chat_completion') return { content: t('preview.reply'), model: 'preview-model' };
       if (cmd === 'text_completion') return { content: t('preview.reply'), model: 'preview-model' };
@@ -22,6 +25,9 @@ const invoke = TAURI?.core?.invoke
 
 function friendlyNativeError(error) {
   const message = String(error ?? '');
+  if (/command\s+(load_translation_config|save_translation_config|translate_text)\s+not found/i.test(message)) {
+    return t('general.chatTranslation.launcherUpdateRequired');
+  }
   if (/command\s+(test_backend_connection|analyze_backend_model|load_backend_config|save_backend_config|get_model_status|chat_completion|text_completion)\s+not found/i.test(message)) {
     return t('models.launcherUpdateRequired');
   }
@@ -560,6 +566,7 @@ const state = {
   backendConfig: null,
   backendDiscovery: null,
   modelAnalysis: null,
+  translationConfig: null,
 };
 
 const pageRoot = document.getElementById('page-root');
@@ -2798,9 +2805,16 @@ async function renderConfiguration(section = 'general') {
 function renderGeneralConfig() {
   const body = document.getElementById('config-body');
   const accent = localStorage.getItem(STORAGE.accent) || '#B24BFF';
+  const translation = { enabled: false, provider: 'google', targetLanguage: 'en', mode: 'both', ...(state.translationConfig || {}) };
+  const translationLanguage = CHAT_TRANSLATION_LANGUAGES.find(language => language.value === translation.targetLanguage)?.label || String(translation.targetLanguage || '').toUpperCase();
+  const translationProvider = CHAT_TRANSLATION_PROVIDERS.find(provider => provider.value === translation.provider)?.label || translation.provider;
+  const translationSummary = translation.enabled
+    ? t('general.chatTranslation.summaryEnabled', { provider: translationProvider, language: translationLanguage })
+    : t('general.chatTranslation.summaryDisabled');
   body.innerHTML = `
     <div class="config-page-head"><div><h2>${escapeHtml(t('config.general'))}</h2><p>${escapeHtml(t('config.general.desc'))}</p></div></div>
     <div class="field-card"><div class="info"><h4>${escapeHtml(t('general.language'))}</h4><p>${escapeHtml(t('general.language.desc'))}</p></div><div class="control"><select id="app-language">${languageManifest.languages.map(language => `<option value="${escapeHtml(normalizeLocaleCode(language.code))}" ${state.locale === normalizeLocaleCode(language.code) ? 'selected' : ''}>${escapeHtml(language.label || language.code)}</option>`).join('')}</select></div></div>
+    <div class="field-card"><div class="info"><h4>${escapeHtml(t('general.chatTranslation'))}</h4><p>${escapeHtml(t('general.chatTranslation.desc'))}</p></div><div class="control chat-translation-control"><span class="translation-summary ${translation.enabled ? 'is-enabled' : ''}">${escapeHtml(translationSummary)}</span><button class="btn btn-ghost" id="chat-translation-configure">${escapeHtml(t('general.chatTranslation.configure'))}</button></div></div>
     <div class="field-card"><div class="info"><h4>${escapeHtml(t('general.accent'))}</h4><p>${escapeHtml(t('general.accent.desc'))}</p></div><div class="control"><input id="accent-color" type="color" value="${escapeHtml(accent)}"><input id="accent-hex" class="hexinput" value="${escapeHtml(accent)}" maxlength="7"></div></div>`;
 
   document.getElementById('app-language').addEventListener('change', async event => {
@@ -2812,6 +2826,10 @@ function renderGeneralConfig() {
       console.error(error);
       toast(String(error), 'error');
     }
+  });
+  document.getElementById('chat-translation-configure').addEventListener('click', async () => {
+    try { await openChatTranslationSettings(); }
+    catch (error) { toast(friendlyNativeError(error), 'error'); }
   });
   const color = document.getElementById('accent-color');
   const hex = document.getElementById('accent-hex');
@@ -4924,6 +4942,7 @@ async function bootstrap() {
   await loadContextPresetFactory();
   await loadInstructionPresetFactory();
   try { state.backendConfig = await invoke('load_backend_config'); } catch (error) { console.warn('[backend] Unable to load saved backend configuration.', error); }
+  try { state.translationConfig = await invoke('load_translation_config'); } catch (error) { console.warn('[translate] Unable to load chat translation configuration.', error); }
   try {
     await loadAvatarAssets();
     await migrateInlineCharacterAvatars();

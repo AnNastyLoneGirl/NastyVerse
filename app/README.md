@@ -1,6 +1,6 @@
-# NastyVerse application 0.2.26
+# NastyVerse application 0.2.27
 
-Message actions 0.2.26: right-aligned action toolbars now remain anchored to the right edge while keeping the mirrored Context visibility → Edit → Delete order.
+Per-message prompt inspection 0.2.27: the global “View prompt” toolbar action is removed. Assistant messages now expose a prompt icon that opens a SillyTavern-inspired itemization view with estimated section token counts and the exact saved request payload when available; older messages are reconstructed from their preceding history.
 
 The application is a replaceable HTML/CSS/JavaScript payload hosted by the single Tauri launcher (0.1.12). No second Tauri crate is introduced.
 

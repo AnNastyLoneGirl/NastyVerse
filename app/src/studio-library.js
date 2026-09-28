@@ -32,14 +32,104 @@ function nvBookmarks(chat) {
   const dialog = nvDialog(nvText('Messages favoris','Bookmarked messages'),`<div class="nv-menu">${chat.messages.filter(m => m.bookmark).map(m => `<button class="btn btn-ghost" data-jump="${nvEscape(m.id)}">${nvEscape(m.content.slice(0,140))}</button>`).join('') || `<p>${nvText('Marquez un message avec ☆ pour le retrouver ici.','Bookmark a message with ☆ to find it here.')}</p>`}</div>`);
   dialog.querySelectorAll('[data-jump]').forEach(b => b.onclick = () => { NV.search = ''; dialog.close(); renderChat(); const article = [...pageRoot.querySelectorAll('[data-message]')].find(a => a.dataset.message === b.dataset.jump); requestAnimationFrame(() => article?.scrollIntoView({block:'center'})); });
 }
-function nvInspect(chat,character) {
-  let preview = NV.prompt?.sessionId === chat.id ? NV.prompt : null;
-  if (!preview && character) { NV.scope = chat; NV.promptHistory = chat.messages; try { preview = {...buildPromptPreview(character,effectiveBackendApiMode(state.backendConfig)),lore:nvPromptData(character,chat.messages).lore,sources:nvPromptData(character,chat.messages).sources}; } finally { NV.scope = null; NV.promptHistory = null; } }
-  if (!preview) return;
-  const content = preview.mode === 'text' ? preview.prompt : preview.messages.map(m => `[${m.role}]\n${nvReadableContent(m.content)}`).join('\n\n');
-  const dialog = nvDialog(nvText('Ce que reçoit le modèle','What the model receives'),`<p class="nv-muted">${NV.prompt?.sessionId === chat.id ? nvText('Dernière requête envoyée','Last submitted request') : nvText('Aperçu du contexte actuel','Current context preview')} · ~${preview.mode === 'text' ? estimateTokens(content) : estimateChatMessagesTokens(preview.messages)} tokens (${nvText('estimation','estimate')})</p><div class="nv-chips">${(preview.lore?.active || []).map(e => `<span>${nvEscape(e.title)}</span>`).join('')}</div>${preview.lore?.skipped?.length ? `<p>${preview.lore.skipped.length} ${nvText('entrées ignorées faute de budget.','entries skipped due to budget.')}</p>` : ''}<p class="nv-muted">${(preview.sources || []).map(d => nvEscape(d.name)).join(' · ')}</p><pre class="nv-prompt">${nvEscape(content)}</pre>${nvButton('copy',nvText('Copier le prompt','Copy prompt'))}`,true);
-  nvBind(dialog,{copy:() => navigator.clipboard.writeText(content)});
+function nvPromptItemRow(label, value, cssClass = '') {
+  return `<div class="nv-prompt-item-row ${cssClass}"><span>${nvEscape(label)}</span><strong>${Number(value) || 0}</strong></div>`;
 }
+function nvPromptSectionTotal(items = {}) {
+  return Object.values(items).reduce((sum, value) => sum + (Number(value) || 0), 0);
+}
+function nvPromptRawContent(record) {
+  if (record?.mode === 'text') return String(record.prompt || '');
+  return (record?.messages || []).map(message => `[${message.role}]\n${nvReadableContent(message.content)}`).join('\n\n');
+}
+function nvReconstructMessagePrompt(chat, message) {
+  const index = chat.messages.findIndex(item => item.id === message.id);
+  if (index < 0) return null;
+  const character = getCharacters().find(item => item.id === message.characterId)
+    || getCharacters().find(item => item.name === message.name)
+    || getCharacters().find(item => item.id === chat.targetId);
+  if (!character) return null;
+  const history = NVCore.clone(chat.messages.slice(0, index));
+  const params = {...getGenerationParams(),...NV.data.generation};
+  NV.scope = chat; NV.promptHistory = history;
+  try {
+    const mode = effectiveBackendApiMode(state.backendConfig);
+    const request = mode === 'text'
+      ? buildTextCompletionRequest(character, history, params)
+      : { mode:'chat', messages:buildChatCompletionMessages(character, history, params) };
+    return nvPromptInspectionRecord(character, history, chat, request, params, true);
+  } finally {
+    NV.scope = null; NV.promptHistory = null;
+  }
+}
+function nvInspectMessagePrompt(chat, message) {
+  if (!chat || !message || message.role !== 'assistant') return;
+  const currentVariant = Math.max(0, Number(message.variant) || 0);
+  let record = nvMessagePromptRecord(message);
+  if (!record) record = nvReconstructMessagePrompt(chat, message);
+  if (!record) return toast(nvText('Impossible de reconstruire le prompt de ce message.','Unable to reconstruct the prompt for this message.'),'error');
+  const item = record.itemization || {};
+  const character = item.character || {};
+  const extensions = item.extensions || {};
+  const characterTotal = nvPromptSectionTotal(character);
+  const extensionTotal = nvPromptSectionTotal(extensions);
+  const worldInfo = Number(item.worldInfo) || 0;
+  const history = Number(item.history) || 0;
+  const chartTotal = Math.max(1, characterTotal + worldInfo + history + extensionTotal);
+  const bar = (value, className) => `<span class="${className}" style="flex:${Math.max(0,Number(value)||0)} 0 0"></span>`;
+  const modeLabel = record.mode === 'text' ? nvText('Complétion de texte','Text completion') : nvText('Chat Completion','Chat completion');
+  const backendLabel = record.meta?.provider || record.meta?.backendType || nvText('Backend inconnu','Unknown backend');
+  const modelLabel = record.meta?.model || message.model || nvText('Modèle inconnu','Unknown model');
+  const raw = nvPromptRawContent(record);
+  const contextAllowed = Number(item.contextAllowed) || 0;
+  const totalTokens = Number(item.totalTokens) || (record.mode === 'text' ? estimateTokens(raw) : estimateChatMessagesTokens(record.messages || []));
+  const contextMax = Number(record.meta?.contextTokens) || 0;
+  const generationReserve = Number(record.meta?.maxTokens) || 0;
+  const dialog = nvDialog(nvText('Prompt Itemization','Prompt Itemization'), `
+    <div class="nv-prompt-inspector-head">
+      <strong>API/Modèle: ${nvEscape(modeLabel)} (${nvEscape(backendLabel)}) – ${nvEscape(modelLabel)}</strong>
+      <span>${nvEscape(nvText('Preset','Preset'))}: ${nvEscape(record.meta?.contextPreset || '—')} · ${nvEscape(nvText('Instruction','Instruction'))}: ${nvEscape(record.meta?.instructionPreset || '—')}</span>
+      ${record.reconstructed ? `<em>${nvEscape(nvText('Aperçu reconstruit avec les réglages actuels : aucun instantané historique n’était disponible pour ce message.','Reconstructed with current settings: no historical snapshot was available for this message.'))}</em>` : `<em>${nvEscape(nvText(`Instantané enregistré pour la variante ${currentVariant + 1}.`,`Saved snapshot for variant ${currentVariant + 1}.`))}</em>`}
+    </div>
+    <div class="nv-prompt-inspector-layout">
+      <section class="nv-prompt-itemization">
+        <div class="nv-prompt-stack" aria-label="Prompt token distribution">${bar(characterTotal,'is-character')}${bar(worldInfo,'is-world')}${bar(history,'is-history')}${bar(extensionTotal,'is-extension')}</div>
+        <div class="nv-prompt-item-list">
+          ${nvPromptItemRow(nvText('Character Definitions','Character Definitions'),characterTotal,'is-character')}
+          <div class="nv-prompt-subitems">
+            ${nvPromptItemRow('↳ Description',character.description)}
+            ${nvPromptItemRow(`↳ ${nvText('Personnalité','Personality')}`,character.personality)}
+            ${nvPromptItemRow('↳ Scenario',character.scenario)}
+            ${nvPromptItemRow(`↳ ${nvText('Exemples','Examples')}`,character.examples)}
+            ${nvPromptItemRow('↳ User Persona',character.persona)}
+            ${nvPromptItemRow('↳ System Prompt',character.system)}
+          </div>
+          ${nvPromptItemRow('World Info',worldInfo,'is-world')}
+          ${nvPromptItemRow(nvText('Historique du chat','Chat History'),history,'is-history')}
+          ${nvPromptItemRow('Extensions',extensionTotal,'is-extension')}
+          <div class="nv-prompt-subitems">
+            ${nvPromptItemRow(`↳ ${nvText('Mémoire','Memory')}`,extensions.memory)}
+            ${nvPromptItemRow(`↳ ${nvText("Note d’auteur","Author's Note")}`,extensions.authorNote)}
+            ${nvPromptItemRow('↳ Smart Context',extensions.smartContext)}
+            ${nvPromptItemRow('↳ Post-History',extensions.postHistory)}
+          </div>
+        </div>
+        <div class="nv-prompt-totals">
+          ${nvPromptItemRow(nvText('Total des Tokens dans le Prompt','Total Prompt Tokens'),totalTokens)}
+          ${nvPromptItemRow(nvText('Contexte maximum','Maximum Context'),contextMax)}
+          ${nvPromptItemRow(nvText('Réserve de réponse','Reply Reserve'),generationReserve)}
+          ${nvPromptItemRow(nvText('Contexte réellement disponible','Actual Max Context Allowed'),contextAllowed)}
+        </div>
+      </section>
+      <section class="nv-prompt-raw-panel">
+        <div class="nv-prompt-raw-toolbar"><strong>${nvEscape(nvText('Prompt envoyé au modèle','Prompt sent to the model'))}</strong><button type="button" class="btn btn-ghost btn-small" data-copy-prompt>${nvEscape(nvText('Copier','Copy'))}</button></div>
+        <pre class="nv-prompt-raw">${nvEscape(raw)}</pre>
+      </section>
+    </div>`, true);
+  dialog.classList.add('nv-prompt-itemization-dialog');
+  dialog.querySelector('[data-copy-prompt]')?.addEventListener('click', () => navigator.clipboard.writeText(raw));
+}
+
 async function nvChatMenu(chat) {
   const actions = [['rename',nvText('Renommer','Rename')],['pin',chat.pinned ? nvText('Désépingler','Unpin') : nvText('Épingler','Pin')],['summary',nvText('Résumer la conversation','Summarize conversation')],['impersonate',nvText('Proposer mon prochain message','Draft my next message')],['undo',nvText('Annuler la dernière modification','Undo last edit')],['export',nvText('Exporter pour SillyTavern (.jsonl)','Export for SillyTavern (.jsonl)')],['import',nvText('Importer une conversation','Import conversation')],['text',nvText('Exporter en texte','Export as text')],['delete',nvText('Supprimer cette conversation','Delete this conversation')]];
   const dialog = nvDialog(chat.title,`<div class="nv-menu">${actions.map(([a,l])=>nvButton(a,l)).join('')}</div>`);

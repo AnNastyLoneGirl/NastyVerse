@@ -108,3 +108,19 @@
 .nv-timeline-legend span{display:flex;align-items:center;gap:6px}.nv-timeline-legend i{width:11px;height:11px;border:1px solid var(--line);border-radius:3px;background:var(--panel);display:inline-block}
 .nv-timeline-legend i.is-current{border-color:var(--violet-2);box-shadow:0 0 0 1px var(--violet-2)}.nv-timeline-legend i.is-user{background:color-mix(in srgb,var(--violet) 25%,var(--panel))}.nv-timeline-legend i.is-assistant{background:var(--panel)}.nv-timeline-legend i.is-swipe{border-style:dashed;background:var(--panel-2)}
 @media(max-width:900px){.nv-timeline-layout{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(160px,34%)}.nv-timeline-inspector{min-height:0;max-height:none}.nv-timeline-dialog{width:calc(100vw - 16px)!important;height:calc(100dvh - 16px);max-height:calc(100dvh - 16px)}}
+
+
+/* Per-message prompt inspection, inspired by SillyTavern's prompt itemization view. */
+.nv-prompt-itemization-dialog{box-sizing:border-box;width:min(1180px,calc(100vw - 28px))!important;height:min(760px,calc(100dvh - 28px));max-height:calc(100dvh - 28px);display:flex;flex-direction:column;overflow:hidden}
+.nv-prompt-itemization-dialog>header{flex:0 0 auto;position:relative;top:auto}
+.nv-prompt-itemization-dialog .nv-dialog-content{display:flex;flex:1 1 auto;flex-direction:column;min-height:0;overflow:hidden;padding:14px}
+.nv-prompt-inspector-head{display:flex;flex:0 0 auto;flex-direction:column;align-items:center;gap:4px;padding:2px 8px 12px;text-align:center;color:var(--text-dim);font-size:11px}
+.nv-prompt-inspector-head strong{color:var(--text);font-size:13px}.nv-prompt-inspector-head em{color:var(--text-faint);font-style:normal;font-size:10px}
+.nv-prompt-inspector-layout{display:grid;grid-template-columns:minmax(300px,390px) minmax(0,1fr);gap:12px;flex:1;min-height:0}
+.nv-prompt-itemization,.nv-prompt-raw-panel{min-height:0;border:1px solid var(--line);border-radius:12px;background:var(--void)}
+.nv-prompt-itemization{display:flex;flex-direction:column;padding:10px;overflow:auto}
+.nv-prompt-stack{display:flex;height:118px;min-height:118px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel);margin-bottom:10px}.nv-prompt-stack span{min-width:0}.nv-prompt-stack .is-character{background:var(--danger)}.nv-prompt-stack .is-world{background:var(--magenta)}.nv-prompt-stack .is-history{background:var(--ok)}.nv-prompt-stack .is-extension{background:var(--violet-2)}
+.nv-prompt-item-list{display:flex;flex-direction:column;gap:2px}.nv-prompt-item-row{display:flex;justify-content:space-between;gap:10px;padding:2px 1px;font-size:11px;line-height:1.35}.nv-prompt-item-row strong{font-variant-numeric:tabular-nums}.nv-prompt-item-row.is-character span{color:var(--danger)}.nv-prompt-item-row.is-world span{color:var(--magenta)}.nv-prompt-item-row.is-history span{color:var(--ok)}.nv-prompt-item-row.is-extension span{color:var(--violet-2)}.nv-prompt-subitems{padding-left:10px;color:var(--text-dim)}
+.nv-prompt-totals{margin-top:auto;padding-top:10px;border-top:1px solid var(--line)}.nv-prompt-totals .nv-prompt-item-row{font-size:12px}.nv-prompt-totals .nv-prompt-item-row:first-child{color:var(--text)}
+.nv-prompt-raw-panel{display:flex;flex-direction:column;overflow:hidden}.nv-prompt-raw-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;border-bottom:1px solid var(--line);font-size:11px}.nv-prompt-raw{flex:1;min-height:0;overflow:auto;margin:0;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere;background:transparent;color:var(--text);font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}
+@media(max-width:760px){.nv-prompt-itemization-dialog{width:calc(100vw - 16px)!important;height:calc(100dvh - 16px)}.nv-prompt-inspector-layout{grid-template-columns:1fr;grid-template-rows:minmax(220px,42%) minmax(0,1fr)}}

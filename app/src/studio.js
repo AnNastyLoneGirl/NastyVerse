@@ -396,6 +396,67 @@ function nvMessageRoleName(message, persona, fallbackCharacter) {
   }
   return 'System';
 }
+function nvPromptInspectionRecord(character, history, chat, request, params, reconstructed = false) {
+  const data = nvPromptData(character, history);
+  const persona = data.persona || {};
+  const scenario = chat?.scenario || character.scenario || '';
+  const documentsText = (data.sources || []).map(source => source.content || '').join('\n\n');
+  const historyText = nvPreparedHistory(character, history).filter(entry => !entry.injectedStory).map(entry => entry.content || '').join('\n\n');
+  const characterItems = {
+    description: estimateTokens(character.description),
+    personality: estimateTokens(character.personality),
+    scenario: estimateTokens(scenario),
+    examples: request.mode === 'text' ? estimateTokens(request.examples) : estimateTokens(character.exampleMessages),
+    persona: estimateTokens(persona.description),
+    system: estimateTokens(effectiveSystemPrompt(character)),
+  };
+  const extensionItems = {
+    memory: estimateTokens(chat?.memory),
+    authorNote: estimateTokens(chat?.note),
+    smartContext: estimateTokens(documentsText),
+    postHistory: estimateTokens(effectivePostHistoryInstructions(character)),
+  };
+  const worldInfo = Number(data.lore?.tokens) || estimateTokens([data.before, data.lore?.after].filter(Boolean).join('\n\n'));
+  const totalTokens = request.mode === 'text' ? estimateTokens(request.prompt) : estimateChatMessagesTokens(request.messages || []);
+  const config = state.backendConfig || {};
+  const provider = typeof backendDefinition === 'function' ? backendDefinition(config.backendType) : null;
+  const instructionState = typeof getInstructionPresetState === 'function' ? getInstructionPresetState() : null;
+  const contextPreset = typeof getActiveContextPreset === 'function' ? getActiveContextPreset() : null;
+  return {
+    version: 1,
+    createdAt: Date.now(),
+    reconstructed: Boolean(reconstructed),
+    mode: request.mode,
+    prompt: request.mode === 'text' ? String(request.prompt || '') : '',
+    messages: request.mode === 'chat' ? NVCore.clone(request.messages || []) : [],
+    stopStrings: request.mode === 'text' ? [...(request.stopStrings || [])] : [],
+    meta: {
+      backendType: String(config.backendType || ''),
+      provider: String(provider?.label || config.backendType || ''),
+      model: String(config.model || state.modelStatus?.modelName || ''),
+      character: String(character.name || ''),
+      contextPreset: String(contextPreset?.name || ''),
+      instructionPreset: String(instructionState?.active || ''),
+      contextTokens: Number(params?.contextTokens) || 0,
+      maxTokens: Number(params?.maxTokens) || 0,
+    },
+    itemization: {
+      character: characterItems,
+      worldInfo,
+      history: estimateTokens(historyText),
+      extensions: extensionItems,
+      totalTokens,
+      contextAllowed: Math.max(0, (Number(params?.contextTokens) || 0) - (Number(params?.maxTokens) || 0)),
+    },
+  };
+}
+function nvMessagePromptRecord(message) {
+  if (!message || message.role !== 'assistant') return null;
+  const records = Array.isArray(message.promptRecords) ? message.promptRecords : [];
+  const index = Math.max(0, Number(message.variant) || 0);
+  return records[index] || null;
+}
+
 function nvMessageVariantNav(message) {
   if (message?.role !== 'assistant') return '';
   const total = Math.max(1, Array.isArray(message.variants) ? message.variants.length : 1);
@@ -414,7 +475,9 @@ function nvMessageArticle(message, index, chat, persona, fallbackCharacter, sett
     ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10.6 10.6 0 0 1 12 5c5.5 0 9 7 9 7a16 16 0 0 1-2.3 3.2M6.6 6.6C4.2 8.2 3 12 3 12s3.5 7 9 7a9.6 9.6 0 0 0 3.4-.6"/></svg>`
     : `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-7 9-7 9 7 9 7-3.5 7-9 7-9-7-9-7Z"/><circle cx="12" cy="12" r="2.5"/></svg>`;
   const contextLabel = message.hidden ? nvText('Afficher dans le contexte','Include in context') : nvText('Cacher du contexte','Hide from context');
-  const actions = `<div class="nv-message-actions"><button type="button" data-message-action="delete" aria-label="${nvText('Supprimer le message','Delete message')}" title="${nvText('Supprimer le message','Delete message')}">${deleteIcon}</button><button type="button" data-message-action="edit" aria-label="${nvText('Éditer le message','Edit message')}" title="${nvText('Éditer le message','Edit message')}">${editIcon}</button><button type="button" class="nv-context-toggle ${message.hidden ? 'is-hidden' : 'is-visible'}" data-message-action="hide" aria-pressed="${message.hidden ? 'true' : 'false'}" aria-label="${contextLabel}" title="${contextLabel}">${contextIcon}</button></div>`;
+  const promptIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M15 3v4h4M9 11h6M9 15h4"/></svg>`;
+  const promptAction = message.role === 'assistant' ? `<button type="button" data-message-action="prompt" aria-label="${nvText('Voir le prompt de ce message','Inspect this message prompt')}" title="${nvText('Voir le prompt de ce message','Inspect this message prompt')}">${promptIcon}</button>` : '';
+  const actions = `<div class="nv-message-actions"><button type="button" data-message-action="delete" aria-label="${nvText('Supprimer le message','Delete message')}" title="${nvText('Supprimer le message','Delete message')}">${deleteIcon}</button><button type="button" data-message-action="edit" aria-label="${nvText('Éditer le message','Edit message')}" title="${nvText('Éditer le message','Edit message')}">${editIcon}</button><button type="button" class="nv-context-toggle ${message.hidden ? 'is-hidden' : 'is-visible'}" data-message-action="hide" aria-pressed="${message.hidden ? 'true' : 'false'}" aria-label="${contextLabel}" title="${contextLabel}">${contextIcon}</button>${promptAction}</div>`;
   const variantNav = nvMessageVariantNav(message);
   return `<article class="message message-${message.role} nv-align-${layout.align} ${message.hidden ? 'nv-excluded' : ''}" data-message="${nvEscape(message.id)}" ${hiddenBySearch ? 'hidden' : ''}>${actions}<div class="nv-message-row nv-avatar-${layout.side} nv-avatar-v-${layout.vertical}">${layout.avatar}<div class="nv-message-body"><div class="message-role">${nvEscape(nvMessageRoleName(message, persona, fallbackCharacter))}<small>${message.hidden ? nvText(' · Hors contexte',' · Excluded') : ''}</small></div><div class="message-bubble nv-markdown-surface ${variantNav ? 'nv-has-variant-nav' : ''}">${nvMarkdown(nvMessageDisplayContent(message))}${nvMediaMarkup(message.attachments)}${variantNav}</div></div></div></article>`;
 }
@@ -836,11 +899,11 @@ function nvRenderChat(scrollSnapshot = null) {
   const sessions = [...NV.data.sessions].sort((a,b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt);
   pageRoot.innerHTML = `<div class="nv-workspace"><aside class="nv-sidebar"><div class="nv-sidebar-head"><strong>${nvText('Conversations','Conversations')}</strong>${nvButton('new', '+', true)}</div><input id="nv-session-search" type="search" aria-label="${nvText('Rechercher une conversation','Search conversations')}" placeholder="${nvText('Retrouver une histoire…','Find a story…')}"><div class="nv-session-list">${sessions.map(s => `<button class="nv-session ${s.id === chat?.id ? 'active' : ''}" data-session="${nvEscape(s.id)}"><strong>${s.pinned ? '★ ' : ''}${nvEscape(s.title)}</strong><small>${s.targetId.startsWith('group:') ? nvText('Groupe','Group') : nvEscape(getCharacters().find(c => c.id === s.targetId)?.name || nvText('Personnage supprimé','Deleted character'))} · ${s.messages.length}</small></button>`).join('') || `<p class="nv-muted">${nvText('Vos histoires apparaîtront ici.','Your stories will appear here.')}</p>`}</div><div class="nv-sidebar-foot">${nvButton('library',nvText('Bibliothèque','Library'))}${nvButton('tools',nvText('Outils','Tools'))}</div></aside><section class="nv-chat-main">${chat ? `
     ${!TAURI ? `<div class="nv-preview-note">${nvText('Aperçu navigateur : les réponses sont simulées. Utilisez le lanceur pour votre modèle.','Browser preview: replies are simulated. Use the launcher for your model.')}</div>` : ''}
-    <div class="nv-chat-toolbar">${nvButton('timeline','Timeline')}<input id="nv-message-search" type="search" value="${nvEscape(NV.search)}" placeholder="${nvText('Rechercher dans les messages…','Search messages…')}" aria-label="${nvText('Rechercher dans les messages','Search messages')}">${group ? `<select id="nv-speaker" aria-label="${nvText('Qui répond ?','Who replies?')}"><option value="">${group.mode === 'all' ? nvText('Tout le groupe','Whole group') : nvText('Tour automatique','Automatic turn')}</option>${group.members.map(id => getCharacters().find(c => c.id === id)).filter(Boolean).map(c => `<option value="${nvEscape(c.id)}">${nvEscape(c.name)}</option>`).join('')}</select>` : ''}${nvButton('inspect',nvText('Voir le prompt','Inspect prompt'))}${nvButton('persona',persona.name)}${nvButton('context',nvText('Contexte','Context'))}${nvButton('menu','•••')}</div>
+    <div class="nv-chat-toolbar">${nvButton('timeline','Timeline')}<input id="nv-message-search" type="search" value="${nvEscape(NV.search)}" placeholder="${nvText('Rechercher dans les messages…','Search messages…')}" aria-label="${nvText('Rechercher dans les messages','Search messages')}">${group ? `<select id="nv-speaker" aria-label="${nvText('Qui répond ?','Who replies?')}"><option value="">${group.mode === 'all' ? nvText('Tout le groupe','Whole group') : nvText('Tour automatique','Automatic turn')}</option>${group.members.map(id => getCharacters().find(c => c.id === id)).filter(Boolean).map(c => `<option value="${nvEscape(c.id)}">${nvEscape(c.name)}</option>`).join('')}</select>` : ''}${nvButton('persona',persona.name)}${nvButton('context',nvText('Contexte','Context'))}${nvButton('menu','•••')}</div>
     <div class="messages" id="messages" data-chat-session="${nvEscape(chat.id)}" aria-live="polite">${chat.messages.map((m,index) => nvMessageArticle(m,index,chat,persona,character,messageAppearance)).join('')}${nvStreamingMessageArticle(chat,persona,character,messageAppearance)}</div>
     <div class="nv-compose-area"><div class="nv-quick-replies">${NV.data.replies.filter(r => r.enabled !== false).map(r => `<button class="btn btn-ghost btn-small" data-reply="${nvEscape(r.id)}">${nvEscape(r.name)}</button>`).join('')}</div>${nvMediaMarkup(chat.draftImages,true)}<form class="composer nv-composer-row" id="composer"><details class="nv-composer-menu"><summary class="nv-composer-icon" aria-label="${nvText('Outils du message','Message tools')}" title="${nvText('Outils du message','Message tools')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.64 5.64l2.12 2.12M16.24 16.24l2.12 2.12M18.36 5.64l-2.12 2.12M7.76 16.24l-2.12 2.12M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/></svg></summary><div class="nv-composer-popover"><button type="button" data-nv="illustrate">${nvText('Illustrer','Illustrate')}</button></div></details><button type="button" class="nv-composer-icon" data-nv="attach" aria-label="${nvText('Joindre une image','Attach image')}" title="${nvText('Joindre une image','Attach image')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button><textarea id="composer-input" rows="1" aria-label="${nvText('Votre message','Your message')}" placeholder="${nvText('Écrivez votre message… (/ pour les commandes)','Write a message… (/ for commands)')}" ${state.sending ? 'disabled' : ''}>${nvEscape(chat.draft || '')}</textarea><button type="button" class="nv-composer-icon" data-nv="voice" aria-label="${nvText('Dicter','Dictate')}" title="${nvText('Dicter','Dictate')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/><path d="M18 11a6 6 0 0 1-12 0M12 17v4M9 21h6"/></svg></button>${state.sending ? `<button type="button" class="composer-send" data-nv="stop">${nvText('Arrêter','Stop')}</button>` : `<button type="button" class="composer-send" data-nv="continue">${nvText('Continuer','Continue')}</button>`}<button type="submit" class="composer-send" ${state.sending ? 'disabled' : ''}>${nvText('Envoyer','Send')}</button></form></div>` : `<div class="chat-empty"><span class="nv-eyebrow">NASTYVERSE STUDIO</span><h2>${nvText('Une nouvelle histoire commence ici.','A new story starts here.')}</h2><p>${nvText('Choisissez un personnage, créez votre persona et entrez dans votre univers.','Choose a character, create your persona and enter your world.')}</p>${nvButton('new',nvText('Commencer une conversation','Start a conversation'),true)}${nvButton('library',nvText('Créer ou importer un personnage','Create or import a character'))}</div>`}</section></div>`;
   if (typeof refreshMessageAvatarFraming === 'function') requestAnimationFrame(() => refreshMessageAvatarFraming(messageAppearance, pageRoot));
-  nvBind(pageRoot, { new: nvNewChat, library: () => goTo('library'), tools: () => goTo('configuration',{section:'studio'}), timeline: () => nvOpenTimeline(chat), persona: () => nvChoosePersona(chat), context: () => nvContextEditor(chat), menu: () => nvChatMenu(chat), inspect: () => nvInspect(chat,character), continue: () => nvGenerate(chat,'continue'), stop: nvStop, voice: () => nvDictate(chat) });
+  nvBind(pageRoot, { new: nvNewChat, library: () => goTo('library'), tools: () => goTo('configuration',{section:'studio'}), timeline: () => nvOpenTimeline(chat), persona: () => nvChoosePersona(chat), context: () => nvContextEditor(chat), menu: () => nvChatMenu(chat), continue: () => nvGenerate(chat,'continue'), stop: nvStop, voice: () => nvDictate(chat) });
   pageRoot.querySelectorAll('[data-session]').forEach(b => b.onclick = () => nvSelectSession(NV.data.sessions.find(s => s.id === b.dataset.session)));
   document.getElementById('nv-session-search').oninput = event => { pageRoot.querySelectorAll('[data-session]').forEach(b => b.hidden = !b.textContent.toLocaleLowerCase().includes(event.target.value.toLocaleLowerCase())); };
   if (!chat) return;
@@ -898,6 +961,7 @@ async function nvCompletion(character,history,chat,onDelta) {
   const params = {...getGenerationParams(),...NV.data.generation};
   NV.scope = chat; NV.promptHistory = history;
   let request;
+  let promptRecord = null;
   try {
     if (effectiveBackendApiMode(state.backendConfig) === 'text') {
       if(history.some(m=>!m.hidden&&m.attachments?.some(a=>a.sendToModel))) throw new Error(nvText('Cette conversation contient des images avec Vision activée. Passez en mode Chat ou désactivez Vision sur les images.','This conversation includes images with Vision enabled. Switch to Chat mode or turn off Vision on the images.'));
@@ -909,6 +973,7 @@ async function nvCompletion(character,history,chat,onDelta) {
       request = {mode:'chat',messages};
     }
     NV.prompt = { ...NVCore.clone(request), sessionId:chat.id, character:character.name, lore:nvPromptData(character,history).lore, sources:nvPromptData(character,history).sources };
+    promptRecord = nvPromptInspectionRecord(character, history, chat, request, params, false);
   } finally { NV.scope = null; NV.promptHistory = null; }
   const args = request.mode === 'text' ? {prompt:request.prompt,stopStrings:request.stopStrings,params} : {messages:request.messages,params};
   let result;
@@ -918,7 +983,8 @@ async function nvCompletion(character,history,chat,onDelta) {
     catch (error) { if (/command.*stream_completion.*not found/i.test(String(error))) { toast(nvText('Lecture progressive : lanceur 0.1.11 requis. Réponse standard utilisée.','Streaming requires launcher 0.1.11. Using standard completion.')); result = await invoke(request.mode === 'text' ? 'text_completion' : 'chat_completion',args); } else throw error; }
   } else result = await invoke(request.mode === 'text' ? 'text_completion' : 'chat_completion',args);
   const content = request.mode === 'text' ? postProcessTextCompletionResponse(result.content,request.preset,request.formatting,request.stopStrings) : String(result.content || '');
-  return {...result,content:await nvRules(content,'output')};
+  if (promptRecord) promptRecord.meta.model = String(result.model || promptRecord.meta.model || '');
+  return {...result,content:await nvRules(content,'output'),promptRecord};
 }
 async function nvGenerate(chat,mode = 'reply') {
   if (!chat || state.sending) return;
@@ -957,12 +1023,18 @@ async function nvGenerate(chat,mode = 'reply') {
         catch (error) { console.warn('[translate] Impersonation translation failed.', error); chat.draft = nvText('[Traduction indisponible]','[Translation unavailable]'); }
       } else if (mode === 'regenerate' && last?.role === 'assistant') {
         last.variants.push(canonicalAssistant); last.variant = last.variants.length - 1; last.content = canonicalAssistant;
+        last.promptRecords = Array.isArray(last.promptRecords) ? last.promptRecords : [];
+        while (last.promptRecords.length < last.variants.length - 1) last.promptRecords.push(null);
+        last.promptRecords.push(result.promptRecord || null);
         await nvApplyAssistantDisplay(last);
       } else if (mode === 'continue' && last?.role === 'assistant') {
         last.content += '\n' + canonicalAssistant; last.variants[last.variant] = last.content;
+        last.promptRecords = Array.isArray(last.promptRecords) ? last.promptRecords : [];
+        while (last.promptRecords.length <= last.variant) last.promptRecords.push(null);
+        last.promptRecords[last.variant] = result.promptRecord || last.promptRecords[last.variant] || null;
         await nvApplyAssistantDisplay(last);
       } else {
-        const message = NVCore.message({role:'assistant',content:canonicalAssistant,name:character.name,characterId:character.id,model:result.model,duration:performance.now()-started});
+        const message = NVCore.message({role:'assistant',content:canonicalAssistant,name:character.name,characterId:character.id,model:result.model,duration:performance.now()-started,promptRecords:[result.promptRecord || null]});
         chat.messages.push(message);
         await nvApplyAssistantDisplay(message);
       }
@@ -1007,6 +1079,9 @@ async function nvCreateMessageVariant(chat, message) {
     const canonicalAssistant = await nvPrepareAssistantCanonical(result.content);
     message.variants = Array.isArray(message.variants) && message.variants.length ? message.variants : [message.content || ''];
     message.variants.push(canonicalAssistant);
+    message.promptRecords = Array.isArray(message.promptRecords) ? message.promptRecords : [];
+    while (message.promptRecords.length < message.variants.length - 1) message.promptRecords.push(null);
+    message.promptRecords.push(result.promptRecord || null);
     message.variant = message.variants.length - 1;
     message.content = canonicalAssistant;
     message.model = result.model || message.model;
@@ -1030,6 +1105,7 @@ async function nvMessageAction(chat,m,action) {
   if (action === 'speak') return nvSpeak(nvMessageDisplayContent(m));
   if (action === 'regenerate') return nvGenerate(chat,'regenerate');
   if (action === 'branch') { const branch = NVCore.branch(chat,m.id,`${chat.title} · ${nvText('bifurcation','branch')}`); NV.data.sessions.push(branch); nvSelectSession(branch); return; }
+  if (action === 'prompt') return nvInspectMessagePrompt(chat,m);
   if (action === 'edit') {
     const value = await nvForm(nvText('Modifier le message','Edit message'),[nvField('content',nvText('Texte','Text'),nvMessageDisplayContent(m),'textarea',{rows:12,required:true})]);
     if (!value) return; nvCheckpoint(chat); await nvTranslateEditedMessage(m,value.content); m.variants[m.variant] = m.content;

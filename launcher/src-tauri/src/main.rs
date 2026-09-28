@@ -210,11 +210,16 @@ async fn check_installation(app: tauri::AppHandle) -> Result<installer::InstallS
 
 #[tauri::command]
 async fn sync_installation(app: tauri::AppHandle) -> Result<installer::InstallStatus, String> {
+    if bootstrap::is_studio_preview() { return Err("Studio preview uses the bundled runtime. Updates are disabled.".into()); }
     installer::sync_installation(&app).await
 }
 
 #[tauri::command]
 async fn launch_app(app: tauri::AppHandle) -> Result<(), String> {
+    open_app_window(app)
+}
+
+fn open_app_window(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("app") {
         window.show().map_err(|error| error.to_string())?;
         window.set_focus().map_err(|error| error.to_string())?;
@@ -233,13 +238,17 @@ async fn launch_app(app: tauri::AppHandle) -> Result<(), String> {
         .parse()
         .map_err(|error| format!("Unable to create the NastyVerse application URL: {error}"))?;
 
-    let window = WebviewWindowBuilder::new(&app, "app", WebviewUrl::CustomProtocol(url))
+    let builder = WebviewWindowBuilder::new(&app, "app", WebviewUrl::CustomProtocol(url))
         .title("NastyVerse")
         .inner_size(1280.0, 820.0)
         .min_inner_size(900.0, 600.0)
         .decorations(false)
-        .center()
-        .build()
+        .center();
+    #[cfg(target_os = "windows")]
+    let builder = if bootstrap::is_studio_preview() {
+        builder.data_directory(installer::nastyverse_root(&app)?.join("webview"))
+    } else { builder };
+    let window = builder.build()
         .map_err(|error| format!("Unable to open NastyVerse: {error}"))?;
 
     if let Some(launcher) = app.get_webview_window("main") {
@@ -304,9 +313,34 @@ async fn text_completion(
 }
 
 #[tauri::command]
+async fn stream_completion(
+    app: tauri::AppHandle,
+    request_id: String,
+    messages: Option<Vec<backend::ChatMessage>>,
+    prompt: Option<String>,
+    stop_strings: Vec<String>,
+    params: backend::GenerationParams,
+    on_event: tauri::ipc::Channel<serde_json::Value>,
+) -> Result<backend::CompletionResult, String> {
+    backend::stream_completion(&app, request_id, messages, prompt, stop_strings, params, on_event).await
+}
+
+#[tauri::command]
+fn cancel_completion(request_id: String) -> Result<(), String> {
+    backend::cancel_completion(&request_id)
+}
+
+#[tauri::command]
 async fn get_model_status(app: tauri::AppHandle) -> backend::ModelStatus {
     backend::get_model_status(&app).await
 }
+
+#[tauri::command]
+fn load_image_config(app:tauri::AppHandle)->Result<Option<backend::images::ImageConfig>,String>{backend::images::load(&app)}
+#[tauri::command]
+fn save_image_config(app:tauri::AppHandle,config:backend::images::ImageConfig)->Result<backend::images::ImageConfig,String>{backend::images::save(&app,config)}
+#[tauri::command]
+async fn generate_image(app:tauri::AppHandle,request_id:String,prompt:String,size:String)->Result<serde_json::Value,String>{backend::images::generate(&app,request_id,prompt,size).await}
 
 fn main() {
     match bootstrap::handle_early_startup() {
@@ -317,6 +351,8 @@ fn main() {
         }
     }
 
+    let mut context = tauri::generate_context!();
+    if bootstrap::is_studio_preview() { context.config_mut().app.windows.clear(); }
     tauri::Builder::default()
         .register_uri_scheme_protocol(protocol::APP_PROTOCOL, |context, request| {
             protocol::response(context.app_handle(), request.uri().path())
@@ -342,10 +378,18 @@ fn main() {
             analyze_backend_model,
             chat_completion,
             text_completion,
-            get_model_status
+            get_model_status,
+            stream_completion,
+            cancel_completion,
+            load_image_config,
+            save_image_config,
+            generate_image
         ])
         .setup(|app| {
             let _ = app.get_webview_window("main");
+            if bootstrap::is_studio_preview() {
+                open_app_window(app.handle().clone()).map_err(std::io::Error::other)?;
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -353,6 +397,6 @@ fn main() {
                 window.app_handle().exit(0);
             }
         })
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running NastyVerse");
 }

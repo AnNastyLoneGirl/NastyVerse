@@ -9,6 +9,19 @@ use std::{
 
 const LAUNCHER_FILE_NAME: &str = "NastyVerse-Launcher.exe";
 
+// The review package can run beside its runtime without installing/updating
+// the user's managed application. The normal launcher retains its lifecycle.
+pub fn is_studio_preview() -> bool {
+    env::args_os().any(|arg| arg == "--studio-preview") || env::current_exe().ok()
+        .and_then(|path| path.file_name().map(|name| name.to_string_lossy().to_ascii_lowercase()))
+        .is_some_and(|name| name == "nastyverse-studio.exe")
+}
+
+pub fn studio_preview_dir() -> Result<PathBuf, String> {
+    env::current_exe().map_err(|e| e.to_string())?.parent().map(Path::to_path_buf)
+        .ok_or_else(|| "Unable to locate the Studio preview directory".into())
+}
+
 pub enum StartupAction {
     Continue,
     Exit,
@@ -200,6 +213,7 @@ fn cleanup_update(temp_helper: &Path, backup: &Path) {
 }
 
 pub fn handle_early_startup() -> Result<StartupAction, String> {
+    if is_studio_preview() { return Ok(StartupAction::Continue); }
     let args: Vec<_> = env::args_os().collect();
     let flag = args.get(1).and_then(|value| value.to_str());
 

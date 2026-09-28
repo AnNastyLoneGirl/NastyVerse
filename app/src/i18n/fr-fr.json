@@ -416,5 +416,6 @@
   "models.analysis.runtimeNoRecommendationHint": "Les métadonnées étaient insuffisantes et le test comportemental n’a pas trouvé de gagnant clair. Aucun preset n’est appliqué automatiquement.",
   "models.analysis.source.chat-template-extended-pattern": "Inspection étendue du chat template",
   "models.analysis.source.runtime-behavioral-probe": "Calibration comportementale sur le modèle chargé",
-  "models.analysis.source.runtime-probe-ambiguous": "Calibration comportementale (aucun gagnant clair)"
+  "models.analysis.source.runtime-probe-ambiguous": "Calibration comportementale (aucun gagnant clair)",
+  "config.studio": "Outils & sauvegardes"
 }

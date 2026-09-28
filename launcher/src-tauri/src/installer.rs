@@ -108,6 +108,11 @@ struct RuntimeStateFile {
 }
 
 pub fn nastyverse_root(app: &AppHandle) -> Result<PathBuf, String> {
+    if crate::bootstrap::is_studio_preview() {
+        let root = crate::bootstrap::studio_preview_dir()?.join("studio-data");
+        fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+        return Ok(root);
+    }
     app.path()
         .local_data_dir()
         .map(|path| path.join("NastyVerse"))
@@ -115,6 +120,7 @@ pub fn nastyverse_root(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 pub fn runtime_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    if crate::bootstrap::is_studio_preview() { return Ok(crate::bootstrap::studio_preview_dir()?.join("runtime")); }
     Ok(nastyverse_root(app)?.join("runtime"))
 }
 

@@ -4,8 +4,13 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::{fs, path::PathBuf, time::Duration};
 use tauri::AppHandle;
+use futures_util::{future::{AbortHandle, Abortable}, StreamExt};
+use std::sync::{Mutex, OnceLock};
+use std::collections::HashMap;
 
 use crate::installer;
+mod native_providers;
+pub mod images;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,12 +29,24 @@ pub struct GenerationParams {
     pub temperature: f64,
     pub top_p: f64,
     pub max_tokens: u64,
+    #[serde(default)]
+    pub top_k: Option<u64>,
+    #[serde(default)]
+    pub min_p: Option<f64>,
+    #[serde(default)]
+    pub repetition_penalty: Option<f64>,
+    #[serde(default)]
+    pub frequency_penalty: Option<f64>,
+    #[serde(default)]
+    pub presence_penalty: Option<f64>,
+    #[serde(default)]
+    pub seed: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
-    pub content: String,
+    pub content: Value,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -116,6 +133,154 @@ fn default_api_mode() -> String {
     "auto".into()
 }
 
+static ACTIVE_REQUESTS: OnceLock<Mutex<HashMap<String, AbortHandle>>> = OnceLock::new();
+
+pub fn cancel_completion(request_id: &str) -> Result<(), String> {
+    let requests = ACTIVE_REQUESTS.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(handle) = requests.lock().map_err(|_| "Request registry unavailable")?.remove(request_id) {
+        handle.abort();
+    }
+    Ok(())
+}
+
+fn sampler_options(config: &BackendConfig, params: &GenerationParams, payload: &mut Map<String, Value>) {
+    if let Some(seed) = params.seed { payload.insert("seed".into(), json!(seed)); }
+    if let Some(value) = params.frequency_penalty { payload.insert("frequency_penalty".into(), json!(value.clamp(-2.0, 2.0))); }
+    if let Some(value) = params.presence_penalty { payload.insert("presence_penalty".into(), json!(value.clamp(-2.0, 2.0))); }
+    if matches!(config.backend_type.as_str(), "koboldcpp" | "llamacpp" | "textgenwebui" | "ollama") {
+        if let Some(value) = params.top_k { payload.insert("top_k".into(), json!(value.min(1000))); }
+        if let Some(value) = params.min_p { payload.insert("min_p".into(), json!(value.clamp(0.0, 1.0))); }
+        if let Some(value) = params.repetition_penalty {
+            let key = match config.backend_type.as_str() { "koboldcpp" => "rep_pen", "ollama" | "llamacpp" => "repeat_penalty", _ => "repetition_penalty" };
+            payload.insert(key.into(), json!(value.clamp(0.0, 3.0)));
+        }
+    }
+}
+
+fn parse_stream_line(line: &[u8]) -> Result<Option<(String, String)>, String> {
+    let line = std::str::from_utf8(line).map_err(|_| "Invalid UTF-8 stream")?.trim();
+    let line = line.strip_prefix("data:").map(str::trim).unwrap_or(line);
+    if line.is_empty() || line == "[DONE]" || line.starts_with(':') || line.starts_with("event:") || line.starts_with("id:") { return Ok(None); }
+    let value: Value = serde_json::from_str(line).map_err(|e| format!("Invalid completion stream: {e}"))?;
+    if let Some(error) = value.get("error") { return Err(format!("Completion stream: {error}")); }
+    if value.get("candidates").is_some() {
+        let content = native_providers::response_text(&value, true).unwrap_or_default();
+        let reasoning = value.pointer("/candidates/0/content/parts").and_then(Value::as_array).into_iter().flatten().filter(|p|p.get("thought").and_then(Value::as_bool)==Some(true)).filter_map(|p|p.get("text").and_then(Value::as_str)).collect::<Vec<_>>().join("");
+        return Ok(Some((content,reasoning)));
+    }
+    let content = value.pointer("/choices/0/delta/content").and_then(Value::as_str)
+        .or_else(|| value.pointer("/choices/0/text").and_then(Value::as_str))
+        .or_else(|| value.pointer("/message/content").and_then(Value::as_str))
+        .or_else(|| value.get("response").and_then(Value::as_str))
+        .or_else(|| value.pointer("/delta/text").and_then(Value::as_str))
+        .or_else(|| value.get("token").and_then(Value::as_str))
+        .or_else(|| value.get("content").and_then(Value::as_str)).unwrap_or("").to_string();
+    let reasoning = value.pointer("/choices/0/delta/reasoning_content").and_then(Value::as_str)
+        .or_else(|| value.pointer("/choices/0/delta/reasoning").and_then(Value::as_str))
+        .or_else(|| value.pointer("/delta/thinking").and_then(Value::as_str))
+        .or_else(|| value.pointer("/message/thinking").and_then(Value::as_str)).unwrap_or("").to_string();
+    Ok(Some((content, reasoning)))
+}
+
+pub async fn stream_completion(
+    app: &AppHandle, request_id: String, messages: Option<Vec<ChatMessage>>, prompt: Option<String>,
+    stop_strings: Vec<String>, params: GenerationParams, on_event: tauri::ipc::Channel<Value>,
+) -> Result<CompletionResult, String> {
+    if request_id.is_empty() || request_id.len() > 128 { return Err("Invalid request ID".into()); }
+    if messages.is_some() == prompt.is_some() { return Err("Provide either messages or a text prompt".into()); }
+    let config = load_backend_config(app)?.ok_or("Configure and save an inference backend first")?;
+    let (handle, registration) = AbortHandle::new_pair();
+    {
+        let mut registry = ACTIVE_REQUESTS.get_or_init(|| Mutex::new(HashMap::new())).lock().map_err(|_| "Request registry unavailable")?;
+        if registry.contains_key(&request_id) { return Err("Duplicate request ID".into()); }
+        registry.insert(request_id.clone(), handle);
+    }
+    let operation = async {
+        let text_mode = prompt.is_some();
+        let mut payload = Map::new();
+        add_model(&mut payload, &config);
+        payload.insert("stream".into(), json!(true));
+        payload.insert("temperature".into(), json!(params.temperature.clamp(0.0, 5.0)));
+        payload.insert("top_p".into(), json!(params.top_p.clamp(0.0, 1.0)));
+        payload.insert("max_tokens".into(), json!(params.max_tokens.clamp(1, 131072)));
+        if let Some(messages) = messages { payload.insert("messages".into(), json!(messages)); }
+        if let Some(prompt) = prompt { payload.insert("prompt".into(), json!(prompt)); }
+        if !stop_strings.is_empty() { payload.insert("stop".into(), json!(stop_strings)); }
+        sampler_options(&config, &params, &mut payload);
+        let mut path = if text_mode { "/v1/completions" } else { "/v1/chat/completions" };
+        if config.backend_type == "ollama" {
+            if let Some(messages) = payload.get_mut("messages") { *messages = native_providers::ollama_messages(messages)?; }
+            path = if text_mode { "/api/generate" } else { "/api/chat" };
+            let mut options = Map::new();
+            for key in ["temperature", "top_p", "top_k", "min_p", "repeat_penalty", "seed", "presence_penalty", "frequency_penalty", "stop"] {
+                if let Some(value) = payload.remove(key) { options.insert(key.into(), value); }
+            }
+            if let Some(value) = payload.remove("max_tokens") { options.insert("num_predict".into(), value); }
+            payload.insert("options".into(), Value::Object(options));
+            if text_mode { payload.insert("raw".into(), json!(true)); }
+        } else if config.backend_type == "koboldcpp" && text_mode {
+            path = "/api/extra/generate/stream";
+            if let Some(value) = payload.remove("max_tokens") { payload.insert("max_length".into(), value); }
+            if let Some(value) = payload.remove("stop") { payload.insert("stop_sequence".into(), value); }
+            payload.remove("model");
+            payload.remove("stream");
+        } else if config.backend_type == "llamacpp" && text_mode {
+            path = "/completion";
+            if let Some(value) = payload.remove("max_tokens") { payload.insert("n_predict".into(), value); }
+        }
+        let (url, payload) = if native_providers::is_native(&config) {
+            if text_mode { return Err("This provider requires Chat Completion mode".into()); }
+            let messages: Vec<ChatMessage> = serde_json::from_value(payload.get("messages").cloned().unwrap_or(json!([]))).map_err(|e|e.to_string())?;
+            native_providers::prepare(&config, &messages, &params, true)?
+        } else { (endpoint(&config.url, path), Value::Object(payload)) };
+        let response = request_for_provider(&config, client(300)?.post(url).json(&payload))
+            .send().await.map_err(|e| format!("Streaming request failed: {e}"))?;
+        if !response.status().is_success() {
+            return Err(format!("Streaming request: HTTP {} {}", response.status(), response.text().await.unwrap_or_default().chars().take(1600).collect::<String>()));
+        }
+        let mut stream = response.bytes_stream();
+        let mut buffer = Vec::new();
+        let mut content = String::new();
+        while let Some(bytes) = stream.next().await {
+            buffer.extend_from_slice(&bytes.map_err(|e| e.to_string())?);
+            if buffer.len() > 4_000_000 { return Err("Stream frame too large".into()); }
+            while let Some(end) = buffer.iter().position(|c| *c == b'\n') {
+                let line: Vec<u8> = buffer.drain(..=end).collect();
+                if let Some((delta, reasoning)) = parse_stream_line(&line)? {
+                    content.push_str(&delta);
+                    if content.len() > 8_000_000 { return Err("Completion too large".into()); }
+                    on_event.send(json!({"delta": delta, "reasoning": reasoning})).map_err(|e| e.to_string())?;
+                }
+            }
+        }
+        if !buffer.is_empty() {
+            if let Some((delta, reasoning)) = parse_stream_line(&buffer)? {
+                content.push_str(&delta);
+                on_event.send(json!({"delta": delta, "reasoning": reasoning})).map_err(|e| e.to_string())?;
+            }
+        }
+        if content.is_empty() { return Err("The model returned no text".into()); }
+        Ok(CompletionResult { content, model: config.model.clone() })
+    };
+    let result = Abortable::new(operation, registration).await;
+    if let Ok(mut registry) = ACTIVE_REQUESTS.get_or_init(|| Mutex::new(HashMap::new())).lock() { registry.remove(&request_id); }
+    result.unwrap_or_else(|_| Err("Generation cancelled".into()))
+}
+
+#[cfg(test)]
+mod studio_stream_tests {
+    use super::*;
+    #[test]
+    fn parses_provider_streams() {
+        assert_eq!(parse_stream_line(b"data: {\"choices\":[{\"delta\":{\"content\":\"bonjour\"}}]}\r\n").unwrap().unwrap().0, "bonjour");
+        assert_eq!(parse_stream_line(b"{\"message\":{\"content\":\"hello\",\"thinking\":\"hmm\"}}").unwrap().unwrap(), ("hello".into(), "hmm".into()));
+        assert_eq!(parse_stream_line(b"data: {\"token\":\"x\"}").unwrap().unwrap().0, "x");
+        assert!(parse_stream_line(b"data: [DONE]").unwrap().is_none());
+        assert!(parse_stream_line(b": keepalive").unwrap().is_none());
+        assert!(parse_stream_line(b"{\"error\":\"rejected\"}").is_err());
+    }
+}
+
 fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(installer::nastyverse_root(app)?.join("backend-config.json"))
 }
@@ -135,6 +300,8 @@ fn supported_backend(value: &str) -> bool {
             | "mistralapi"
             | "together"
             | "custom"
+            | "anthropic"
+            | "google"
     )
 }
 
@@ -159,6 +326,7 @@ fn validate_config(mut config: BackendConfig) -> Result<BackendConfig, String> {
     config.url = config.url.trim().trim_end_matches('/').to_string();
     config.model = normalized_optional(config.model);
     config.api_key = normalized_optional(config.api_key);
+    if native_providers::is_native(&config) { config.api_mode = "chat".into(); }
     config.api_mode = match config.api_mode.trim().to_ascii_lowercase().as_str() {
         "auto" => "auto".into(),
         "chat" => "chat".into(),
@@ -261,6 +429,13 @@ async fn response_json(response: Response, label: &str) -> Result<Value, String>
 }
 
 fn request_for_provider(config: &BackendConfig, builder: RequestBuilder) -> RequestBuilder {
+    if config.backend_type == "anthropic" {
+        let builder = builder.header("anthropic-version", "2023-06-01");
+        return if let Some(key) = &config.api_key { builder.header("x-api-key", key) } else { builder };
+    }
+    if config.backend_type == "google" {
+        return if let Some(key) = &config.api_key { builder.header("x-goog-api-key", key) } else { builder };
+    }
     let builder = authorize(builder, &config.api_key);
     if config.backend_type == "openrouter" {
         builder
@@ -614,6 +789,7 @@ async fn test_textgenwebui(config: &BackendConfig) -> Result<BackendProbe, Strin
 pub async fn test_backend_connection(config: BackendConfig) -> Result<BackendTestResult, String> {
     let config = validate_config(config)?;
     let probe = match config.backend_type.as_str() {
+        "anthropic" | "google" => native_providers::probe(&config).await?,
         "ollama" => test_ollama(&config).await?,
         "koboldcpp" => test_koboldcpp(&config).await?,
         "llamacpp" => test_llamacpp(&config).await?,
@@ -870,6 +1046,7 @@ fn derive_prompt_presets(
 pub async fn analyze_backend_model(config: BackendConfig) -> Result<ModelAnalysis, String> {
     let config = validate_config(config)?;
     let probe = match config.backend_type.as_str() {
+        "anthropic" | "google" => native_providers::probe(&config).await?,
         "ollama" => test_ollama(&config).await?,
         "koboldcpp" => test_koboldcpp(&config).await?,
         "llamacpp" => test_llamacpp(&config).await?,
@@ -975,6 +1152,7 @@ async fn openai_chat_completion(
     payload.insert("top_p".into(), json!(params.top_p));
     payload.insert("max_tokens".into(), json!(params.max_tokens));
     payload.insert("stream".into(), json!(false));
+    sampler_options(config, params, &mut payload);
     let request = request_for_provider(
         config,
         client.post(endpoint(&config.url, "/v1/chat/completions")).json(&Value::Object(payload)),
@@ -995,9 +1173,9 @@ async fn ollama_chat_completion(
 ) -> Result<CompletionResult, String> {
     let model = config.model.as_deref().ok_or_else(|| "Select an Ollama model before chatting.".to_string())?;
     let client = client(300)?;
-    let payload = json!({
+    let mut payload = json!({
         "model": model,
-        "messages": messages,
+        "messages": native_providers::ollama_messages(&json!(messages))?,
         "stream": false,
         "options": {
             "temperature": params.temperature,
@@ -1005,6 +1183,7 @@ async fn ollama_chat_completion(
             "num_predict": params.max_tokens
         }
     });
+    if let Some(options) = payload.get_mut("options").and_then(Value::as_object_mut) { sampler_options(config, params, options); }
     let response = authorize(client.post(endpoint(&config.url, "/api/chat")).json(&payload), &config.api_key)
         .send().await.map_err(|error| format!("Ollama chat request failed: {error}"))?;
     let payload = response_json(response, "Ollama chat").await?;
@@ -1022,6 +1201,7 @@ pub async fn chat_completion(
     let config = load_backend_config(app)?
         .ok_or_else(|| "Configure and save an inference backend first.".to_string())?;
     match config.backend_type.as_str() {
+        "anthropic" | "google" => native_providers::complete(&config, &messages, &params).await,
         "ollama" => ollama_chat_completion(&config, &messages, &params).await,
         _ => openai_chat_completion(&config, &messages, &params).await,
     }
@@ -1040,6 +1220,7 @@ fn build_openai_text_payload(
     payload.insert("top_p".into(), json!(params.top_p));
     payload.insert("max_tokens".into(), json!(params.max_tokens));
     payload.insert("stream".into(), json!(false));
+    sampler_options(config, params, &mut payload);
     if !stop_strings.is_empty() {
         payload.insert("stop".into(), json!(stop_strings));
     }
@@ -1082,6 +1263,7 @@ async fn llamacpp_native_text_completion(
     payload.insert("top_p".into(), json!(params.top_p));
     payload.insert("stop".into(), json!(stop_strings));
     payload.insert("stream".into(), json!(false));
+    sampler_options(config, params, &mut payload);
     let payload = Value::Object(payload);
     let response = authorize(
         client.post(endpoint(&config.url, "/completion")).json(&payload),
@@ -1104,13 +1286,14 @@ async fn koboldcpp_text_completion(
     params: &GenerationParams,
 ) -> Result<CompletionResult, String> {
     let client = client(300)?;
-    let payload = json!({
+    let mut payload = json!({
         "prompt": prompt,
         "max_length": params.max_tokens,
         "temperature": params.temperature,
         "top_p": params.top_p,
         "stop_sequence": stop_strings
     });
+    if let Some(options) = payload.as_object_mut() { sampler_options(config, params, options); }
     let response = authorize(client.post(endpoint(&config.url, "/api/v1/generate")).json(&payload), &config.api_key)
         .send().await.map_err(|error| format!("KoboldCpp generation failed: {error}"))?;
     if response.status().is_success() {
@@ -1131,13 +1314,14 @@ async fn textgen_native_text_completion(
     params: &GenerationParams,
 ) -> Result<CompletionResult, String> {
     let client = client(300)?;
-    let payload = json!({
+    let mut payload = json!({
         "prompt": prompt,
         "max_new_tokens": params.max_tokens,
         "temperature": params.temperature,
         "top_p": params.top_p,
         "stop": stop_strings
     });
+    if let Some(options) = payload.as_object_mut() { sampler_options(config, params, options); }
     let response = authorize(client.post(endpoint(&config.url, "/api/v1/generate")).json(&payload), &config.api_key)
         .send().await.map_err(|error| format!("text-generation-webui generation failed: {error}"))?;
     let payload = response_json(response, "text-generation-webui generation").await?;
@@ -1155,10 +1339,11 @@ async fn ollama_text_completion(
 ) -> Result<CompletionResult, String> {
     let model = config.model.as_deref().ok_or_else(|| "Select an Ollama model before generating.".to_string())?;
     let client = client(300)?;
-    let payload = json!({
+    let mut payload = json!({
         "model": model,
         "prompt": prompt,
         "stream": false,
+        "raw": true,
         "options": {
             "temperature": params.temperature,
             "top_p": params.top_p,
@@ -1166,6 +1351,7 @@ async fn ollama_text_completion(
             "stop": stop_strings
         }
     });
+    if let Some(options) = payload.get_mut("options").and_then(Value::as_object_mut) { sampler_options(config, params, options); }
     let response = authorize(client.post(endpoint(&config.url, "/api/generate")).json(&payload), &config.api_key)
         .send().await.map_err(|error| format!("Ollama generation failed: {error}"))?;
     let payload = response_json(response, "Ollama generation").await?;

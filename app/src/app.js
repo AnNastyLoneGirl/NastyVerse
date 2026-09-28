@@ -246,9 +246,12 @@ const CONFIG_SECTIONS = [
   { id: 'global-prompt', labelKey: 'config.globalPrompt' },
   { id: 'model-params', labelKey: 'config.params' },
   { id: 'ui', labelKey: 'config.ui' },
+  { id: 'studio', labelKey: 'config.studio' },
 ];
 
 const BACKENDS = [
+  { id: 'anthropic', label: 'Anthropic (Claude)', url: 'https://api.anthropic.com/v1', kind: 'api', apiKey: 'required', modelMode: 'required-select' },
+  { id: 'google', label: 'Google (Gemini)', url: 'https://generativelanguage.googleapis.com/v1beta', kind: 'api', apiKey: 'required', modelMode: 'required-select' },
   { id: 'koboldcpp', label: 'KoboldCpp', url: 'http://localhost:5001', kind: 'local', apiKey: 'none', modelMode: 'reported' },
   { id: 'llamacpp', label: 'llama.cpp server', url: 'http://localhost:8080', kind: 'local', apiKey: 'none', modelMode: 'optional-select' },
   { id: 'textgenwebui', label: 'text-generation-webui', url: 'http://localhost:5000', kind: 'local', apiKey: 'optional', modelMode: 'free-reported' },
@@ -264,7 +267,7 @@ const BACKENDS = [
 ];
 
 function backendDefinition(backendType) {
-  return BACKENDS.find(backend => backend.id === backendType) || BACKENDS[0];
+  return BACKENDS.find(backend => backend.id === backendType) || BACKENDS.find(backend => backend.id === 'koboldcpp');
 }
 
 function defaultBackendApiMode(backendType) {
@@ -272,6 +275,7 @@ function defaultBackendApiMode(backendType) {
 }
 
 function effectiveBackendApiMode(config = state.backendConfig) {
+  if (['anthropic','google'].includes(config?.backendType)) return 'chat';
   const explicit = String(config?.apiMode || 'auto').toLowerCase();
   if (explicit === 'chat' || explicit === 'text') return explicit;
   return defaultBackendApiMode(config?.backendType || 'custom');
@@ -1018,17 +1022,18 @@ function getInstructionTemplate() {
 }
 
 function baseContextTemplateValues(character) {
-  const loreBefore = '';
-  const loreAfter = '';
+  const studio = nvPromptData(character);
+  const loreBefore = studio.before;
+  const loreAfter = studio.after;
   return {
     anchorBefore: '',
     anchorAfter: '',
     description: character.description || '',
-    scenario: character.scenario || '',
+    scenario: nvContextSession(character)?.scenario || character.scenario || '',
     personality: character.personality || '',
-    persona: '',
+    persona: studio.persona.description || '',
     char: character.name || '',
-    user: 'User',
+    user: studio.persona.name || 'User',
     wiBefore: loreBefore,
     loreBefore,
     wiAfter: loreAfter,
@@ -1656,42 +1661,15 @@ function activeCharacter() {
 }
 
 function ensureConversation(character) {
-  const conversations = getConversations();
-  if (!Array.isArray(conversations[character.id])) {
-    conversations[character.id] = [];
-    if (character.firstMessage?.trim()) {
-      conversations[character.id].push({ id: uid(), role: 'assistant', content: character.firstMessage.trim(), createdAt: Date.now() });
-    }
-    saveConversations(conversations);
-  }
-  return conversations[character.id];
+  return nvEnsureSession(character)?.messages || [];
 }
 
 function estimateChatMessagesTokens(messages) {
-  return messages.reduce((total, message) => total + estimateTokens(message.content) + 4, 2);
+  return messages.reduce((total, message) => total + (Array.isArray(message.content) ? message.content.reduce((n,p) => n + (p.type === 'image_url' ? 1536 : estimateTokens(p.text || '')),0) : estimateTokens(message.content)) + 4, 2);
 }
 
 function buildChatCompletionMessages(character, history = [], params = getGenerationParams()) {
-  const permanent = [];
-  const system = effectiveSystemPrompt(character);
-  if (system) permanent.push({ role: 'system', content: system });
-  if (String(character.description || '').trim()) permanent.push({ role: 'system', content: character.description.trim() });
-  if (String(character.personality || '').trim()) permanent.push({ role: 'system', content: character.personality.trim() });
-  if (String(character.scenario || '').trim()) permanent.push({ role: 'system', content: character.scenario.trim() });
-  const postHistory = effectivePostHistoryInstructions(character);
-  const tail = postHistory ? [{ role: 'system', content: postHistory }] : [];
-  let keptHistory = history
-    .filter(message => message && ['system', 'user', 'assistant'].includes(message.role) && String(message.content || '').trim())
-    .map(message => ({ role: message.role, content: String(message.content) }));
-  const contextTokens = Math.max(512, Number(params.contextTokens) || DEFAULT_PARAMS.contextTokens);
-  const generationReserve = Math.max(1, Number(params.maxTokens) || DEFAULT_PARAMS.maxTokens);
-  const promptBudget = Math.max(128, contextTokens - generationReserve);
-  let messages = [...permanent, ...keptHistory, ...tail];
-  while (estimateChatMessagesTokens(messages) > promptBudget && keptHistory.length > 1) {
-    keptHistory = keptHistory.slice(1);
-    messages = [...permanent, ...keptHistory, ...tail];
-  }
-  return messages;
+  return nvBuildChat(character, history, params);
 }
 
 function scrollChatToBottom() {
@@ -1704,118 +1682,8 @@ function scrollChatToBottom() {
 function renderChat() {
   state.currentPage = 'chat';
   renderNavbar();
-  const character = activeCharacter();
-
-  if (!character) {
-    pageRoot.innerHTML = `
-      <div class="page page-chat active">
-        <div class="chat-empty">
-          <div class="empty-orb"><svg viewBox="0 0 24 24"><path d="M4 5h16v10H8l-4 4V5z"/></svg></div>
-          <h2>${escapeHtml(t('chat.none.title'))}</h2>
-          <p>${escapeHtml(t('chat.none.body'))}</p>
-          <button class="btn btn-primary" id="open-library">${escapeHtml(t('chat.none.button'))}</button>
-        </div>
-      </div>`;
-    document.getElementById('open-library').addEventListener('click', () => goTo('library'));
-    return;
-  }
-
-  const messages = ensureConversation(character);
-  pageRoot.innerHTML = `
-    <div class="chat-shell">
-      <header class="chat-header">
-        <div class="chat-character-avatar">${escapeHtml(character.name.slice(0, 1).toUpperCase())}</div>
-        <div class="chat-character-meta">
-          <strong>${escapeHtml(character.name)}</strong>
-          <span>${escapeHtml(character.description || t('chat.characterFallback'))}</span>
-        </div>
-        <div class="chat-header-actions">
-          <button class="btn btn-ghost btn-small" id="chat-library">${escapeHtml(t('chat.library'))}</button>
-          <button class="btn btn-ghost btn-small" id="chat-clear">${escapeHtml(t('chat.clear'))}</button>
-        </div>
-      </header>
-      <div class="messages" id="messages">
-        ${messages.map(message => `
-          <article class="message message-${message.role}">
-            <div class="message-role">${message.role === 'user' ? escapeHtml(t('chat.you')) : escapeHtml(character.name)}</div>
-            <div class="message-bubble">${escapeHtml(message.content).replaceAll('\n', '<br>')}</div>
-          </article>`).join('')}
-        ${state.sending ? `<article class="message message-assistant"><div class="message-role">${escapeHtml(character.name)}</div><div class="message-bubble message-thinking"><span></span><span></span><span></span>${escapeHtml(t('chat.generating'))}</div></article>` : ''}
-      </div>
-      <form class="composer" id="composer">
-        <textarea id="composer-input" rows="1" placeholder="${escapeHtml(t('chat.placeholder'))}" ${state.sending ? 'disabled' : ''}></textarea>
-        <button class="composer-send" type="submit" ${state.sending ? 'disabled' : ''}>${escapeHtml(t('chat.send'))}</button>
-      </form>
-    </div>`;
-
-  document.getElementById('chat-library').addEventListener('click', () => goTo('library'));
-  document.getElementById('chat-clear').addEventListener('click', () => {
-    const conversations = getConversations();
-    delete conversations[character.id];
-    saveConversations(conversations);
-    renderChat();
-  });
-  const input = document.getElementById('composer-input');
-  input.addEventListener('input', () => {
-    input.style.height = 'auto';
-    input.style.height = `${Math.min(input.scrollHeight, 150)}px`;
-  });
-  input.addEventListener('keydown', event => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      document.getElementById('composer').requestSubmit();
-    }
-  });
-  document.getElementById('composer').addEventListener('submit', event => sendChatMessage(event, character));
-  scrollChatToBottom();
+  nvRenderChat();
 }
-
-async function sendChatMessage(event, character) {
-  event.preventDefault();
-  if (state.sending) return;
-  const input = document.getElementById('composer-input');
-  const content = input.value.trim();
-  if (!content) return;
-
-  const conversations = getConversations();
-  const thread = ensureConversation(character);
-  thread.push({ id: uid(), role: 'user', content, createdAt: Date.now() });
-  conversations[character.id] = thread;
-  saveConversations(conversations);
-  state.sending = true;
-  renderChat();
-
-  try {
-    const currentThread = getConversations()[character.id] || [];
-    const params = getGenerationParams();
-    if (!state.backendConfig) {
-      try { state.backendConfig = await invoke('load_backend_config'); } catch (_) { /* Native command will surface the real error. */ }
-    }
-    const mode = effectiveBackendApiMode(state.backendConfig);
-    let result;
-    let reply;
-    if (mode === 'text') {
-      const request = buildTextCompletionRequest(character, currentThread, params);
-      result = await invoke('text_completion', { prompt: request.prompt, stopStrings: request.stopStrings, params });
-      reply = postProcessTextCompletionResponse(result.content, request.preset, request.formatting, request.stopStrings);
-    } else {
-      const messages = buildChatCompletionMessages(character, currentThread, params);
-      result = await invoke('chat_completion', { messages, params });
-      reply = String(result.content || '');
-    }
-    const updated = getConversations();
-    updated[character.id] = updated[character.id] || [];
-    updated[character.id].push({ id: uid(), role: 'assistant', content: reply, createdAt: Date.now() });
-    saveConversations(updated);
-  } catch (error) {
-    toast(String(error), 'error');
-  } finally {
-    state.sending = false;
-    renderChat();
-    refreshModelStatus();
-  }
-}
-
 
 /* ===================================================================
    Library
@@ -1852,6 +1720,9 @@ function normalizeCharacter(record = {}) {
     creator: record.creator || '',
     characterVersion: record.characterVersion || record.character_version || '',
     creatorNotes: record.creatorNotes || record.creator_notes || '',
+    characterBook: record.characterBook || record.character_book || null,
+    extensions: record.extensions && typeof record.extensions === 'object' ? record.extensions : {},
+    groupOnlyGreetings: record.groupOnlyGreetings || record.group_only_greetings || [],
     tags: Array.isArray(record.tags) ? record.tags.filter(Boolean) : [],
     favorite: Boolean(record.favorite),
     createdAt: Number(record.createdAt || Date.now()),
@@ -1867,8 +1738,7 @@ function getNormalizedCharacters() {
 }
 
 function characterChatCount(id) {
-  const thread = getConversations()[id];
-  return Array.isArray(thread) ? thread.filter(message => message.role === 'user').length : 0;
+  return NV.data.sessions.filter(s => s.targetId === id).reduce((total,s) => total + s.messages.filter(m => m.role === 'user').length,0);
 }
 
 function characterApproxTokens(character) {
@@ -1902,8 +1772,9 @@ function renderLibrary(tab = 'characters') {
       <div class="library-commandbar">
         <div class="lib-tabs">
           <button class="lib-tab ${tab === 'characters' ? 'active' : ''}" data-tab="characters">${escapeHtml(t('library.characters'))} <span class="count">${characters.length}</span></button>
-          <button class="lib-tab ${tab === 'lorebooks' ? 'active' : ''}" data-tab="lorebooks">${escapeHtml(t('library.lorebooks'))} <span class="count">0</span></button>
-          <button class="lib-tab ${tab === 'personas' ? 'active' : ''}" data-tab="personas">${escapeHtml(t('library.personas'))} <span class="count">0</span></button>
+          <button class="lib-tab ${tab === 'lorebooks' ? 'active' : ''}" data-tab="lorebooks">${escapeHtml(t('library.lorebooks'))} <span class="count">${NV.data.books.length}</span></button>
+          <button class="lib-tab ${tab === 'personas' ? 'active' : ''}" data-tab="personas">${escapeHtml(t('library.personas'))} <span class="count">${NV.data.personas.length}</span></button>
+          <button class="lib-tab ${tab === 'groups' ? 'active' : ''}" data-tab="groups">${nvText('Groupes','Groups')} <span class="count">${NV.data.groups.length}</span></button>
         </div>
         ${tab === 'characters' ? `
           <div class="library-command-actions">
@@ -1923,12 +1794,7 @@ function renderLibrary(tab = 'characters') {
     document.getElementById('character-import-file').addEventListener('change', importCharacterCards);
     renderCharacterLibrary();
   } else {
-    document.getElementById('library-content').innerHTML = `
-      <div class="empty-state library-empty-wide">
-        <svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg>
-        <h2>${escapeHtml(t('library.soon.title'))}</h2>
-        <p>${escapeHtml(t('library.soon.body'))}</p>
-      </div>`;
+    nvRenderLibrary(tab);
   }
 }
 
@@ -2458,6 +2324,11 @@ function openCharacterEditor(characterId = null) {
     renderLibrary('characters');
   });
 
+  if (existing) {
+    const start = document.createElement('button'); start.type = 'button'; start.className = 'btn btn-primary'; start.textContent = nvText('Discuter','Chat');
+    start.onclick = () => { NV.groupId = ''; state.activeCharacterId = existing.id; localStorage.setItem(STORAGE.activeCharacter,existing.id); nvEnsureSession(existing); goTo('chat'); };
+    pageRoot.querySelector('.editor-actions-right')?.prepend(start);
+  }
   pageRoot.querySelector('input[name=name]')?.focus();
 }
 
@@ -2539,6 +2410,9 @@ function characterFromCardPayload(payload) {
     creator: data.creator,
     characterVersion: data.character_version ?? data.characterVersion,
     creatorNotes: data.creator_notes ?? data.creatorNotes,
+    characterBook: data.character_book ?? data.characterBook,
+    extensions: data.extensions,
+    groupOnlyGreetings: data.group_only_greetings,
     tags: data.tags,
     createdAt: cardTimestamp(data.creation_date, Date.now()),
     updatedAt: cardTimestamp(data.modification_date, Date.now()),
@@ -2830,12 +2704,15 @@ function exportCharacterJson(id) {
       creator: character.creator,
       character_version: character.characterVersion,
       creator_notes: character.creatorNotes,
+      character_book: character.characterBook || undefined,
       extensions: {
+        ...character.extensions,
         nastyverse: {
+          ...character.extensions?.nastyverse,
           context_template: character.contextTemplate || ''
         }
       },
-      group_only_greetings: [],
+      group_only_greetings: character.groupOnlyGreetings || [],
       creation_date: Math.floor((character.createdAt || Date.now()) / 1000),
       modification_date: Math.floor(Date.now() / 1000),
     }
@@ -2914,6 +2791,7 @@ async function renderConfiguration(section = 'general') {
   else if (section === 'models') await renderModelsConfig();
   else if (section === 'global-prompt') renderGlobalPromptConfig();
   else if (section === 'model-params') renderParamsConfig();
+  else if (section === 'studio') nvRenderTools();
   else renderUiConfig();
 }
 
@@ -3556,10 +3434,12 @@ function updateProviderFields(backendType, { resetUrl = false } = {}) {
       ? t('models.apiKey.requiredPlaceholder')
       : t('models.apiKey.placeholder');
   }
-  const selectedMode = document.getElementById('backend-api-mode')?.value || 'auto';
+  const modeSelect = document.getElementById('backend-api-mode');
+  if(modeSelect){modeSelect.disabled=['anthropic','google'].includes(backendType);if(modeSelect.disabled)modeSelect.value='chat';}
+  const selectedMode = modeSelect?.value || 'auto';
   const effective = selectedMode === 'auto' ? defaultBackendApiMode(backendType) : selectedMode;
   const hint = document.getElementById('backend-api-mode-hint');
-  if (hint) hint.textContent = t('models.prompting.effective', { mode: t(`models.apiMode.${effective}`) });
+  if (hint) hint.textContent = t('models.prompting.effective', { mode: t(`models.apiMode.${effective}`) }) + (backendType === 'anthropic' ? nvText(' · Échantillonnage : réglages natifs de Claude.',' · Sampling: native Claude defaults.') : '');
   renderBackendModelControl(backendType);
 }
 
@@ -4054,7 +3934,7 @@ function renderInstructionSequence(value, character, template, name = '') {
 }
 
 function instructionRoleName(role, character) {
-  if (role === 'user') return 'User';
+  if (role === 'user') return nvPersona(nvContextSession(character)).name;
   if (role === 'assistant') return String(character.name || 'Assistant');
   return 'System';
 }
@@ -4092,7 +3972,7 @@ function formatInstructionMessage(role, content, character, template, options = 
   const body = String(content || '');
   if (!body.trim()) return '';
   if (!template.enabled) {
-    if (role === 'user') return `User: ${body}\n`;
+    if (role === 'user') return `${nvPersona(nvContextSession(character)).name}: ${body}\n`;
     if (role === 'assistant') return `${character.name || 'Assistant'}: ${body}\n`;
     return `${body}${body.endsWith('\n') ? '' : '\n'}`;
   }
@@ -4204,7 +4084,7 @@ function buildTextCompletionStopStrings(character, preset, instruction) {
 
   if (instruction.enabled) {
     const names = {
-      input: 'User',
+      input: nvPersona(nvContextSession(character)).name,
       output: String(character.name || 'Assistant'),
       system: 'System',
     };
@@ -4236,7 +4116,7 @@ function buildTextCompletionStopStrings(character, preset, instruction) {
 
   // Normal SillyTavern generation stops on the user name. It does not also add
   // the active character name unless continuing a user message / impersonating.
-  if (preset.namesAsStopStrings) push('\nUser:');
+  if (preset.namesAsStopStrings) push(`\n${nvPersona(nvContextSession(character)).name}:`);
   if (preset.singleLine) result.unshift('\n');
   return result.filter((value, index, all) => value && all.indexOf(value) === index);
 }
@@ -4328,9 +4208,9 @@ function prepareTextCompletionComponents(character, history, preset, formatting,
   const combinedStory = formatInstructionStoryString(story, character, preset, instruction);
   const postHistory = effectivePostHistoryInstructions(character);
 
-  let entries = history
+  let entries = nvPreparedHistory(character, history)
     .filter(entry => entry && ['system', 'user', 'assistant'].includes(entry.role) && String(entry.content || '').trim())
-    .map(entry => ({ role: entry.role, content: String(entry.content) }));
+    .map(entry => ({ role: entry.role, content: String(entry.content), injectedStory: !!entry.injectedStory }));
 
   if (Number(preset.storyStringPosition) === 1) {
     entries = injectStoryStringAtDepth(entries, story, preset);
@@ -4525,9 +4405,9 @@ function postProcessTextCompletionResponse(value, preset = getActiveContextPrese
 }
 
 function promptPreviewHistory(character) {
-  const saved = getConversations()[character.id];
+  const saved = NV.promptHistory || nvContextSession(character)?.messages;
   if (Array.isArray(saved) && saved.length) {
-    return saved.map(message => ({ role: message.role, content: message.content }));
+    return saved.map(message => ({ ...message }));
   }
   const fallback = [];
   if (character.firstMessage?.trim()) fallback.push({ role: 'assistant', content: character.firstMessage.trim() });
@@ -4601,7 +4481,7 @@ function renderPromptPreviewTab(body) {
         <div class="global-prompt-note">${escapeHtml(t('globalPrompt.preview.chatNote'))}</div>
         <section class="prompt-preview-section">
           <h5>${escapeHtml(t('globalPrompt.preview.finalChat'))}</h5>
-          <pre>${escapeHtml(JSON.stringify(preview.messages, null, 2))}</pre>
+          <pre>${escapeHtml(JSON.stringify(preview.messages.map(m => ({...m,content:nvReadableContent(m.content)})), null, 2))}</pre>
         </section>`;
       return;
     }
@@ -5050,6 +4930,7 @@ async function bootstrap() {
   } catch (error) {
     console.warn('[avatar] IndexedDB avatar storage unavailable.', error);
   }
+  await nvInit();
   renderNavbar();
   goTo('chat');
   await refreshModelStatus();

@@ -5128,13 +5128,9 @@ async function saveConversationMessagePersonalization(settings, enabled = true, 
   applyMessagePersonalization(enabled ? normalized : getMessagePersonalization());
   return normalized;
 }
-function messageAvatarTransform(x, y, zoomPercent) {
+function messageAvatarTransform(_x, _y, zoomPercent) {
   const zoom = Math.max(1, Number(zoomPercent || 100) / 100);
-  if (zoom <= 1.0001) return 'scale(1)';
-  const maxPan = ((zoom - 1) / (2 * zoom)) * 100;
-  const translateX = ((50 - Number(x || 50)) / 50) * maxPan;
-  const translateY = ((50 - Number(y || 50)) / 50) * maxPan;
-  return `translate(${translateX.toFixed(4)}%, ${translateY.toFixed(4)}%) scale(${zoom.toFixed(4)})`;
+  return `scale(${zoom.toFixed(4)})`;
 }
 function messageAvatarInlineStyle(role, settings = getMessagePersonalization()) {
   const normalized = normalizeMessageAppearance(settings || {});
@@ -5142,7 +5138,7 @@ function messageAvatarInlineStyle(role, settings = getMessagePersonalization()) 
   const x = normalized[`${prefix}AvatarX`];
   const y = normalized[`${prefix}AvatarY`];
   const zoom = normalized[`${prefix}AvatarZoom`];
-  return `object-position:${x}% ${y}%;transform:${messageAvatarTransform(x, y, zoom)}`;
+  return `object-position:${x}% ${y}%;transform-origin:${x}% ${y}%;transform:${messageAvatarTransform(x, y, zoom)}`;
 }
 function applyMessagePersonalization(settings = getMessagePersonalization()) {
   const normalized = normalizeMessageAppearance(settings);
@@ -5199,10 +5195,10 @@ function messageAvatarCropMarkup(role, settings, source, name, disabled = false)
   const x = settings[`${prefix}AvatarX`];
   const y = settings[`${prefix}AvatarY`];
   const zoom = settings[`${prefix}AvatarZoom`];
-  const transform = messageAvatarTransform(x, y, zoom);
+  const inlineStyle = messageAvatarInlineStyle(prefix, settings);
   const disabledAttr = disabled ? 'disabled' : '';
   const visual = source
-    ? `<img src="${escapeHtml(source)}" alt="" style="object-position:${x}% ${y}%;transform:${transform}">`
+    ? `<img src="${escapeHtml(source)}" alt="" style="${inlineStyle}">`
     : `<div class="message-avatar-crop-fallback">${escapeHtml((name || '?').slice(0,1).toUpperCase())}</div>`;
   return `<div class="message-avatar-crop-editor ${disabled ? 'is-disabled' : ''}" data-avatar-crop-role="${prefix}">
     <div class="message-avatar-crop-stage ${source ? 'has-image' : 'no-image'}" data-avatar-crop-stage="${prefix}" aria-label="${escapeHtml(t('personalization.messages.avatarFraming'))}" style="border-radius:${settings.avatarRadius}%">${visual}<div class="message-avatar-crop-reticle" aria-hidden="true"></div></div>
@@ -5237,7 +5233,7 @@ function renderMessagePersonalization(scope = state.messagePersonalizationScope 
   const cropPersonaSource = resolvedAvatarSource(cropPersona);
   const cropCharacterSource = resolvedAvatarSource(cropCharacter);
 
-  pageRoot.innerHTML = `<div class="personalization-page">
+  pageRoot.innerHTML = `<div class="personalization-page personalization-page-messages">
     <div class="personalization-head"><div><h1>${escapeHtml(t('personalization.title'))}</h1><p>${escapeHtml(t('personalization.messages.desc'))}</p></div><button class="btn btn-ghost" id="message-style-reset">${escapeHtml(resetLabel)}</button></div>
     ${personalizationTabs('messages')}
     <div class="message-scope-tabs" role="tablist">
@@ -5283,21 +5279,31 @@ function renderMessagePersonalization(scope = state.messagePersonalizationScope 
     renderMessagePersonalization('conversation');
   });
 
-  const collect = async () => {
+  const readMessageStyleForm = () => {
     const base = isConversation ? getConversationMessagePersonalization(chat).settings : getMessagePersonalization();
     const next = { ...base };
     pageRoot.querySelectorAll('[data-message-style]').forEach(input => {
       const key = input.dataset.messageStyle;
       next[key] = input.type === 'checkbox' ? input.checked : input.type === 'range' || input.type === 'number' ? Number(input.value) : input.value;
     });
-    const saved = isConversation ? await saveConversationMessagePersonalization(next, true, chat) : saveMessagePersonalization(next);
+    return normalizeMessageAppearance(next);
+  };
+  const refreshMessageStylePreview = settings => {
+    const normalized = normalizeMessageAppearance(settings);
     for (const output of pageRoot.querySelectorAll('[data-output]')) {
-      const key = output.dataset.output, value = saved[key];
+      const key = output.dataset.output, value = normalized[key];
       output.textContent = `${value}${messageOutputSuffix(key)}`;
     }
-    applyMessagePersonalization(saved);
+    applyMessagePersonalization(normalized);
     const preview = document.getElementById('message-style-preview');
-    if (preview) preview.innerHTML = messagePersonalizationPreview(saved);
+    if (preview) preview.innerHTML = messagePersonalizationPreview(normalized);
+    return normalized;
+  };
+  const collect = async () => {
+    // Update the visible preview immediately. Persistence may involve nvSave(), so
+    // never make the preview wait for disk/IndexedDB work.
+    const next = refreshMessageStylePreview(readMessageStyleForm());
+    return isConversation ? await saveConversationMessagePersonalization(next, true, chat) : saveMessagePersonalization(next);
   };
   pageRoot.querySelectorAll('[data-message-style]').forEach(input => input.addEventListener('input', collect));
 
@@ -5311,6 +5317,7 @@ function renderMessagePersonalization(scope = state.messagePersonalizationScope 
     const zoomInput = pageRoot.querySelector(`[data-message-style="${prefix}AvatarZoom"]`);
     const x = Number(xInput?.value ?? 50), y = Number(yInput?.value ?? 50), zoom = Number(zoomInput?.value ?? 100);
     image.style.objectPosition = `${x}% ${y}%`;
+    image.style.transformOrigin = `${x}% ${y}%`;
     image.style.transform = messageAvatarTransform(x, y, zoom);
   };
   for (const role of ['character','persona']) {
@@ -5350,6 +5357,7 @@ function renderMessagePersonalization(scope = state.messagePersonalizationScope 
         if (xOutput) xOutput.textContent = `${Math.round(nextX)}%`;
         if (yOutput) yOutput.textContent = `${Math.round(nextY)}%`;
         syncAvatarCropStage(prefix);
+        refreshMessageStylePreview(readMessageStyleForm());
       });
       stage.addEventListener('pointerup', finishDrag);
       stage.addEventListener('pointercancel', finishDrag);

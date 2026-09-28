@@ -53,6 +53,7 @@ const STORAGE = {
   promptPreviewMode: 'nv_app_prompt_preview_mode',
   contextFormatting: 'nv_app_context_formatting_v1',
   markdownStyles: 'nv_app_markdown_styles_v1',
+  dialogueQuotes: 'nv_app_dialogue_quotes_v1',
 };
 
 const I18N_FALLBACK_MANIFEST = {
@@ -4922,7 +4923,7 @@ const MARKDOWN_STYLE_TYPES = [
   { id:'h6', labelKey:'personalization.markdown.h6', selector:'.nv-markdown-surface h6', example:'###### ...' },
   { id:'strong', labelKey:'personalization.markdown.bold', selector:'.nv-markdown-surface strong', example:'**...**' },
   { id:'emphasis', labelKey:'personalization.markdown.italic', selector:'.nv-markdown-surface em', example:'*...*' },
-  { id:'dialogue', labelKey:'personalization.markdown.dialogue', selector:'.nv-markdown-surface .nv-md-dialogue', example:'"..."' },
+  { id:'dialogue', labelKey:'personalization.markdown.dialogue', selector:'.nv-markdown-surface .nv-md-dialogue', example:'"..." / «...»' },
   { id:'strike', labelKey:'personalization.markdown.strike', selector:'.nv-markdown-surface del', example:'~~...~~' },
   { id:'link', labelKey:'personalization.markdown.link', selector:'.nv-markdown-surface a', example:'[...](https://example.com)' },
   { id:'inlineCode', labelKey:'personalization.markdown.inlineCode', selector:'.nv-markdown-surface :not(pre) > code', example:'`...`' },
@@ -4960,6 +4961,23 @@ const DEFAULT_MARKDOWN_STYLES = {
   tableHeader:{ color:'text', background:'panel-2', border:'line', fontSize:12, fontWeight:800, fontStyle:'normal', lineHeight:1.5, radius:0, paddingY:8, paddingX:10, marginY:0 },
   tableCell:{ color:'text-dim', background:'none', border:'line', fontSize:12, fontWeight:400, fontStyle:'normal', lineHeight:1.55, radius:0, paddingY:8, paddingX:10, marginY:0 },
 };
+
+const DIALOGUE_QUOTE_MODES = {
+  straight: { open: '"', close: '"', example: '"..."' },
+  french: { open: '«', close: '»', example: '«...»' },
+};
+function getDialogueQuoteMode() {
+  const saved = localStorage.getItem(STORAGE.dialogueQuotes);
+  return Object.prototype.hasOwnProperty.call(DIALOGUE_QUOTE_MODES, saved) ? saved : 'straight';
+}
+function saveDialogueQuoteMode(mode) {
+  const safe = Object.prototype.hasOwnProperty.call(DIALOGUE_QUOTE_MODES, mode) ? mode : 'straight';
+  localStorage.setItem(STORAGE.dialogueQuotes, safe);
+  return safe;
+}
+function dialogueQuoteExample() {
+  return DIALOGUE_QUOTE_MODES[getDialogueQuoteMode()]?.example || DIALOGUE_QUOTE_MODES.straight.example;
+}
 
 function markdownTokenCss(token, fallback = 'text') {
   const safe = MARKDOWN_STYLE_TOKENS.includes(token) ? token : fallback;
@@ -5013,7 +5031,7 @@ function markdownColorOptions(value, allowNone = false) {
   return options.join('');
 }
 function markdownPreviewSample() {
-  return `# ${t('personalization.preview.h1')}\n## ${t('personalization.preview.h2')}\n### ${t('personalization.preview.h3')}\n\n${t('personalization.preview.paragraph')} **${t('personalization.preview.bold')}**, *${t('personalization.preview.italic')}*, "${t('personalization.preview.dialogue')}", ~~${t('personalization.preview.strike')}~~ ${t('personalization.preview.and')} [${t('personalization.preview.link')}](https://example.com).\n\n> ${t('personalization.preview.quote')}\n\n- ${t('personalization.preview.listOne')}\n- ${t('personalization.preview.listTwo')}\n\n1. ${t('personalization.preview.orderedOne')}\n2. ${t('personalization.preview.orderedTwo')}\n\nInline: \`const mood = "NastyVerse";\`\n\n\`\`\`js\nfunction hello(name) {\n  return \`Hello \${name}\`;\n}\n\`\`\`\n\n---\n\n| ${t('personalization.preview.tableA')} | ${t('personalization.preview.tableB')} |\n| --- | --- |\n| ChatML | 32K |\n| Mistral | 128K |`;
+  return `# ${t('personalization.preview.h1')}\n## ${t('personalization.preview.h2')}\n### ${t('personalization.preview.h3')}\n\n${t('personalization.preview.paragraph')} **${t('personalization.preview.bold')}**, *${t('personalization.preview.italic')}*, "${t('personalization.preview.dialogue')}", «${t('personalization.preview.dialogueAlt')}», ~~${t('personalization.preview.strike')}~~ ${t('personalization.preview.and')} [${t('personalization.preview.link')}](https://example.com).\n\n> ${t('personalization.preview.quote')}\n\n- ${t('personalization.preview.listOne')}\n- ${t('personalization.preview.listTwo')}\n\n1. ${t('personalization.preview.orderedOne')}\n2. ${t('personalization.preview.orderedTwo')}\n\nInline: \`const mood = "NastyVerse";\`\n\n\`\`\`js\nfunction hello(name) {\n  return \`Hello \${name}\`;\n}\n\`\`\`\n\n---\n\n| ${t('personalization.preview.tableA')} | ${t('personalization.preview.tableB')} |\n| --- | --- |\n| ChatML | 32K |\n| Mistral | 128K |`;
 }
 function renderPersonalization(typeId = 'paragraph') {
   state.currentPage = 'personalization';
@@ -5023,13 +5041,16 @@ function renderPersonalization(typeId = 'paragraph') {
   const activeType = MARKDOWN_STYLE_TYPES.find(type => type.id === state.markdownStyleType) || MARKDOWN_STYLE_TYPES[0];
   const style = styles[activeType.id];
   const inheritsTypography = ['strong','emphasis','dialogue','strike','link'].includes(activeType.id);
+  const syntaxExample = activeType.id === 'dialogue' ? dialogueQuoteExample() : (activeType.example || '');
+  const dialogueMode = getDialogueQuoteMode();
   pageRoot.innerHTML = `<div class="personalization-page">
     <div class="personalization-head"><div><h1>${escapeHtml(t('personalization.title'))}</h1><p>${escapeHtml(t('personalization.desc'))}</p></div><button class="btn btn-ghost" id="markdown-reset-all">${escapeHtml(t('personalization.resetAll'))}</button></div>
     <div class="personalization-layout">
       <aside class="personalization-elements">${MARKDOWN_STYLE_TYPES.map(type => `<button class="personalization-element ${type.id === activeType.id ? 'active' : ''}" data-md-type="${type.id}">${escapeHtml(t(type.labelKey))}</button>`).join('')}</aside>
       <section class="personalization-editor">
         <div class="personalization-editor-head"><div><span>${escapeHtml(t('personalization.editing'))}</span><h2>${escapeHtml(t(activeType.labelKey))}</h2></div><button class="btn btn-ghost btn-small" id="markdown-reset-current">${escapeHtml(t('personalization.resetCurrent'))}</button></div>
-        <div class="markdown-syntax-example"><span>${escapeHtml(t('personalization.syntax'))}</span><pre><code>${escapeHtml(activeType.example || '')}</code></pre></div>
+        <div class="markdown-syntax-example"><span>${escapeHtml(t('personalization.syntax'))}</span><pre><code id="markdown-syntax-code">${escapeHtml(syntaxExample)}</code></pre></div>
+        ${activeType.id === 'dialogue' ? `<div class="dialogue-quote-preference"><label><span>${escapeHtml(t('personalization.dialogueQuotes'))}</span><select id="dialogue-quote-mode"><option value="straight" ${dialogueMode === 'straight' ? 'selected' : ''}>${escapeHtml(t('personalization.dialogueQuotes.straight'))} — &quot;...&quot;</option><option value="french" ${dialogueMode === 'french' ? 'selected' : ''}>${escapeHtml(t('personalization.dialogueQuotes.french'))} — «...»</option></select><small>${escapeHtml(t('personalization.dialogueQuotes.help'))}</small></label></div>` : ''}
         <div class="markdown-controls">
           <label><span>${escapeHtml(t('personalization.color'))}</span><select data-md-field="color">${markdownColorOptions(style.color)}</select></label>
           <label><span>${escapeHtml(t('personalization.background'))}</span><select data-md-field="background">${markdownColorOptions(style.background, true)}</select></label>
@@ -5058,10 +5079,19 @@ function renderPersonalization(typeId = 'paragraph') {
     if (preview) preview.innerHTML = nvMarkdown(markdownPreviewSample());
   };
   pageRoot.querySelectorAll('[data-md-field]').forEach(input => input.addEventListener('input', commit));
-  document.getElementById('markdown-reset-current').addEventListener('click', () => {
-    const next = getMarkdownPersonalization(); next[activeType.id] = { ...DEFAULT_MARKDOWN_STYLES[activeType.id] }; saveMarkdownPersonalization(next); renderPersonalization(activeType.id);
+  document.getElementById('dialogue-quote-mode')?.addEventListener('change', event => {
+    saveDialogueQuoteMode(event.target.value);
+    const syntaxCode = document.getElementById('markdown-syntax-code');
+    if (syntaxCode) syntaxCode.textContent = dialogueQuoteExample();
+    if (preview) preview.innerHTML = nvMarkdown(markdownPreviewSample());
+    if (state.currentPage === 'chat' && typeof renderChat === 'function') renderChat({ preserveScroll: true });
   });
-  document.getElementById('markdown-reset-all').addEventListener('click', () => { localStorage.removeItem(STORAGE.markdownStyles); applyMarkdownPersonalization(); renderPersonalization(activeType.id); });
+  document.getElementById('markdown-reset-current').addEventListener('click', () => {
+    const next = getMarkdownPersonalization(); next[activeType.id] = { ...DEFAULT_MARKDOWN_STYLES[activeType.id] }; saveMarkdownPersonalization(next);
+    if (activeType.id === 'dialogue') localStorage.removeItem(STORAGE.dialogueQuotes);
+    renderPersonalization(activeType.id);
+  });
+  document.getElementById('markdown-reset-all').addEventListener('click', () => { localStorage.removeItem(STORAGE.markdownStyles); localStorage.removeItem(STORAGE.dialogueQuotes); applyMarkdownPersonalization(); renderPersonalization(activeType.id); });
   applyMarkdownPersonalization(styles);
 }
 

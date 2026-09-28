@@ -174,10 +174,19 @@ function nvMarkdownInline(content) {
     const safe = nvMarkdownSafeUrl(href); if (!safe) return `[${label}](${href})`;
     return hold(`<a href="${nvEscape(safe)}" target="_blank" rel="noopener noreferrer">${label}</a>`);
   });
-  // NastyVerse RP convention: quoted text is dialogue. Keep the quote marks visible while
-  // giving users a dedicated personalization target. Code and links are already protected.
-  rendered = rendered.replace(/&quot;([^\n]+?)&quot;/g, (_, text) => hold(`<span class="nv-md-dialogue">&quot;${text}&quot;</span>`))
-    .replace(/“([^”\n]+?)”/g, (_, text) => hold(`<span class="nv-md-dialogue">“${text}”</span>`));
+  // NastyVerse RP convention: quoted text is dialogue. Accept the most common
+  // quote styles produced by LLMs, then normalize only the rendered copy to the
+  // user's preferred display style. The stored/source message is never changed.
+  const dialogueHtml = text => {
+    const mode = typeof getDialogueQuoteMode === 'function' ? getDialogueQuoteMode() : 'straight';
+    const inner = String(text || '').trim();
+    return mode === 'french'
+      ? `<span class="nv-md-dialogue">«${inner}»</span>`
+      : `<span class="nv-md-dialogue">&quot;${inner}&quot;</span>`;
+  };
+  rendered = rendered.replace(/&quot;([^\n]+?)&quot;/g, (_, text) => hold(dialogueHtml(text)))
+    .replace(/“([^”\n]+?)”/g, (_, text) => hold(dialogueHtml(text)))
+    .replace(/«\s*([^»\n]+?)\s*»/g, (_, text) => hold(dialogueHtml(text)));
   rendered = rendered.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
     .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
     .replace(/~~([^~\n]+)~~/g, '<del>$1</del>')

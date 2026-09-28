@@ -496,5 +496,10 @@
   "personalization.token.danger": "Danger",
   "personalization.inheritHint": "0 = inherit",
   "personalization.markdown.dialogue": "Dialogue",
-  "personalization.preview.dialogue": "spoken dialogue"
+  "personalization.preview.dialogue": "spoken dialogue",
+  "personalization.dialogueQuotes": "Preferred dialogue style",
+  "personalization.dialogueQuotes.straight": "Double quotes",
+  "personalization.dialogueQuotes.french": "French guillemets",
+  "personalization.dialogueQuotes.help": "Dialogue detected with \"...\", “...” or «...» is automatically displayed with this style. The source text stays unchanged.",
+  "personalization.preview.dialogueAlt": "another spoken line"
 }

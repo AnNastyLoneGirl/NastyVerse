@@ -1,4 +1,4 @@
-# NastyVerse application 0.2.7
+# NastyVerse application 0.2.8
 
 The application is a replaceable HTML/CSS/JavaScript payload hosted by the single Tauri launcher (0.1.12). No second Tauri crate is introduced.
 
@@ -32,3 +32,5 @@ Markdown personalization 0.2.5: chat messages now use a structured safe Markdown
 Markdown syntax examples 0.2.6: Personalization now shows a copyable usage example for every supported Markdown element.
 
 Markdown RP semantics 0.2.7: Personalization renames generic Markdown labels around their chat/RP usage (Narration, Emphasis, Action) and adds a dedicated Dialogue style for quoted text (`"..."`) without changing the stored message content.
+
+Dialogue normalization 0.2.8: Personalization can choose straight quotes (`"..."`) or French guillemets (`«...»`) as the preferred dialogue display. The renderer recognizes straight, curly, and French quote variants and normalizes them at display time only; stored/source messages remain unchanged for context assembly.

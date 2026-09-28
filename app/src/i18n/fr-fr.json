@@ -496,5 +496,10 @@
   "personalization.token.danger": "Danger",
   "personalization.inheritHint": "0 = hérité",
   "personalization.markdown.dialogue": "Dialogue",
-  "personalization.preview.dialogue": "dialogue parlé"
+  "personalization.preview.dialogue": "dialogue parlé",
+  "personalization.dialogueQuotes": "Style de dialogue préféré",
+  "personalization.dialogueQuotes.straight": "Guillemets doubles",
+  "personalization.dialogueQuotes.french": "Guillemets français",
+  "personalization.dialogueQuotes.help": "Les dialogues détectés avec \"...\", “...” ou «...» sont automatiquement affichés avec ce style. Le texte source reste inchangé.",
+  "personalization.preview.dialogueAlt": "une autre réplique"
 }

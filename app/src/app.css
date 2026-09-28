@@ -1182,3 +1182,7 @@ input,textarea,select{font:inherit}input,textarea,select{background:var(--panel-
 .personalization-preview-wrap{margin-top:16px}.personalization-preview-label{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-faint);font-weight:800;margin-bottom:7px}.personalization-preview{max-width:none!important;min-height:300px;padding:20px!important;border-radius:12px!important}
 @media(max-width:900px){.personalization-layout{grid-template-columns:1fr}.personalization-elements{position:static;display:grid;grid-template-columns:repeat(3,1fr);max-height:none}.markdown-controls{grid-template-columns:repeat(2,minmax(130px,1fr))}}
 .markdown-controls label span small{font-size:8.5px;color:var(--text-faint);font-weight:500}
+
+.dialogue-quote-preference{margin:0 0 14px;padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--panel-2)}
+.dialogue-quote-preference label{display:flex;flex-direction:column;gap:7px}.dialogue-quote-preference label>span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);font-weight:800}
+.dialogue-quote-preference select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--text);font:inherit;font-size:12px}.dialogue-quote-preference small{color:var(--text-faint);font-size:10.5px;line-height:1.45}

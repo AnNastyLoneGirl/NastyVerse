@@ -1679,17 +1679,11 @@ function buildChatCompletionMessages(character, history = [], params = getGenera
   return nvBuildChat(character, history, params);
 }
 
-function scrollChatToBottom() {
-  requestAnimationFrame(() => {
-    const scroller = document.querySelector('.messages');
-    if (scroller) scroller.scrollTop = scroller.scrollHeight;
-  });
-}
-
 function renderChat() {
+  const scrollState = typeof nvCaptureChatScroll === 'function' ? nvCaptureChatScroll() : null;
   state.currentPage = 'chat';
   renderNavbar();
-  nvRenderChat();
+  nvRenderChat(scrollState);
 }
 
 /* ===================================================================

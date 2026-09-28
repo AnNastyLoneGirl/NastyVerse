@@ -162,7 +162,57 @@ function nvMarkdown(content) {
   rendered = rendered.replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>').replace(/\*([^*\n]+)\*/g, '<em>$1</em>').replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>').replace(/\n/g, '<br>');
   return rendered.replace(/\u0001(\d+)\u0001/g, (_, i) => blocks[Number(i)] || '');
 }
-function nvRenderChat() {
+function nvCaptureChatScroll() {
+  const scroller = document.querySelector('.messages[data-chat-session]');
+  if (!scroller) return null;
+  const bounds = scroller.getBoundingClientRect();
+  const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  const nearBottom = maxScrollTop - scroller.scrollTop <= 48;
+  let anchor = null;
+  for (const article of scroller.querySelectorAll('[data-message]')) {
+    if (article.hidden) continue;
+    const rect = article.getBoundingClientRect();
+    if (rect.bottom >= bounds.top && rect.top <= bounds.bottom) {
+      anchor = { id: article.dataset.message, offset: rect.top - bounds.top };
+      break;
+    }
+  }
+  return {
+    sessionId: scroller.dataset.chatSession || '',
+    scrollTop: scroller.scrollTop,
+    nearBottom,
+    anchor,
+  };
+}
+
+function nvRestoreChatScroll(snapshot) {
+  requestAnimationFrame(() => {
+    const scroller = document.querySelector('.messages[data-chat-session]');
+    if (!scroller) return;
+    const sessionId = scroller.dataset.chatSession || '';
+    const sameConversation = snapshot?.sessionId && snapshot.sessionId === sessionId;
+    const previousBehavior = scroller.style.scrollBehavior;
+    scroller.style.scrollBehavior = 'auto';
+    if (!sameConversation || snapshot.nearBottom) {
+      scroller.scrollTop = scroller.scrollHeight;
+    } else if (snapshot.anchor?.id) {
+      const anchor = [...scroller.querySelectorAll('[data-message]')].find(article => article.dataset.message === snapshot.anchor.id);
+      if (anchor) {
+        const bounds = scroller.getBoundingClientRect();
+        const currentOffset = anchor.getBoundingClientRect().top - bounds.top;
+        scroller.scrollTop += currentOffset - snapshot.anchor.offset;
+      } else {
+        scroller.scrollTop = snapshot.scrollTop;
+      }
+    } else {
+      scroller.scrollTop = snapshot.scrollTop;
+    }
+    if (previousBehavior) scroller.style.scrollBehavior = previousBehavior;
+    else scroller.style.removeProperty('scroll-behavior');
+  });
+}
+
+function nvRenderChat(scrollSnapshot = null) {
   if (!NV.ready) return;
   const current = nvSession();
   const group = NV.data.groups.find(g => g.id === NV.groupId) || (NV.groupId && current ? {name:current.title,members:[],mode:'round'} : null);
@@ -173,7 +223,7 @@ function nvRenderChat() {
   pageRoot.innerHTML = `<div class="nv-workspace"><aside class="nv-sidebar"><div class="nv-sidebar-head"><strong>${nvText('Conversations','Conversations')}</strong>${nvButton('new', '+', true)}</div><input id="nv-session-search" type="search" aria-label="${nvText('Rechercher une conversation','Search conversations')}" placeholder="${nvText('Retrouver une histoire…','Find a story…')}"><div class="nv-session-list">${sessions.map(s => `<button class="nv-session ${s.id === chat?.id ? 'active' : ''}" data-session="${nvEscape(s.id)}"><strong>${s.pinned ? '★ ' : ''}${nvEscape(s.title)}</strong><small>${s.targetId.startsWith('group:') ? nvText('Groupe','Group') : nvEscape(getCharacters().find(c => c.id === s.targetId)?.name || nvText('Personnage supprimé','Deleted character'))} · ${s.messages.length}</small></button>`).join('') || `<p class="nv-muted">${nvText('Vos histoires apparaîtront ici.','Your stories will appear here.')}</p>`}</div><div class="nv-sidebar-foot">${nvButton('library',nvText('Bibliothèque','Library'))}${nvButton('tools',nvText('Outils','Tools'))}</div></aside><section class="nv-chat-main">${chat ? `
     ${!TAURI ? `<div class="nv-preview-note">${nvText('Aperçu navigateur : les réponses sont simulées. Utilisez le lanceur pour votre modèle.','Browser preview: replies are simulated. Use the launcher for your model.')}</div>` : ''}
     <div class="nv-chat-toolbar"><input id="nv-message-search" type="search" value="${nvEscape(NV.search)}" placeholder="${nvText('Rechercher dans les messages…','Search messages…')}" aria-label="${nvText('Rechercher dans les messages','Search messages')}">${group ? `<select id="nv-speaker" aria-label="${nvText('Qui répond ?','Who replies?')}"><option value="">${group.mode === 'all' ? nvText('Tout le groupe','Whole group') : nvText('Tour automatique','Automatic turn')}</option>${group.members.map(id => getCharacters().find(c => c.id === id)).filter(Boolean).map(c => `<option value="${nvEscape(c.id)}">${nvEscape(c.name)}</option>`).join('')}</select>` : ''}${nvButton('bookmarks',nvText('Favoris','Bookmarks'))}${nvButton('inspect',nvText('Voir le prompt','Inspect prompt'))}${nvButton('persona',persona.name)}${nvButton('context',nvText('Contexte','Context'))}${nvButton('menu','•••')}</div>
-    <div class="messages" id="messages" aria-live="polite">${chat.messages.map((m,index) => `<article class="message message-${m.role} ${m.hidden ? 'nv-excluded' : ''}" data-message="${nvEscape(m.id)}" ${NV.search && !nvMessageDisplayContent(m).toLocaleLowerCase().includes(NV.search.toLocaleLowerCase()) ? 'hidden' : ''}><div class="message-role">${nvEscape(m.name || (m.role === 'user' ? persona.name : character?.name || 'System'))}${m.bookmark ? ' ★' : ''}<small>${m.hidden ? nvText(' · Hors contexte',' · Excluded') : ''}</small></div><div class="message-bubble">${nvMarkdown(nvMessageDisplayContent(m))}${nvMediaMarkup(m.attachments)}</div><div class="nv-message-actions"><button data-message-action="edit">${nvText('Modifier','Edit')}</button><button data-message-action="branch">${nvText('Bifurquer','Branch')}</button><button data-message-action="bookmark" aria-label="${nvText('Marquer ce message','Bookmark message')}">☆</button><button data-message-action="more" aria-label="${nvText('Autres actions du message','More message actions')}">•••</button>${m.variants.length > 1 ? `<button data-message-action="previous" aria-label="${nvText('Variante précédente','Previous variant')}">‹</button><span>${m.variant + 1}/${m.variants.length}</span><button data-message-action="next" aria-label="${nvText('Variante suivante','Next variant')}">›</button>` : ''}${m.role === 'assistant' && index === chat.messages.length - 1 ? `<button data-message-action="regenerate">${nvText('Autre réponse','Another reply')}</button>` : ''}</div></article>`).join('')}${state.sending && NV.activeRequest?.sessionId === chat.id ? `<article class="message message-assistant"><div class="message-role">${nvEscape(NV.activeRequest.name)}</div><div id="nv-stream" class="message-bubble">${nvMarkdown(nvChatTranslationApplies('assistant') ? nvText('Écriture et traduction en cours…','Writing and translating…') : (NV.activeRequest.content || nvText('Écriture en cours…','Writing…')))}</div><details id="nv-thinking" ${NV.activeRequest.reasoning ? '' : 'hidden'}><summary>${nvText('Raisonnement du modèle','Model reasoning')}</summary><pre></pre></details></article>` : ''}</div>
+    <div class="messages" id="messages" data-chat-session="${nvEscape(chat.id)}" aria-live="polite">${chat.messages.map((m,index) => `<article class="message message-${m.role} ${m.hidden ? 'nv-excluded' : ''}" data-message="${nvEscape(m.id)}" ${NV.search && !nvMessageDisplayContent(m).toLocaleLowerCase().includes(NV.search.toLocaleLowerCase()) ? 'hidden' : ''}><div class="message-role">${nvEscape(m.name || (m.role === 'user' ? persona.name : character?.name || 'System'))}${m.bookmark ? ' ★' : ''}<small>${m.hidden ? nvText(' · Hors contexte',' · Excluded') : ''}</small></div><div class="message-bubble">${nvMarkdown(nvMessageDisplayContent(m))}${nvMediaMarkup(m.attachments)}</div><div class="nv-message-actions"><button data-message-action="edit">${nvText('Modifier','Edit')}</button><button data-message-action="branch">${nvText('Bifurquer','Branch')}</button><button data-message-action="bookmark" aria-label="${nvText('Marquer ce message','Bookmark message')}">☆</button><button data-message-action="more" aria-label="${nvText('Autres actions du message','More message actions')}">•••</button>${m.variants.length > 1 ? `<button data-message-action="previous" aria-label="${nvText('Variante précédente','Previous variant')}">‹</button><span>${m.variant + 1}/${m.variants.length}</span><button data-message-action="next" aria-label="${nvText('Variante suivante','Next variant')}">›</button>` : ''}${m.role === 'assistant' && index === chat.messages.length - 1 ? `<button data-message-action="regenerate">${nvText('Autre réponse','Another reply')}</button>` : ''}</div></article>`).join('')}${state.sending && NV.activeRequest?.sessionId === chat.id ? `<article class="message message-assistant"><div class="message-role">${nvEscape(NV.activeRequest.name)}</div><div id="nv-stream" class="message-bubble">${nvMarkdown(nvChatTranslationApplies('assistant') ? nvText('Écriture et traduction en cours…','Writing and translating…') : (NV.activeRequest.content || nvText('Écriture en cours…','Writing…')))}</div><details id="nv-thinking" ${NV.activeRequest.reasoning ? '' : 'hidden'}><summary>${nvText('Raisonnement du modèle','Model reasoning')}</summary><pre></pre></details></article>` : ''}</div>
     <div class="nv-compose-area"><div class="nv-quick-replies">${NV.data.replies.filter(r => r.enabled !== false).map(r => `<button class="btn btn-ghost btn-small" data-reply="${nvEscape(r.id)}">${nvEscape(r.name)}</button>`).join('')}</div>${nvMediaMarkup(chat.draftImages,true)}<form class="composer nv-composer-row" id="composer"><details class="nv-composer-menu"><summary class="nv-composer-icon" aria-label="${nvText('Outils du message','Message tools')}" title="${nvText('Outils du message','Message tools')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.64 5.64l2.12 2.12M16.24 16.24l2.12 2.12M18.36 5.64l-2.12 2.12M7.76 16.24l-2.12 2.12M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/></svg></summary><div class="nv-composer-popover"><button type="button" data-nv="illustrate">${nvText('Illustrer','Illustrate')}</button></div></details><button type="button" class="nv-composer-icon" data-nv="attach" aria-label="${nvText('Joindre une image','Attach image')}" title="${nvText('Joindre une image','Attach image')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button><textarea id="composer-input" rows="1" aria-label="${nvText('Votre message','Your message')}" placeholder="${nvText('Écrivez votre message… (/ pour les commandes)','Write a message… (/ for commands)')}" ${state.sending ? 'disabled' : ''}>${nvEscape(chat.draft || '')}</textarea><button type="button" class="nv-composer-icon" data-nv="voice" aria-label="${nvText('Dicter','Dictate')}" title="${nvText('Dicter','Dictate')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/><path d="M18 11a6 6 0 0 1-12 0M12 17v4M9 21h6"/></svg></button>${state.sending ? `<button type="button" class="composer-send" data-nv="stop">${nvText('Arrêter','Stop')}</button>` : `<button type="button" class="composer-send" data-nv="continue">${nvText('Continuer','Continue')}</button>`}<button type="submit" class="composer-send" ${state.sending ? 'disabled' : ''}>${nvText('Envoyer','Send')}</button></form></div>` : `<div class="chat-empty"><span class="nv-eyebrow">NASTYVERSE STUDIO</span><h2>${nvText('Une nouvelle histoire commence ici.','A new story starts here.')}</h2><p>${nvText('Choisissez un personnage, créez votre persona et entrez dans votre univers.','Choose a character, create your persona and enter your world.')}</p>${nvButton('new',nvText('Commencer une conversation','Start a conversation'),true)}${nvButton('library',nvText('Créer ou importer un personnage','Create or import a character'))}</div>`}</section></div>`;
   nvBind(pageRoot, { new: nvNewChat, library: () => goTo('library'), tools: () => goTo('configuration',{section:'studio'}), persona: () => nvChoosePersona(chat), context: () => nvContextEditor(chat), menu: () => nvChatMenu(chat), inspect: () => nvInspect(chat,character), bookmarks: () => nvBookmarks(chat), continue: () => nvGenerate(chat,'continue'), stop: nvStop, voice: () => nvDictate(chat) });
   pageRoot.querySelectorAll('[data-session]').forEach(b => b.onclick = () => nvSelectSession(NV.data.sessions.find(s => s.id === b.dataset.session)));
@@ -186,7 +236,7 @@ function nvRenderChat() {
   document.getElementById('nv-message-search').oninput = event => { NV.search = event.target.value; pageRoot.querySelectorAll('[data-message]').forEach(article => { const m = chat.messages.find(m => m.id === article.dataset.message); article.hidden = !nvMessageDisplayContent(m).toLocaleLowerCase().includes(NV.search.toLocaleLowerCase()); }); };
   pageRoot.querySelectorAll('[data-message-action]').forEach(b => b.onclick = nvGuard(() => nvMessageAction(chat,chat.messages.find(m => m.id === b.closest('[data-message]').dataset.message),b.dataset.messageAction)));
   pageRoot.querySelectorAll('[data-reply]').forEach(b => b.onclick = () => { const r = NV.data.replies.find(r => r.id === b.dataset.reply); input.value = chat.draft = NVCore.expand(r.content,{char:character?.name,user:persona.name}); nvSave(); input.focus(); });
-  nvMediaBind(chat); nvAppearance(); scrollChatToBottom(); nvEnsureChatDisplayTranslations(chat).catch(error => console.warn('[translate] Chat display refresh failed.', error));
+  nvMediaBind(chat); nvAppearance(); nvRestoreChatScroll(scrollSnapshot); nvEnsureChatDisplayTranslations(chat).catch(error => console.warn('[translate] Chat display refresh failed.', error));
 }
 async function nvNewChat() {
   const characters = getCharacters();

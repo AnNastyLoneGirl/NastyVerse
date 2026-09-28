@@ -500,6 +500,6 @@
   "personalization.dialogueQuotes": "Style de dialogue préféré",
   "personalization.dialogueQuotes.straight": "Guillemets doubles",
   "personalization.dialogueQuotes.french": "Guillemets français",
-  "personalization.dialogueQuotes.help": "Les dialogues détectés avec \"...\", “...” ou «...» sont automatiquement affichés avec ce style. Le texte source reste inchangé.",
+  "personalization.dialogueQuotes.help": "Les dialogues détectés avec \"...\", “...” ou «...» sont automatiquement affichés avec ce style. Les citations imbriquées utilisent automatiquement le style opposé pour rester lisibles. Le texte source reste inchangé.",
   "personalization.preview.dialogueAlt": "une autre réplique"
 }

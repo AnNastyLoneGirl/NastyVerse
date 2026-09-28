@@ -500,6 +500,6 @@
   "personalization.dialogueQuotes": "Preferred dialogue style",
   "personalization.dialogueQuotes.straight": "Double quotes",
   "personalization.dialogueQuotes.french": "French guillemets",
-  "personalization.dialogueQuotes.help": "Dialogue detected with \"...\", “...” or «...» is automatically displayed with this style. The source text stays unchanged.",
+  "personalization.dialogueQuotes.help": "Dialogue detected with \"...\", “...” or «...» is automatically displayed with this style. Nested quotations automatically use the opposite style so they remain unambiguous. The source text stays unchanged.",
   "personalization.preview.dialogueAlt": "another spoken line"
 }

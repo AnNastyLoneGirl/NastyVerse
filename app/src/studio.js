@@ -161,6 +161,68 @@ function nvMarkdownSafeUrl(url) {
   if (/^(https?:|mailto:)/i.test(value) || value.startsWith('#')) return value;
   return '';
 }
+function nvDialogueQuotePair(depth = 0) {
+  const preferred = typeof getDialogueQuoteMode === 'function' ? getDialogueQuoteMode() : 'straight';
+  const usePreferred = depth % 2 === 0;
+  const mode = usePreferred ? preferred : (preferred === 'french' ? 'straight' : 'french');
+  return mode === 'french'
+    ? { open: '«', close: '»' }
+    : { open: '&quot;', close: '&quot;' };
+}
+function nvDialogueQuoteRaw(node) {
+  if (!node || node.type === 'text') return node?.value || '';
+  return `${node.openRaw || ''}${(node.children || []).map(nvDialogueQuoteRaw).join('')}${node.closed ? (node.closeRaw || '') : ''}`;
+}
+function nvRenderDialogueQuotes(input, hold) {
+  const root = { type: 'root', children: [] };
+  const stack = [root];
+  const appendText = value => {
+    if (value) stack[stack.length - 1].children.push({ type: 'text', value });
+  };
+  const openQuote = (style, raw) => {
+    const node = { type: 'quote', style, openRaw: raw, closeRaw: '', closed: false, children: [] };
+    stack[stack.length - 1].children.push(node);
+    stack.push(node);
+  };
+  const closeQuote = (style, raw) => {
+    const top = stack[stack.length - 1];
+    if (top?.type === 'quote' && top.style === style) {
+      top.closed = true;
+      top.closeRaw = raw;
+      stack.pop();
+      return true;
+    }
+    return false;
+  };
+
+  const tokenRegex = /&quot;|“|”|«|»/g;
+  let cursor = 0;
+  let match;
+  while ((match = tokenRegex.exec(String(input || '')))) {
+    appendText(input.slice(cursor, match.index));
+    const raw = match[0];
+    if (raw === '«') openQuote('french', raw);
+    else if (raw === '»') { if (!closeQuote('french', raw)) appendText(raw); }
+    else if (raw === '“') openQuote('curly', raw);
+    else if (raw === '”') { if (!closeQuote('curly', raw)) appendText(raw); }
+    else if (raw === '&quot;') {
+      const top = stack[stack.length - 1];
+      if (!(top?.type === 'quote' && top.style === 'straight' && closeQuote('straight', raw))) openQuote('straight', raw);
+    }
+    cursor = match.index + raw.length;
+  }
+  appendText(String(input || '').slice(cursor));
+
+  const renderNode = (node, depth = 0) => {
+    if (node.type === 'text') return node.value;
+    if (!node.closed) return nvDialogueQuoteRaw(node);
+    const pair = nvDialogueQuotePair(depth);
+    const inner = node.children.map(child => renderNode(child, depth + 1)).join('').trim();
+    const quoted = `${pair.open}${inner}${pair.close}`;
+    return depth === 0 ? hold(`<span class="nv-md-dialogue">${quoted}</span>`) : quoted;
+  };
+  return root.children.map(node => renderNode(node, 0)).join('');
+}
 function nvMarkdownInline(content) {
   let rendered = nvEscape(String(content ?? ''));
   const protectedParts = [];
@@ -174,19 +236,10 @@ function nvMarkdownInline(content) {
     const safe = nvMarkdownSafeUrl(href); if (!safe) return `[${label}](${href})`;
     return hold(`<a href="${nvEscape(safe)}" target="_blank" rel="noopener noreferrer">${label}</a>`);
   });
-  // NastyVerse RP convention: quoted text is dialogue. Accept the most common
-  // quote styles produced by LLMs, then normalize only the rendered copy to the
-  // user's preferred display style. The stored/source message is never changed.
-  const dialogueHtml = text => {
-    const mode = typeof getDialogueQuoteMode === 'function' ? getDialogueQuoteMode() : 'straight';
-    const inner = String(text || '').trim();
-    return mode === 'french'
-      ? `<span class="nv-md-dialogue">«${inner}»</span>`
-      : `<span class="nv-md-dialogue">&quot;${inner}&quot;</span>`;
-  };
-  rendered = rendered.replace(/&quot;([^\n]+?)&quot;/g, (_, text) => hold(dialogueHtml(text)))
-    .replace(/“([^”\n]+?)”/g, (_, text) => hold(dialogueHtml(text)))
-    .replace(/«\s*([^»\n]+?)\s*»/g, (_, text) => hold(dialogueHtml(text)));
+  // NastyVerse RP convention: quoted text is dialogue. Nested quotations are
+  // normalized with the opposite quote style so an inner citation can never
+  // visually collide with the outer dialogue delimiter. Source text is untouched.
+  rendered = nvRenderDialogueQuotes(rendered, hold);
   rendered = rendered.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
     .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
     .replace(/~~([^~\n]+)~~/g, '<del>$1</del>')

@@ -1,3 +1,3 @@
-# NastyVerse application 0.2.31
+# NastyVerse application 0.2.32
 
-Chat workspace 0.2.31: adds SillyTavern-style chat/global variables, a Variable Viewer-inspired management page, variable macros in messages/prompts, and local slash commands for reading and mutating variables without triggering model generation.
+Chat workspace 0.2.32: fixes chat translation compatibility with variables by translating the resolved visible source, keeping translation cache keys in sync, and preventing failed/stalled translations from remaining on the “Translating…” placeholder indefinitely.

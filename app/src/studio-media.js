@@ -131,16 +131,26 @@ function nvChatTranslationApplies(role, config = nvChatTranslationConfig()) {
   if (role === 'assistant') return config.mode === 'responses' || config.mode === 'both';
   return false;
 }
-function nvMessageDisplayContent(message) {
+function nvTranslationMessageSource(message, chat = null) {
+  let source = String(message?.content || '');
+  try {
+    if (typeof nvVariableExpand === 'function') source = nvVariableExpand(source, chat || (typeof nvSession === 'function' ? nvSession() : null));
+  } catch (error) {
+    console.warn('[translate] Unable to resolve variables before translation.', error);
+  }
+  return source;
+}
+function nvMessageDisplayContent(message, chat = null) {
   const config = nvChatTranslationConfig();
-  if (!nvChatTranslationApplies(message?.role, config)) return String(message?.content || '');
-  if (String(config.targetLanguage).toLowerCase() === 'en') return String(message?.content || '');
-  if (message?.displayText && message.displaySource === message.content && message.displayLanguage === config.targetLanguage) return message.displayText;
+  const source = nvTranslationMessageSource(message, chat);
+  if (!nvChatTranslationApplies(message?.role, config)) return source;
+  if (String(config.targetLanguage).toLowerCase() === 'en') return source;
+  if (message?.displayText && message.displaySource === source && message.displayLanguage === config.targetLanguage) return message.displayText;
   return nvText('Traduction…','Translating…');
 }
-function nvSetMessageDisplay(message, displayText, language) {
+function nvSetMessageDisplay(message, displayText, language, sourceText = null) {
   message.displayText = String(displayText || '');
-  message.displaySource = String(message.content || '');
+  message.displaySource = String(sourceText == null ? message.content || '' : sourceText);
   message.displayLanguage = String(language || '');
 }
 function nvClearMessageDisplay(message) {
@@ -157,8 +167,12 @@ async function nvTranslateChatText(text, targetLanguage, sourceLanguage = null) 
   const matches = [...source.matchAll(regex)];
   const chunks = source.split(regex);
   let result = '';
+  const translateChunk = chunk => Promise.race([
+    invoke('translate_text', { text: chunk, targetLanguage, sourceLanguage }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Translation request timed out')), 45000)),
+  ]);
   for (let index = 0; index < chunks.length; index += 1) {
-    if (chunks[index]) result += await invoke('translate_text', { text: chunks[index], targetLanguage, sourceLanguage });
+    if (chunks[index]) result += await translateChunk(chunks[index]);
     if (index < matches.length) result += matches[index][0];
   }
   return result;
@@ -186,17 +200,18 @@ async function nvPrepareAssistantTranslation(text) {
   if (!nvChatTranslationApplies('assistant', config) || String(config.targetLanguage).toLowerCase() === 'en') return null;
   return { content: await nvTranslateChatText(text, config.targetLanguage, 'en'), language: config.targetLanguage };
 }
-async function nvApplyAssistantDisplay(message) {
+async function nvApplyAssistantDisplay(message, chat = null) {
   try {
-    const display = await nvPrepareAssistantTranslation(message.content);
-    if (display) nvSetMessageDisplay(message, display.content, display.language);
+    const source = nvTranslationMessageSource(message, chat);
+    const display = await nvPrepareAssistantTranslation(source);
+    if (display) nvSetMessageDisplay(message, display.content, display.language, source);
     else nvClearMessageDisplay(message);
-    return display?.content || message.content;
+    return display?.content || source;
   } catch (error) {
     console.warn('[translate] Assistant display translation failed.', error);
     if (nvChatTranslationApplies('assistant')) {
       const placeholder = nvText('[Traduction indisponible]','[Translation unavailable]');
-      nvSetMessageDisplay(message, placeholder, nvChatTranslationConfig().targetLanguage);
+      nvSetMessageDisplay(message, placeholder, nvChatTranslationConfig().targetLanguage, nvTranslationMessageSource(message, chat));
       return placeholder;
     }
     nvClearMessageDisplay(message);
@@ -222,19 +237,24 @@ const nvTranslationRefresh = new Set();
 async function nvEnsureChatDisplayTranslations(chat) {
   const config = nvChatTranslationConfig();
   if (!chat || !config.enabled || String(config.targetLanguage).toLowerCase() === 'en' || nvTranslationRefresh.has(chat.id)) return;
-  const pending = chat.messages.filter(message => nvChatTranslationApplies(message.role, config) && message.content && (!message.displayText || message.displaySource !== message.content || message.displayLanguage !== config.targetLanguage));
+  const pending = chat.messages.map(message => ({ message, source: nvTranslationMessageSource(message, chat) })).filter(({ message, source }) => nvChatTranslationApplies(message.role, config) && source && (!message.displayText || message.displaySource !== source || message.displayLanguage !== config.targetLanguage));
   if (!pending.length) return;
   nvTranslationRefresh.add(chat.id);
   try {
     let changed = false;
-    for (const message of pending) {
+    for (const { message, source } of pending) {
       try {
-        const display = await nvTranslateChatText(message.content, config.targetLanguage, null);
+        // Stored chat content is canonical English. Resolve variables before
+        // sending it to the display translator so macros never reach providers.
+        const display = await nvTranslateChatText(source, config.targetLanguage, 'en');
         if (!NV.data.sessions.includes(chat) || !chat.messages.includes(message)) continue;
-        nvSetMessageDisplay(message, display, config.targetLanguage);
+        nvSetMessageDisplay(message, display, config.targetLanguage, source);
         changed = true;
       } catch (error) {
         console.warn('[translate] Unable to translate existing message.', error);
+        if (!NV.data.sessions.includes(chat) || !chat.messages.includes(message)) continue;
+        nvSetMessageDisplay(message, nvText('[Traduction indisponible]','[Translation unavailable]'), config.targetLanguage, source);
+        changed = true;
       }
     }
     if (changed) {

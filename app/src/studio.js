@@ -551,7 +551,7 @@ function nvMessageVariantNav(message) {
 }
 function nvMessageArticle(message, index, chat, persona, fallbackCharacter, settings) {
   const layout = nvMessageLayout(message, persona, fallbackCharacter, settings);
-  const displayContent = nvVariableExpand(nvMessageDisplayContent(message), chat);
+  const displayContent = nvMessageDisplayContent(message, chat);
   const hiddenBySearch = NV.search && !displayContent.toLocaleLowerCase().includes(NV.search.toLocaleLowerCase());
   const deleteIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6.5 7l.8 13h9.4l.8-13M10 11v5M14 11v5"/></svg>`;
   const editIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10.8-10.8a2.1 2.1 0 0 0-3-3L5 17v3ZM14.5 7.5l3 3"/></svg>`;
@@ -1042,8 +1042,8 @@ function nvSessionTargetLabel(session) {
   return getCharacters().find(character => character.id === session.targetId)?.name || nvText('Personnage supprimé','Deleted character');
 }
 function nvSessionPreview(session) {
-  const message = [...(session?.messages || [])].reverse().find(item => item && item.role !== 'system' && String(nvMessageDisplayContent(item) || '').trim());
-  return message ? String(nvMessageDisplayContent(message)).replace(/\s+/g,' ').trim().slice(0,220) : nvText('Cette discussion ne contient pas encore de message.','This chat does not have any messages yet.');
+  const message = [...(session?.messages || [])].reverse().find(item => item && item.role !== 'system' && String(nvMessageDisplayContent(item, session) || '').trim());
+  return message ? String(nvMessageDisplayContent(message, session)).replace(/\s+/g,' ').trim().slice(0,220) : nvText('Cette discussion ne contient pas encore de message.','This chat does not have any messages yet.');
 }
 function nvRenderChatLibrary() {
   const sessions = [...NV.data.sessions].sort((a,b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt);
@@ -1152,7 +1152,7 @@ function nvRenderConversation(scrollSnapshot = null) {
   input.oninput = () => { chat.draft = input.value; nvResizeComposerInput(input); nvSave(); };
   input.onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); document.getElementById('composer').requestSubmit(); } };
   document.getElementById('composer').onsubmit = nvGuard(async event => { event.preventDefault(); const content = input.value.trim(); if ((!content && !chat.draftImages?.length) || state.sending) return; if (content.startsWith('/') && await nvCommand(content,chat)) { chat.draft = ''; nvChanged(chat); return; } await nvSend(chat, content); });
-  document.getElementById('nv-message-search').oninput = event => { NV.search = event.target.value; pageRoot.querySelectorAll('[data-message]').forEach(article => { const m = chat.messages.find(m => m.id === article.dataset.message); article.hidden = !nvVariableExpand(nvMessageDisplayContent(m),chat).toLocaleLowerCase().includes(NV.search.toLocaleLowerCase()); }); };
+  document.getElementById('nv-message-search').oninput = event => { NV.search = event.target.value; pageRoot.querySelectorAll('[data-message]').forEach(article => { const m = chat.messages.find(m => m.id === article.dataset.message); article.hidden = !nvMessageDisplayContent(m,chat).toLocaleLowerCase().includes(NV.search.toLocaleLowerCase()); }); };
   pageRoot.querySelectorAll('[data-message-action]').forEach(b => b.onclick = nvGuard(() => nvMessageAction(chat,chat.messages.find(m => m.id === b.closest('[data-message]').dataset.message),b.dataset.messageAction)));
   pageRoot.querySelectorAll('[data-reply]').forEach(b => b.onclick = () => { const r = NV.data.replies.find(r => r.id === b.dataset.reply); input.value = chat.draft = NVCore.expand(r.content,{char:character?.name,user:persona.name}); nvResizeComposerInput(input); nvSave(); input.focus(); });
   nvMediaBind(chat); nvAppearance(); nvRestoreChatScroll(scrollSnapshot); nvEnsureChatDisplayTranslations(chat).catch(error => console.warn('[translate] Chat display refresh failed.', error));
@@ -1277,20 +1277,20 @@ async function nvGenerate(chat,mode = 'reply') {
         last.promptRecords = Array.isArray(last.promptRecords) ? last.promptRecords : [];
         while (last.promptRecords.length < last.variants.length - 1) last.promptRecords.push(null);
         last.promptRecords.push(result.promptRecord || null);
-        await nvApplyAssistantDisplay(last);
+        await nvApplyAssistantDisplay(last, chat);
       } else if (mode === 'continue' && last?.role === 'assistant') {
         last.content += '\n' + canonicalAssistant; last.variants[last.variant] = last.content;
         last.promptRecords = Array.isArray(last.promptRecords) ? last.promptRecords : [];
         while (last.promptRecords.length <= last.variant) last.promptRecords.push(null);
         last.promptRecords[last.variant] = result.promptRecord || last.promptRecords[last.variant] || null;
-        await nvApplyAssistantDisplay(last);
+        await nvApplyAssistantDisplay(last, chat);
       } else {
         const message = NVCore.message({role:'assistant',content:canonicalAssistant,name:character.name,characterId:character.id,model:result.model,duration:performance.now()-started,promptRecords:[result.promptRecord || null]});
         chat.messages.push(message);
-        await nvApplyAssistantDisplay(message);
+        await nvApplyAssistantDisplay(message, chat);
       }
       chat.updatedAt = Date.now(); await nvSave(); run.content = '';
-      if (NV.data.appearance.autoSpeak && mode !== 'impersonate') { const spokenMessage = ['regenerate','continue'].includes(mode) ? last : chat.messages.at(-1); nvSpeak(spokenMessage ? nvMessageDisplayContent(spokenMessage) : result.content); }
+      if (NV.data.appearance.autoSpeak && mode !== 'impersonate') { const spokenMessage = ['regenerate','continue'].includes(mode) ? last : chat.messages.at(-1); nvSpeak(spokenMessage ? nvMessageDisplayContent(spokenMessage,chat) : result.content); }
     }
   } catch (error) { run.failed = true; if (!run.cancelled) toast(friendlyNativeError(error),'error'); }
   finally {
@@ -1299,7 +1299,7 @@ async function nvGenerate(chat,mode = 'reply') {
       const partialContent = await nvPrepareAssistantCanonical(partialVariables.text);
       if (partialContent.trim()) {
         const partial = NVCore.message({role:'assistant',content:partialContent,name:run.name,characterId:run.characterId});
-        await nvApplyAssistantDisplay(partial);
+        await nvApplyAssistantDisplay(partial, chat);
         chat.messages.push(partial);
       }
       if (partialContent.trim() || partialVariables.changed) await nvSave();
@@ -1343,7 +1343,7 @@ async function nvCreateMessageVariant(chat, message) {
     message.content = canonicalAssistant;
     message.model = result.model || message.model;
     message.duration = performance.now() - started;
-    await nvApplyAssistantDisplay(message);
+    await nvApplyAssistantDisplay(message, chat);
     chat.updatedAt = Date.now();
     await nvSave();
   } catch (error) {
@@ -1358,13 +1358,13 @@ async function nvStop() { const run = NV.activeRequest; if (!run) return; run.ca
 async function nvMessageAction(chat,m,action) {
   if (!m) return;
   if (state.sending && NV.activeRequest?.sessionId === chat.id) return toast(nvText('Arrêtez la génération avant de modifier cette conversation.','Stop generation before editing this conversation.'));
-  if (action === 'copy') return navigator.clipboard.writeText(nvVariableExpand(nvMessageDisplayContent(m),chat));
-  if (action === 'speak') return nvSpeak(nvVariableExpand(nvMessageDisplayContent(m),chat));
+  if (action === 'copy') return navigator.clipboard.writeText(nvMessageDisplayContent(m,chat));
+  if (action === 'speak') return nvSpeak(nvMessageDisplayContent(m,chat));
   if (action === 'regenerate') return nvGenerate(chat,'regenerate');
   if (action === 'branch') { const branch = NVCore.branch(chat,m.id,`${chat.title} · ${nvText('bifurcation','branch')}`); NV.data.sessions.push(branch); nvSelectSession(branch); return; }
   if (action === 'prompt') return nvInspectMessagePrompt(chat,m);
   if (action === 'edit') {
-    const value = await nvForm(nvText('Modifier le message','Edit message'),[nvField('content',nvText('Texte','Text'),nvVariableExpand(nvMessageDisplayContent(m),chat),'textarea',{rows:12,required:true})]);
+    const value = await nvForm(nvText('Modifier le message','Edit message'),[nvField('content',nvText('Texte','Text'),nvMessageDisplayContent(m,chat),'textarea',{rows:12,required:true})]);
     if (!value) return; nvCheckpoint(chat); const variableEdit = nvProcessVariableMacros(value.content,chat,true); await nvTranslateEditedMessage(m,variableEdit.text); m.variants[m.variant] = m.content;
   } else {
     nvCheckpoint(chat);

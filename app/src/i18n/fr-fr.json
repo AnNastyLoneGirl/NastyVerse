@@ -372,7 +372,7 @@
   "models.apiKey.missing": "Saisissez une clé API pour ce fournisseur.",
   "models.launcherUpdateRequired": "Cette fonctionnalité nécessite NastyVerse Launcher 0.1.10 ou plus récent. Mettez à jour le launcher natif puis redémarrez NastyVerse.",
   "models.analysis.title": "Analyse du modèle",
-  "models.analysis.desc": "Inspecte le modèle connecté et déduit les presets Context et Instruct les plus adaptés à partir des métadonnées du backend et de son chat template.",
+  "models.analysis.desc": "Inspecte le modèle connecté et déduit les presets Context et Instruct les plus adaptés à partir des métadonnées du backend et de son chat template. Si ces informations ne suffisent pas en mode Text Completion, NastyVerse lance de courts prompts de calibration sur le modèle chargé.",
   "models.analysis.analyze": "Analyser le modèle",
   "models.analysis.analyzing": "Analyse du modèle…",
   "models.analysis.empty": "Connectez un backend et sélectionnez ou chargez un modèle, puis lancez l’analyse.",
@@ -407,5 +407,14 @@
   "models.analysis.tokenizer": "Famille du tokenizer",
   "models.analysis.instructType": "Type instruct du fournisseur",
   "models.analysis.modality": "Modalité",
-  "models.analysis.source.provider-instruct-type": "Métadonnée instruct du fournisseur"
+  "models.analysis.source.provider-instruct-type": "Métadonnée instruct du fournisseur",
+  "models.analysis.deepTesting": "Aucun preset fiable trouvé. Test de {preset} ({current}/{total})…",
+  "models.analysis.deepProbeTitle": "Test comportemental des presets",
+  "models.analysis.deepProbeHint": "Quand les métadonnées ne suffisent pas, NastyVerse envoie de courts prompts de calibration au modèle chargé et compare le respect des instructions, la séparation des rôles et les fuites de marqueurs de template.",
+  "models.analysis.deepProbeScore": "Score : {score}",
+  "models.analysis.runtimeRecommendationHint": "Les métadonnées étaient insuffisantes ; NastyVerse a donc testé plusieurs couples Context/Instruct directement avec le modèle chargé. La recommandation ci-dessous correspond au meilleur résultat clairement distingué.",
+  "models.analysis.runtimeNoRecommendationHint": "Les métadonnées étaient insuffisantes et le test comportemental n’a pas trouvé de gagnant clair. Aucun preset n’est appliqué automatiquement.",
+  "models.analysis.source.chat-template-extended-pattern": "Inspection étendue du chat template",
+  "models.analysis.source.runtime-behavioral-probe": "Calibration comportementale sur le modèle chargé",
+  "models.analysis.source.runtime-probe-ambiguous": "Calibration comportementale (aucun gagnant clair)"
 }

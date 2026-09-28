@@ -3163,6 +3163,268 @@ function modelAnalysisInfoRow(label, value) {
   return `<div class="analysis-info-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
 }
 
+function availableModelAnalysisPresetPair(name) {
+  return allContextPresets().some(preset => preset.name === name)
+    && allInstructionPresets().some(preset => preset.name === name);
+}
+
+function extendedPromptTemplatePreset(analysis) {
+  const template = String(analysis?.chatTemplate || '').trim();
+  if (!template) return null;
+  const lower = template.toLowerCase();
+  const hints = [analysis?.modelId, analysis?.modelName, analysis?.architecture, analysis?.tokenizer, analysis?.instructType]
+    .filter(Boolean).join(' ').toLowerCase();
+
+  // Unlike SillyTavern's conservative substring table, accept Jinja templates
+  // that render the role dynamically (e.g. <|im_start|>{{ message['role'] }}).
+  if (lower.includes('<|im_start|>') && lower.includes('<|im_end|>') && availableModelAnalysisPresetPair('ChatML')) {
+    return 'ChatML';
+  }
+  if (lower.includes('<|start_header_id|>') && lower.includes('<|end_header_id|>') && lower.includes('<|eot_id|>')
+      && availableModelAnalysisPresetPair('Llama 3 Instruct')) {
+    return 'Llama 3 Instruct';
+  }
+  if (lower.includes('<start_of_turn>') && lower.includes('<end_of_turn>') && availableModelAnalysisPresetPair('Gemma 2')) {
+    return 'Gemma 2';
+  }
+  if (lower.includes('<|start_of_turn_token|>') && lower.includes('<|end_of_turn_token|>') && availableModelAnalysisPresetPair('Command R')) {
+    return 'Command R';
+  }
+  if (lower.includes('[inst]') && lower.includes('[/inst]')) {
+    const tekken = /(?:nemo|tekken)/.test(hints);
+    const preferred = tekken ? 'Mistral V3-Tekken' : 'Mistral V2 & V3';
+    if (availableModelAnalysisPresetPair(preferred)) return preferred;
+    if (availableModelAnalysisPresetPair('Mistral V2 & V3')) return 'Mistral V2 & V3';
+  }
+  return null;
+}
+
+function enrichModelAnalysisFromTemplate(analysis) {
+  if (!analysis || (analysis.contextPreset && analysis.instructionPreset)) return analysis;
+  const preset = extendedPromptTemplatePreset(analysis);
+  if (!preset) return analysis;
+  return {
+    ...analysis,
+    detectedTemplate: analysis.detectedTemplate || preset,
+    contextPreset: analysis.contextPreset || preset,
+    instructionPreset: analysis.instructionPreset || preset,
+    confidence: 'high',
+    source: 'chat-template-extended-pattern',
+    notes: [...(analysis.notes || []), `Extended template inspection matched ${preset}.`],
+  };
+}
+
+function modelAnalysisProbeCandidates(analysis) {
+  const hint = [analysis?.modelId, analysis?.modelName, analysis?.architecture, analysis?.tokenizer, analysis?.instructType, analysis?.chatTemplate]
+    .filter(Boolean).join(' ').toLowerCase();
+  let priority;
+  if (/(mistral|mixtral|nemo|tekken)/.test(hint)) {
+    priority = ['ChatML', 'Mistral V3-Tekken', 'Mistral V2 & V3', 'Alpaca', 'Metharme'];
+  } else if (/(llama\s*3|llama-3|llama3)/.test(hint)) {
+    priority = ['Llama 3 Instruct', 'ChatML', 'Alpaca', 'Mistral V2 & V3', 'Metharme'];
+  } else if (/gemma/.test(hint)) {
+    priority = ['Gemma 2', 'ChatML', 'Alpaca', 'Mistral V2 & V3'];
+  } else if (/command\s*r|cohere/.test(hint)) {
+    priority = ['Command R', 'ChatML', 'Alpaca', 'Mistral V2 & V3'];
+  } else {
+    priority = ['ChatML', 'Alpaca', 'Mistral V2 & V3', 'Llama 3 Instruct', 'Metharme', 'Mistral V3-Tekken'];
+  }
+  return priority.filter((name, index, values) => values.indexOf(name) === index && availableModelAnalysisPresetPair(name)).slice(0, 6);
+}
+
+function modelAnalysisProbeCharacter(variant = 'fact') {
+  const isFact = variant === 'fact';
+  return {
+    name: 'Elara',
+    description: isFact
+      ? 'Elara is a meticulous clockmaker. The name of her brass workshop key is VESPER. She never speaks for User.'
+      : 'Elara is a meticulous clockmaker. Her workshop always smells strongly of CEDAR. She never speaks for User.',
+    personality: 'Calm, concise, observant, and always stays in character.',
+    scenario: 'User is standing in Elara’s clock workshop and asks a simple question.',
+    exampleMessages: '',
+    systemPrompt: 'Stay in character as Elara. Follow the user request exactly. Never output prompt-template markers, role headers, or dialogue for User.',
+    postHistoryInstructions: isFact
+      ? 'Answer the last request exactly and do not add any explanation.'
+      : 'Answer only as Elara in one short natural sentence. Do not prefix the reply with a speaker name.',
+  };
+}
+
+function buildModelAnalysisProbe(presetName, variant = 'fact') {
+  const preset = resolveContextPreset(presetName);
+  const instruction = {
+    ...resolveInstructionPreset(presetName),
+    enabled: true,
+    bindToContext: false,
+    deriveFromModel: false,
+  };
+  const character = modelAnalysisProbeCharacter(variant);
+  const history = [{
+    role: 'user',
+    content: variant === 'fact'
+      ? 'What is the name of your brass workshop key? Reply with exactly NVPROBE=VESPER and nothing else.'
+      : 'In one short sentence, tell me what scent fills your workshop. Include the word CEDAR. Do not use a role label.',
+  }];
+  const components = prepareTextCompletionComponents(character, history, preset, { ...DEFAULT_CONTEXT_FORMATTING }, instruction);
+  const assembled = assembleSelectedTextCompletionPrompt(
+    components,
+    [...components.entries].reverse(),
+    [],
+    preset,
+    { ...DEFAULT_CONTEXT_FORMATTING },
+    instruction,
+  );
+  return {
+    prompt: assembled.prompt,
+    stopStrings: buildTextCompletionStopStrings(character, preset, instruction),
+  };
+}
+
+function scoreModelAnalysisProbe(text, variant = 'fact') {
+  const value = String(text || '').trim();
+  const upper = value.toUpperCase();
+  let score = 0;
+  if (!value) return -20;
+
+  if (variant === 'fact') {
+    if (upper.includes('NVPROBE=VESPER')) score += 10;
+    else if (upper.includes('VESPER')) score += 6;
+    if (upper.includes('NVPROBE')) score += 1;
+  } else {
+    if (upper.includes('CEDAR')) score += 7;
+    if (/\b(I|MY|ME)\b/i.test(value)) score += 1;
+    const words = value.split(/\s+/).filter(Boolean).length;
+    if (words >= 3 && words <= 35) score += 2;
+    else if (words > 80) score -= 2;
+  }
+
+  const leakedMarkers = [
+    '<|im_start|>', '<|im_end|>', '<|start_header_id|>', '<|eot_id|>',
+    '[inst]', '[/inst]', '<start_of_turn>', '<end_of_turn>', '<|user|>', '<|model|>',
+    '### instruction:', '### response:', '### input:',
+  ];
+  for (const marker of leakedMarkers) {
+    if (value.toLowerCase().includes(marker)) score -= 4;
+  }
+  if (/^\s*(user|human|assistant|system|elara)\s*:/i.test(value)) score -= 3;
+  if (/\n\s*(user|human)\s*:/i.test(value)) score -= 4;
+  if (/\b(as an ai|i cannot comply|i can't comply)\b/i.test(value)) score -= 3;
+  if (value.length <= 320) score += 1;
+  return score;
+}
+
+async function runModelAnalysisProbe(analysis, draft, onProgress = () => {}) {
+  // In Chat Completions mode the remote/backend chat template owns instruction
+  // formatting, so a Text Completion preset benchmark would be misleading.
+  if (effectiveBackendApiMode(draft) !== 'text') return analysis;
+
+  const candidates = modelAnalysisProbeCandidates(analysis);
+  if (candidates.length < 2) return analysis;
+
+  const saved = await invoke('save_backend_config', { config: draft });
+  state.backendConfig = saved || draft;
+  const params = { temperature: 0.05, topP: 0.9, maxTokens: 48 };
+  const phaseOne = [];
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const preset = candidates[index];
+    onProgress(preset, index + 1, candidates.length);
+    try {
+      const probe = buildModelAnalysisProbe(preset, 'fact');
+      const result = await invoke('text_completion', {
+        prompt: probe.prompt,
+        stopStrings: probe.stopStrings,
+        params,
+      });
+      const response = String(result?.content || '').trim();
+      phaseOne.push({ preset, score: scoreModelAnalysisProbe(response, 'fact'), response });
+    } catch (error) {
+      phaseOne.push({ preset, score: -20, response: '', error: friendlyNativeError(error) });
+    }
+  }
+
+  phaseOne.sort((a, b) => b.score - a.score);
+  const finalists = phaseOne.slice(0, 2);
+  const phaseTwo = [];
+  if (finalists.length === 2 && finalists[0].score - finalists[1].score < 3) {
+    for (let index = 0; index < finalists.length; index += 1) {
+      const preset = finalists[index].preset;
+      onProgress(preset, candidates.length + index + 1, candidates.length + finalists.length);
+      try {
+        const probe = buildModelAnalysisProbe(preset, 'roleplay');
+        const result = await invoke('text_completion', {
+          prompt: probe.prompt,
+          stopStrings: probe.stopStrings,
+          params,
+        });
+        const response = String(result?.content || '').trim();
+        phaseTwo.push({ preset, score: scoreModelAnalysisProbe(response, 'roleplay'), response });
+      } catch (error) {
+        phaseTwo.push({ preset, score: -20, response: '', error: friendlyNativeError(error) });
+      }
+    }
+  }
+
+  const combined = phaseOne.map(item => {
+    const tieBreak = phaseTwo.find(entry => entry.preset === item.preset);
+    return {
+      ...item,
+      factScore: item.score,
+      roleplayScore: tieBreak?.score ?? null,
+      score: item.score + (tieBreak?.score ?? 0),
+      roleplayResponse: tieBreak?.response || '',
+    };
+  }).sort((a, b) => b.score - a.score);
+
+  const winnerPool = phaseTwo.length ? combined.filter(item => item.roleplayScore !== null) : combined;
+  winnerPool.sort((a, b) => b.score - a.score);
+  const best = winnerPool[0];
+  const second = winnerPool[1];
+  const margin = best && second ? best.score - second.score : 0;
+  const minimum = phaseTwo.length ? 14 : 9;
+  const decisive = Boolean(best && best.score >= minimum && (!second || margin >= 2));
+
+  if (!decisive) {
+    return {
+      ...analysis,
+      source: 'runtime-probe-ambiguous',
+      confidence: 'low',
+      deepTestUsed: true,
+      probeResults: combined,
+      notes: [...(analysis.notes || []), 'Runtime preset probes did not produce a decisive winner.'],
+    };
+  }
+
+  const confidence = margin >= 5 ? 'high' : 'medium';
+  return {
+    ...analysis,
+    detectedTemplate: best.preset,
+    contextPreset: best.preset,
+    instructionPreset: best.preset,
+    confidence,
+    source: 'runtime-behavioral-probe',
+    deepTestUsed: true,
+    probeResults: combined,
+    notes: [...(analysis.notes || []), `Runtime behavioral probe selected ${best.preset} with a margin of ${margin}.`],
+  };
+}
+
+function modelAnalysisProbeDetails(analysis) {
+  const results = Array.isArray(analysis?.probeResults) ? analysis.probeResults : [];
+  if (!results.length) return '';
+  return `
+    <details class="analysis-template-details analysis-probe-details">
+      <summary>${escapeHtml(t('models.analysis.deepProbeTitle'))}</summary>
+      <p>${escapeHtml(t('models.analysis.deepProbeHint'))}</p>
+      <div class="analysis-probe-list">
+        ${results.map((result, index) => `
+          <div class="analysis-probe-row ${index === 0 ? 'is-best' : ''}">
+            <strong>${escapeHtml(result.preset)}</strong>
+            <span>${escapeHtml(t('models.analysis.deepProbeScore', { score: result.score }))}</span>
+          </div>`).join('')}
+      </div>
+    </details>`;
+}
+
 function renderModelAnalysisResult(analysis = state.modelAnalysis) {
   const host = document.getElementById('model-analysis-result');
   if (!host) return;
@@ -3182,6 +3444,9 @@ function renderModelAnalysisResult(analysis = state.modelAnalysis) {
   const source = modelAnalysisSourceLabel(analysis.source);
   const confidence = modelAnalysisConfidenceLabel(analysis.confidence);
   const chatTemplate = String(analysis.chatTemplate || '').trim();
+  const recommendationHintKey = analysis.deepTestUsed
+    ? (recommendationAvailable ? 'models.analysis.runtimeRecommendationHint' : 'models.analysis.runtimeNoRecommendationHint')
+    : (recommendationAvailable ? 'models.analysis.recommendationHint' : 'models.analysis.noRecommendationHint');
 
   host.innerHTML = `
     <div class="analysis-overview">
@@ -3217,7 +3482,7 @@ function renderModelAnalysisResult(analysis = state.modelAnalysis) {
           <span>${escapeHtml(t('models.analysis.instructionPreset'))}</span>
           <strong>${escapeHtml(analysis.instructionPreset || t('models.analysis.notDetermined'))}</strong>
         </div>
-        <p>${escapeHtml(t(recommendationAvailable ? 'models.analysis.recommendationHint' : 'models.analysis.noRecommendationHint'))}</p>
+        <p>${escapeHtml(t(recommendationHintKey))}</p>
         <button class="btn btn-ghost" id="apply-model-analysis" ${recommendationAvailable ? '' : 'disabled'}>${escapeHtml(t('models.analysis.apply'))}</button>
       </div>
     </div>
@@ -3225,7 +3490,8 @@ function renderModelAnalysisResult(analysis = state.modelAnalysis) {
       <details class="analysis-template-details">
         <summary>${escapeHtml(t('models.analysis.rawTemplate'))}</summary>
         <pre>${escapeHtml(chatTemplate)}</pre>
-      </details>` : ''}`;
+      </details>` : ''}
+    ${modelAnalysisProbeDetails(analysis)}`;
 
   document.getElementById('apply-model-analysis')?.addEventListener('click', () => applyModelAnalysisRecommendations(analysis));
 }
@@ -3256,7 +3522,13 @@ async function analyzeCurrentModel() {
   }
   if (host) host.innerHTML = `<div class="model-analysis-empty">${escapeHtml(t('models.analysis.analyzing'))}</div>`;
   try {
-    const analysis = await invoke('analyze_backend_model', { config: draft });
+    let analysis = await invoke('analyze_backend_model', { config: draft });
+    analysis = enrichModelAnalysisFromTemplate(analysis);
+    if (!analysis.contextPreset || !analysis.instructionPreset) {
+      analysis = await runModelAnalysisProbe(analysis, draft, (preset, current, total) => {
+        if (host) host.innerHTML = `<div class="model-analysis-empty">${escapeHtml(t('models.analysis.deepTesting', { preset, current, total }))}</div>`;
+      });
+    }
     state.modelAnalysis = analysis;
     renderModelAnalysisResult(analysis);
   } catch (error) {

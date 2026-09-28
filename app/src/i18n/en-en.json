@@ -372,7 +372,7 @@
   "models.apiKey.missing": "Enter an API key for this provider.",
   "models.launcherUpdateRequired": "This feature requires NastyVerse Launcher 0.1.10 or newer. Update the native launcher, then restart NastyVerse.",
   "models.analysis.title": "Model analysis",
-  "models.analysis.desc": "Inspect the connected model and derive the most appropriate Context and Instruct presets from backend metadata and its chat template.",
+  "models.analysis.desc": "Inspect the connected model and derive the most appropriate Context and Instruct presets from backend metadata and its chat template. If those are inconclusive in Text Completion mode, NastyVerse runs short behavioral calibration prompts on the loaded model.",
   "models.analysis.analyze": "Analyze model",
   "models.analysis.analyzing": "Analyzing model…",
   "models.analysis.empty": "Connect to a backend and select or load a model, then run the analysis.",
@@ -407,5 +407,14 @@
   "models.analysis.tokenizer": "Tokenizer family",
   "models.analysis.instructType": "Provider instruct type",
   "models.analysis.modality": "Modality",
-  "models.analysis.source.provider-instruct-type": "Provider instruct metadata"
+  "models.analysis.source.provider-instruct-type": "Provider instruct metadata",
+  "models.analysis.deepTesting": "No reliable preset found. Testing {preset} ({current}/{total})…",
+  "models.analysis.deepProbeTitle": "Behavioral preset test",
+  "models.analysis.deepProbeHint": "When metadata is inconclusive, NastyVerse sends short calibration prompts through the loaded model and compares instruction following, role separation and template-marker leakage.",
+  "models.analysis.deepProbeScore": "Score: {score}",
+  "models.analysis.runtimeRecommendationHint": "Metadata was inconclusive, so NastyVerse tested several compatible Context/Instruct pairs against the loaded model. The recommendation below is the best clear result from that calibration.",
+  "models.analysis.runtimeNoRecommendationHint": "Metadata was inconclusive and the behavioral test did not produce a clear winner. No preset is applied automatically.",
+  "models.analysis.source.chat-template-extended-pattern": "Extended chat-template inspection",
+  "models.analysis.source.runtime-behavioral-probe": "Behavioral calibration on the loaded model",
+  "models.analysis.source.runtime-probe-ambiguous": "Behavioral calibration (no clear winner)"
 }

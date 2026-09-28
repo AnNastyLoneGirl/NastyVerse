@@ -123,11 +123,13 @@ Catalog translations keep their current format for now.
 Launcher/native host and application payload use independent versions.
 
 - Launcher/native host: **0.1.10**
-- Application payload: **0.1.30** (`app/src/app-version.json`)
+- Application payload: **0.1.31** (`app/src/app-version.json`)
 
 Changes limited to `app/src/**` advance only the application version and are synchronized from GitHub `main`; they do not require a new launcher Release. The application must remain tolerant of native commands that may be unavailable on older launchers. Native launcher changes use their own release cycle.
 
-## Application base 0.1.30
+## Application base 0.1.31
+
+Model analysis now uses extended chat-template recognition and, when metadata cannot identify a reliable Context/Instruct pair in Text Completion mode, a short behavioral fallback that probes several compatible preset pairs against the loaded model before making a recommendation.
 
 > Backend connection commands are native Tauri commands and require Launcher 0.1.10 or newer. App runtime updates alone cannot add these commands to an older host EXE.
 
@@ -135,7 +137,7 @@ The replaceable `app/src/**` frontend currently provides the Character Library b
 
 The native host now persists/tests backend configuration and exposes non-streaming Chat Completion and Text Completion commands for KoboldCpp, llama.cpp server, text-generation-webui, Ollama, OpenAI, OpenRouter, NanoGPT, Groq, DeepSeek, Mistral API, Together AI and Custom OpenAI-compatible endpoints. The application selects Chat/Text mode from the saved backend configuration, and Text Completion uses the Context/Instruction pipeline plus stop strings and response post-processing. The Instruction Template editor now ships the 38 presets from the supplied SillyTavern source set, preserves their exact sequence/flag values, supports ST-compatible JSON import/export, context binding, activation regexes, model-assisted selection, and applies Story String/user/assistant/system/first/last/filler/stop-sequence behavior to the actual Text Completion prompt. Context presets are now rebuilt directly from the 34 presets in the supplied SillyTavern source set, retaining only the established NastyVerse `loreBefore`/`loreAfter` placeholder names. The Context editor shows each Handlebars conditional on one readable line by displaying emitted line breaks as `\n`, then restores the canonical SillyTavern-compatible Story String before saving or rendering.
 
-Application payload 0.1.30 keeps the existing context assembly behavior and aligns Text Completion context assembly with the supplied SillyTavern source for the features NastyVerse currently implements, including example budgeting behavior and final prompt ordering.
+Application payload 0.1.31 keeps the existing context assembly behavior and aligns Text Completion context assembly with the supplied SillyTavern source for the features NastyVerse currently implements, including example budgeting behavior and final prompt ordering.
 
 Model configuration now also includes a model-analysis panel. It inspects backend metadata/chat templates when available and recommends matching Context/Instruct presets using SillyTavern-compatible chat-template fingerprints and markers.
 

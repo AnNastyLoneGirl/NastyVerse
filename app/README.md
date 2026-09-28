@@ -11,7 +11,7 @@ Do not add another `app/src-tauri/` crate unless the project owner explicitly re
 
 ## Application version
 
-Current application payload version: **0.1.30**. The source of truth is `src/app-version.json`. This version is independent from the launcher/native host version.
+Current application payload version: **0.1.31**. The source of truth is `src/app-version.json`. This version is independent from the launcher/native host version.
 
 ## Current functional base
 

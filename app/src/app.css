@@ -1147,6 +1147,13 @@ input,textarea,select{font:inherit}input,textarea,select{background:var(--panel-
 .analysis-template-details{margin-top:12px;border:1px solid var(--line);border-radius:9px;background:var(--panel-2);overflow:hidden}
 .analysis-template-details summary{cursor:pointer;padding:11px 13px;color:var(--text-dim);font-size:10.5px;font-weight:800}
 .analysis-template-details pre{margin:0;padding:13px;border-top:1px solid var(--line);max-height:260px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:10px;line-height:1.45;color:var(--text-dim)}
+.analysis-probe-details p{margin:0;padding:0 13px 11px;color:var(--text-faint);font-size:10px;line-height:1.5}
+.analysis-probe-list{border-top:1px solid var(--line)}
+.analysis-probe-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 13px;border-bottom:1px solid var(--line)}
+.analysis-probe-row:last-child{border-bottom:none}
+.analysis-probe-row strong{font-size:10.5px}
+.analysis-probe-row span{font-size:10px;color:var(--text-faint)}
+.analysis-probe-row.is-best strong{color:var(--ok)}
 
 @media (max-width:760px){
   .model-analysis-heading{flex-direction:column;align-items:stretch}

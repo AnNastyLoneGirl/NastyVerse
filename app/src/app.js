@@ -4922,6 +4922,7 @@ const MARKDOWN_STYLE_TYPES = [
   { id:'h6', labelKey:'personalization.markdown.h6', selector:'.nv-markdown-surface h6', example:'###### ...' },
   { id:'strong', labelKey:'personalization.markdown.bold', selector:'.nv-markdown-surface strong', example:'**...**' },
   { id:'emphasis', labelKey:'personalization.markdown.italic', selector:'.nv-markdown-surface em', example:'*...*' },
+  { id:'dialogue', labelKey:'personalization.markdown.dialogue', selector:'.nv-markdown-surface .nv-md-dialogue', example:'"..."' },
   { id:'strike', labelKey:'personalization.markdown.strike', selector:'.nv-markdown-surface del', example:'~~...~~' },
   { id:'link', labelKey:'personalization.markdown.link', selector:'.nv-markdown-surface a', example:'[...](https://example.com)' },
   { id:'inlineCode', labelKey:'personalization.markdown.inlineCode', selector:'.nv-markdown-surface :not(pre) > code', example:'`...`' },
@@ -4945,6 +4946,7 @@ const DEFAULT_MARKDOWN_STYLES = {
   h6:{ color:'text-faint', background:'none', border:'none', fontSize:12, fontWeight:800, fontStyle:'normal', lineHeight:1.45, radius:0, paddingY:0, paddingX:0, marginY:8 },
   strong:{ color:'text', background:'none', border:'none', fontSize:0, fontWeight:800, fontStyle:'normal', lineHeight:0, radius:0, paddingY:0, paddingX:0, marginY:0 },
   emphasis:{ color:'text-dim', background:'none', border:'none', fontSize:0, fontWeight:400, fontStyle:'italic', lineHeight:0, radius:0, paddingY:0, paddingX:0, marginY:0 },
+  dialogue:{ color:'text', background:'none', border:'none', fontSize:0, fontWeight:500, fontStyle:'normal', lineHeight:0, radius:0, paddingY:0, paddingX:0, marginY:0 },
   strike:{ color:'text-faint', background:'none', border:'none', fontSize:0, fontWeight:400, fontStyle:'normal', lineHeight:0, radius:0, paddingY:0, paddingX:0, marginY:0 },
   link:{ color:'magenta', background:'none', border:'none', fontSize:0, fontWeight:650, fontStyle:'normal', lineHeight:0, radius:0, paddingY:0, paddingX:0, marginY:0 },
   inlineCode:{ color:'magenta', background:'panel-2', border:'line', fontSize:13, fontWeight:600, fontStyle:'normal', lineHeight:1.55, radius:5, paddingY:2, paddingX:5, marginY:0 },
@@ -4966,7 +4968,7 @@ function markdownTokenCss(token, fallback = 'text') {
 function normalizeMarkdownStyle(id, input = {}) {
   const base = DEFAULT_MARKDOWN_STYLES[id] || DEFAULT_MARKDOWN_STYLES.paragraph;
   const n = (value, fallback, min, max) => Math.min(max, Math.max(min, Number.isFinite(Number(value)) ? Number(value) : fallback));
-  const inheritsTypography = ['strong','emphasis','strike','link'].includes(id);
+  const inheritsTypography = ['strong','emphasis','dialogue','strike','link'].includes(id);
   return {
     color: MARKDOWN_STYLE_TOKENS.includes(input.color) ? input.color : base.color,
     background: input.background === MARKDOWN_NONE || MARKDOWN_STYLE_TOKENS.includes(input.background) ? input.background : base.background,
@@ -5011,7 +5013,7 @@ function markdownColorOptions(value, allowNone = false) {
   return options.join('');
 }
 function markdownPreviewSample() {
-  return `# ${t('personalization.preview.h1')}\n## ${t('personalization.preview.h2')}\n### ${t('personalization.preview.h3')}\n\n${t('personalization.preview.paragraph')} **${t('personalization.preview.bold')}**, *${t('personalization.preview.italic')}*, ~~${t('personalization.preview.strike')}~~ ${t('personalization.preview.and')} [${t('personalization.preview.link')}](https://example.com).\n\n> ${t('personalization.preview.quote')}\n\n- ${t('personalization.preview.listOne')}\n- ${t('personalization.preview.listTwo')}\n\n1. ${t('personalization.preview.orderedOne')}\n2. ${t('personalization.preview.orderedTwo')}\n\nInline: \`const mood = "NastyVerse";\`\n\n\`\`\`js\nfunction hello(name) {\n  return \`Hello \${name}\`;\n}\n\`\`\`\n\n---\n\n| ${t('personalization.preview.tableA')} | ${t('personalization.preview.tableB')} |\n| --- | --- |\n| ChatML | 32K |\n| Mistral | 128K |`;
+  return `# ${t('personalization.preview.h1')}\n## ${t('personalization.preview.h2')}\n### ${t('personalization.preview.h3')}\n\n${t('personalization.preview.paragraph')} **${t('personalization.preview.bold')}**, *${t('personalization.preview.italic')}*, "${t('personalization.preview.dialogue')}", ~~${t('personalization.preview.strike')}~~ ${t('personalization.preview.and')} [${t('personalization.preview.link')}](https://example.com).\n\n> ${t('personalization.preview.quote')}\n\n- ${t('personalization.preview.listOne')}\n- ${t('personalization.preview.listTwo')}\n\n1. ${t('personalization.preview.orderedOne')}\n2. ${t('personalization.preview.orderedTwo')}\n\nInline: \`const mood = "NastyVerse";\`\n\n\`\`\`js\nfunction hello(name) {\n  return \`Hello \${name}\`;\n}\n\`\`\`\n\n---\n\n| ${t('personalization.preview.tableA')} | ${t('personalization.preview.tableB')} |\n| --- | --- |\n| ChatML | 32K |\n| Mistral | 128K |`;
 }
 function renderPersonalization(typeId = 'paragraph') {
   state.currentPage = 'personalization';
@@ -5020,7 +5022,7 @@ function renderPersonalization(typeId = 'paragraph') {
   const styles = getMarkdownPersonalization();
   const activeType = MARKDOWN_STYLE_TYPES.find(type => type.id === state.markdownStyleType) || MARKDOWN_STYLE_TYPES[0];
   const style = styles[activeType.id];
-  const inheritsTypography = ['strong','emphasis','strike','link'].includes(activeType.id);
+  const inheritsTypography = ['strong','emphasis','dialogue','strike','link'].includes(activeType.id);
   pageRoot.innerHTML = `<div class="personalization-page">
     <div class="personalization-head"><div><h1>${escapeHtml(t('personalization.title'))}</h1><p>${escapeHtml(t('personalization.desc'))}</p></div><button class="btn btn-ghost" id="markdown-reset-all">${escapeHtml(t('personalization.resetAll'))}</button></div>
     <div class="personalization-layout">

@@ -445,15 +445,15 @@
   "personalization.spacing": "Vertical spacing",
   "personalization.syntax": "Markdown syntax",
   "personalization.preview": "Live preview",
-  "personalization.markdown.paragraph": "Paragraph",
+  "personalization.markdown.paragraph": "Narration",
   "personalization.markdown.h1": "Heading 1",
   "personalization.markdown.h2": "Heading 2",
   "personalization.markdown.h3": "Heading 3",
   "personalization.markdown.h4": "Heading 4",
   "personalization.markdown.h5": "Heading 5",
   "personalization.markdown.h6": "Heading 6",
-  "personalization.markdown.bold": "Bold",
-  "personalization.markdown.italic": "Italic",
+  "personalization.markdown.bold": "Emphasis",
+  "personalization.markdown.italic": "Action",
   "personalization.markdown.strike": "Strikethrough",
   "personalization.markdown.link": "Links",
   "personalization.markdown.inlineCode": "Inline code",
@@ -494,5 +494,7 @@
   "personalization.token.void": "Deep background",
   "personalization.token.ok": "Success",
   "personalization.token.danger": "Danger",
-  "personalization.inheritHint": "0 = inherit"
+  "personalization.inheritHint": "0 = inherit",
+  "personalization.markdown.dialogue": "Dialogue",
+  "personalization.preview.dialogue": "spoken dialogue"
 }

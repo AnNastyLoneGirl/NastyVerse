@@ -445,15 +445,15 @@
   "personalization.spacing": "Espacement vertical",
   "personalization.syntax": "Syntaxe Markdown",
   "personalization.preview": "Aperçu en direct",
-  "personalization.markdown.paragraph": "Paragraphe",
+  "personalization.markdown.paragraph": "Narration",
   "personalization.markdown.h1": "Titre 1",
   "personalization.markdown.h2": "Titre 2",
   "personalization.markdown.h3": "Titre 3",
   "personalization.markdown.h4": "Titre 4",
   "personalization.markdown.h5": "Titre 5",
   "personalization.markdown.h6": "Titre 6",
-  "personalization.markdown.bold": "Gras",
-  "personalization.markdown.italic": "Italique",
+  "personalization.markdown.bold": "Emphase",
+  "personalization.markdown.italic": "Action",
   "personalization.markdown.strike": "Barré",
   "personalization.markdown.link": "Liens",
   "personalization.markdown.inlineCode": "Code en ligne",
@@ -494,5 +494,7 @@
   "personalization.token.void": "Fond profond",
   "personalization.token.ok": "Succès",
   "personalization.token.danger": "Danger",
-  "personalization.inheritHint": "0 = hérité"
+  "personalization.inheritHint": "0 = hérité",
+  "personalization.markdown.dialogue": "Dialogue",
+  "personalization.preview.dialogue": "dialogue parlé"
 }

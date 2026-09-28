@@ -174,6 +174,10 @@ function nvMarkdownInline(content) {
     const safe = nvMarkdownSafeUrl(href); if (!safe) return `[${label}](${href})`;
     return hold(`<a href="${nvEscape(safe)}" target="_blank" rel="noopener noreferrer">${label}</a>`);
   });
+  // NastyVerse RP convention: quoted text is dialogue. Keep the quote marks visible while
+  // giving users a dedicated personalization target. Code and links are already protected.
+  rendered = rendered.replace(/&quot;([^\n]+?)&quot;/g, (_, text) => hold(`<span class="nv-md-dialogue">&quot;${text}&quot;</span>`))
+    .replace(/“([^”\n]+?)”/g, (_, text) => hold(`<span class="nv-md-dialogue">“${text}”</span>`));
   rendered = rendered.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
     .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
     .replace(/~~([^~\n]+)~~/g, '<del>$1</del>')

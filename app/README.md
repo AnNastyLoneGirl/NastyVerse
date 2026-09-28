@@ -1,4 +1,4 @@
-# NastyVerse application 0.2.6
+# NastyVerse application 0.2.7
 
 The application is a replaceable HTML/CSS/JavaScript payload hosted by the single Tauri launcher (0.1.12). No second Tauri crate is introduced.
 
@@ -30,3 +30,5 @@ Composer input 0.2.4: the message field now grows from one to three lines as tex
 Markdown personalization 0.2.5: chat messages now use a structured safe Markdown renderer for headings, emphasis, strikethrough, links, inline/fenced code, quotes, lists, separators and tables. A dedicated Personalization shortcut beside Configuration provides live per-element styling persisted in localStorage; these display settings never alter canonical message content or prompt assembly.
 
 Markdown syntax examples 0.2.6: Personalization now shows a copyable usage example for every supported Markdown element.
+
+Markdown RP semantics 0.2.7: Personalization renames generic Markdown labels around their chat/RP usage (Narration, Emphasis, Action) and adds a dedicated Dialogue style for quoted text (`"..."`) without changing the stored message content.

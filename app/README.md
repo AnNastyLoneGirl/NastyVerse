@@ -1,4 +1,4 @@
-# NastyVerse application 0.2.18
+# NastyVerse application 0.2.19
 
 The application is a replaceable HTML/CSS/JavaScript payload hosted by the single Tauri launcher (0.1.12). No second Tauri crate is introduced.
 
@@ -53,3 +53,5 @@ Message personalization 0.2.16: avatar framing now uses explicit cover geometry 
 Message personalization 0.2.17: avatar style now supports Square (1:1) and Portrait (2:3) frames. Avatar size is a free pixel width instead of a capped 88px slider; the exact crop renderer uses the selected frame ratio consistently in the crop editor, live preview, and chat.
 
 Chat layout 0.2.18: the message stream now uses the full width available between the conversations sidebar and the right edge. The user-configured maximum message width is applied against that full usable width instead of a fixed centered 850px column.
+Chat message actions 0.2.19: message actions are now rendered as a dedicated toolbar above the complete avatar + message row instead of below the bubble. This keeps controls visually attached to the whole message block, especially with large avatars and short messages.
+

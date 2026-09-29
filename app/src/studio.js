@@ -1047,6 +1047,36 @@ async function nvNewChat() {
   }
   NV.data.sessions.push(chat); nvSelectSession(chat);
 }
+
+function nvMessageMacroCharacter(chat, preferred = null) {
+  if (preferred?.name) return preferred;
+  if (!chat) return null;
+  const characters = getCharacters();
+  if (!String(chat.targetId || '').startsWith('group:')) return characters.find(character => character.id === chat.targetId) || null;
+  const manualSpeaker = document.getElementById('nv-speaker')?.value;
+  if (manualSpeaker) return characters.find(character => character.id === manualSpeaker) || null;
+  const group = NV.data.groups.find(item => `group:${item.id}` === chat.targetId);
+  const members = characters.filter(character => group?.members?.includes(character.id));
+  return members.length === 1 ? members[0] : null;
+}
+function nvResolveMessageMacros(source, chat, character = null, history = null) {
+  const selectedCharacter = nvMessageMacroCharacter(chat, character);
+  const persona = nvPersona(chat, selectedCharacter);
+  const group = String(chat?.targetId || '').startsWith('group:')
+    ? NV.data.groups.find(item => `group:${item.id}` === chat.targetId)
+    : null;
+  const records = Array.isArray(history) ? history : (chat?.messages || []);
+  const lastMessage = [...records].reverse().find(message => message && !message.hidden)?.content || '';
+  return NVCore.expand(source, {
+    char: selectedCharacter?.name || group?.name || '',
+    user: persona.name,
+    persona: persona.description,
+    description: selectedCharacter?.description || '',
+    scenario: chat?.scenario || selectedCharacter?.scenario || '',
+    lastMessage,
+  });
+}
+
 async function nvRules(content, target) {
   const rules = NV.data.rules.filter(r => r.enabled && r.target === target);
   if (!rules.length) return content;
@@ -1064,6 +1094,7 @@ async function nvSend(chat,content) {
   try {
     content = await nvRules(content,'input');
     if(!content.trim() && chat.draftImages?.length) content = chat.draftImages.some(a=>a.sendToModel) ? nvText('Que vois-tu sur cette image ?','What do you see in this image?') : nvText('[Image conservée localement, non transmise au modèle.]','[Image stored locally, not sent to the model.]');
+    content = nvResolveMessageMacros(content, chat);
     if (!state.backendConfig) state.backendConfig = await invoke('load_backend_config');
     if (effectiveBackendApiMode(state.backendConfig)==='text' && chat.draftImages?.some(a=>a.sendToModel)) throw new Error(nvText('Les images nécessitent le mode Chat et un modèle avec vision. Cliquez sur l’image pour désactiver Vision si vous souhaitez seulement l’afficher.','Images require Chat mode and a vision model. Click the image to turn Vision off if you only want to display it.'));
     const translated = await nvPrepareOutgoingTranslation(content);
@@ -1133,7 +1164,8 @@ async function nvGenerate(chat,mode = 'reply') {
       });
       if (run.cancelled) break;
       if (!result.content.trim()) throw new Error(nvText('Le modèle a renvoyé une réponse vide.','The model returned an empty reply.'));
-      const canonicalAssistant = await nvPrepareAssistantCanonical(result.content);
+      const resolvedAssistant = nvResolveMessageMacros(result.content, chat, character, history);
+      const canonicalAssistant = await nvPrepareAssistantCanonical(resolvedAssistant);
       if (mode === 'impersonate') {
         try { const display = await nvPrepareAssistantTranslation(canonicalAssistant); chat.draft = display?.content || canonicalAssistant; }
         catch (error) { console.warn('[translate] Impersonation translation failed.', error); chat.draft = nvText('[Traduction indisponible]','[Translation unavailable]'); }
@@ -1160,7 +1192,9 @@ async function nvGenerate(chat,mode = 'reply') {
   } catch (error) { run.failed = true; if (!run.cancelled) toast(friendlyNativeError(error),'error'); }
   finally {
     if ((run.cancelled || run.failed) && run.content.trim() && mode !== 'impersonate') {
-      const partialContent = await nvPrepareAssistantCanonical(run.content);
+      const partialCharacter = getCharacters().find(character => character.id === run.characterId) || null;
+      const partialResolved = nvResolveMessageMacros(run.content, chat, partialCharacter, chat.messages);
+      const partialContent = await nvPrepareAssistantCanonical(partialResolved);
       const partial = NVCore.message({role:'assistant',content:partialContent,name:run.name,characterId:run.characterId});
       await nvApplyAssistantDisplay(partial);
       chat.messages.push(partial); await nvSave();
@@ -1192,7 +1226,8 @@ async function nvCreateMessageVariant(chat, message) {
     });
     if (run.cancelled) return;
     if (!String(result.content || '').trim()) throw new Error(nvText('Le modèle a renvoyé une réponse vide.','The model returned an empty reply.'));
-    const canonicalAssistant = await nvPrepareAssistantCanonical(result.content);
+    const resolvedAssistant = nvResolveMessageMacros(result.content, chat, character, history);
+    const canonicalAssistant = await nvPrepareAssistantCanonical(resolvedAssistant);
     message.variants = Array.isArray(message.variants) && message.variants.length ? message.variants : [message.content || ''];
     message.variants.push(canonicalAssistant);
     message.promptRecords = Array.isArray(message.promptRecords) ? message.promptRecords : [];
@@ -1224,7 +1259,15 @@ async function nvMessageAction(chat,m,action) {
   if (action === 'prompt') return nvInspectMessagePrompt(chat,m);
   if (action === 'edit') {
     const value = await nvForm(nvText('Modifier le message','Edit message'),[nvField('content',nvText('Texte','Text'),nvMessageDisplayContent(m),'textarea',{rows:12,required:true})]);
-    if (!value) return; nvCheckpoint(chat); await nvTranslateEditedMessage(m,value.content); m.variants[m.variant] = m.content;
+    if (!value) return;
+    nvCheckpoint(chat);
+    const messageIndex = chat.messages.indexOf(m);
+    const editCharacter = m.role === 'assistant'
+      ? (getCharacters().find(character => character.id === m.characterId) || getCharacters().find(character => character.name === m.name) || null)
+      : null;
+    const resolvedEdit = nvResolveMessageMacros(value.content, chat, editCharacter, chat.messages.slice(0, Math.max(0, messageIndex)));
+    await nvTranslateEditedMessage(m,resolvedEdit);
+    m.variants[m.variant] = m.content;
   } else {
     nvCheckpoint(chat);
     if (action === 'bookmark') m.bookmark = !m.bookmark;

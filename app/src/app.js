@@ -1672,6 +1672,17 @@ document.getElementById('btn-min').addEventListener('click', () => invoke('windo
 document.getElementById('btn-close').addEventListener('click', () => invoke('window_close'));
 document.getElementById('btn-max').addEventListener('click', () => invoke('window_toggle_maximize'));
 
+// Keep the declarative `data-tauri-drag-region` markers in index.html, but
+// also use the native command explicitly. WebView2 can stop treating a flex
+// titlebar as draggable once interactive children occupy part of the region.
+// Only genuinely non-interactive titlebar space may start a window drag.
+const appTitlebar = document.querySelector('.titlebar');
+appTitlebar?.addEventListener('mousedown', event => {
+  if (event.button !== 0) return;
+  if (event.target.closest('button, a, input, select, textarea, [contenteditable="true"], [data-no-drag]')) return;
+  invoke('window_start_dragging');
+});
+
 document.getElementById('model-status').addEventListener('click', () => goTo('configuration', { section: 'models' }));
 configurationShortcut?.addEventListener('click', () => goTo('configuration', { section: 'general' }));
 personalizationShortcut?.addEventListener('click', () => goTo('personalization')); 

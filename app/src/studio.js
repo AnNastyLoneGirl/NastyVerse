@@ -1059,22 +1059,195 @@ function nvMessageMacroCharacter(chat, preferred = null) {
   const members = characters.filter(character => group?.members?.includes(character.id));
   return members.length === 1 ? members[0] : null;
 }
-function nvResolveMessageMacros(source, chat, character = null, history = null) {
+function nvVariableStore(chat, globalScope = false) {
+  if (globalScope) {
+    if (!NV.data.globalVariables || typeof NV.data.globalVariables !== 'object' || Array.isArray(NV.data.globalVariables)) NV.data.globalVariables = {};
+    return NV.data.globalVariables;
+  }
+  if (!chat) return {};
+  if (!chat.variables || typeof chat.variables !== 'object' || Array.isArray(chat.variables)) chat.variables = {};
+  return chat.variables;
+}
+function nvVariableHas(store, name) {
+  return Object.prototype.hasOwnProperty.call(store || {}, String(name || ''));
+}
+function nvVariableText(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    try { return JSON.stringify(value); } catch (_) { return String(value); }
+  }
+  return String(value);
+}
+function nvVariableNumeric(value) {
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (typeof value !== 'string' || !value.trim()) return false;
+  return Number.isFinite(Number(value));
+}
+function nvVariableFalsy(value, exists = true) {
+  if (!exists || value == null || value === false || value === 0) return true;
+  const text = nvVariableText(value).trim().toLowerCase();
+  return text === '' || text === '0' || text === 'false' || text === 'off' || text === 'no';
+}
+function nvVariableNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+function nvVariableExecute(store, action, name, value = '') {
+  name = String(name || '').trim();
+  if (!name) return '';
+  const exists = nvVariableHas(store, name);
+  const current = exists ? store[name] : undefined;
+  if (action === 'get') return nvVariableText(current);
+  if (action === 'set') { store[name] = value; return ''; }
+  if (action === 'add') {
+    if (nvVariableNumeric(current) && nvVariableNumeric(value)) store[name] = Number(current) + Number(value);
+    else store[name] = nvVariableText(current) + nvVariableText(value);
+    return '';
+  }
+  if (action === 'inc') { store[name] = nvVariableNumber(current, 0) + 1; return nvVariableText(store[name]); }
+  if (action === 'dec') { store[name] = nvVariableNumber(current, 0) - 1; return nvVariableText(store[name]); }
+  if (action === 'has') return exists ? 'true' : 'false';
+  if (action === 'delete') { if (exists) delete store[name]; return ''; }
+  return '';
+}
+function nvVariableShorthand(body, chat) {
+  const match = String(body || '').trim().match(/^([.$])\s*([A-Za-z](?:[A-Za-z0-9_-]*[A-Za-z0-9])?)\s*(?:(\|\|=|\?\?=|\+\+|--|\+=|-=|==|!=|>=|<=|\|\||\?\?|>|<|=)\s*([\s\S]*))?$/);
+  if (!match) return null;
+  const [, prefix, name, operator = '', rhs = ''] = match;
+  const store = nvVariableStore(chat, prefix === '$');
+  const exists = nvVariableHas(store, name);
+  const current = exists ? store[name] : undefined;
+  if (!operator) return nvVariableText(current);
+  if (operator === '=') { store[name] = rhs; return ''; }
+  if (operator === '++') return nvVariableExecute(store, 'inc', name);
+  if (operator === '--') return nvVariableExecute(store, 'dec', name);
+  if (operator === '+=') return nvVariableExecute(store, 'add', name, rhs);
+  if (operator === '-=') {
+    if (nvVariableNumeric(current) && nvVariableNumeric(rhs)) store[name] = Number(current) - Number(rhs);
+    return '';
+  }
+  if (operator === '||') return nvVariableFalsy(current, exists) ? rhs : nvVariableText(current);
+  if (operator === '??') return (!exists || current == null) ? rhs : nvVariableText(current);
+  if (operator === '||=') {
+    if (nvVariableFalsy(current, exists)) store[name] = rhs;
+    return nvVariableText(store[name]);
+  }
+  if (operator === '??=') {
+    if (!exists || current == null) store[name] = rhs;
+    return nvVariableText(store[name]);
+  }
+  if (operator === '==' || operator === '!=') {
+    const left = (!exists || current == null) ? '' : nvVariableText(current);
+    const right = rhs == null ? '' : String(rhs);
+    const equal = left === right;
+    return (operator === '==' ? equal : !equal) ? 'true' : 'false';
+  }
+  if (['>', '>=', '<', '<='].includes(operator)) {
+    const left = Number(current), right = Number(rhs);
+    if (!Number.isFinite(left) || !Number.isFinite(right)) return 'false';
+    const result = operator === '>' ? left > right : operator === '>=' ? left >= right : operator === '<' ? left < right : left <= right;
+    return result ? 'true' : 'false';
+  }
+  return null;
+}
+function nvParseVariableMacroCall(body) {
+  const source = String(body || '').trim();
+  if (!source) return null;
+  const doubleColon = source.indexOf('::');
+  if (doubleColon >= 0) {
+    const name = source.slice(0, doubleColon).trim().toLowerCase();
+    const args = source.slice(doubleColon + 2).split(/\s*::\s*/);
+    return { name, args };
+  }
+  const legacy = source.match(/^([A-Za-z][A-Za-z0-9_-]*)\s*:\s*([\s\S]*)$/);
+  if (legacy) return { name: legacy[1].toLowerCase(), args: [legacy[2].trim()] };
+  const spaced = source.match(/^([A-Za-z][A-Za-z0-9_-]*)(?:\s+([\s\S]*))?$/);
+  if (!spaced) return null;
+  const name = spaced[1].toLowerCase();
+  const tail = String(spaced[2] || '').trim();
+  if (!tail) return { name, args: [] };
+  if (/^(set|add)(global)?var$/.test(name)) {
+    const valueMatch = tail.match(/^([^\s]+)(?:\s+([\s\S]*))?$/);
+    return { name, args: valueMatch ? [valueMatch[1], valueMatch[2] || ''] : [tail] };
+  }
+  return { name, args: [tail] };
+}
+function nvVariableMacro(body, chat) {
+  const shorthand = nvVariableShorthand(body, chat);
+  if (shorthand !== null) return { handled: true, value: shorthand };
+  const call = nvParseVariableMacroCall(body);
+  if (!call) return { handled: false, value: '' };
+  const names = {
+    getvar: ['get', false], setvar: ['set', false], addvar: ['add', false], incvar: ['inc', false], decvar: ['dec', false], hasvar: ['has', false], deletevar: ['delete', false],
+    getglobalvar: ['get', true], setglobalvar: ['set', true], addglobalvar: ['add', true], incglobalvar: ['inc', true], decglobalvar: ['dec', true], hasglobalvar: ['has', true], deleteglobalvar: ['delete', true],
+  };
+  const definition = names[call.name];
+  if (!definition) return { handled: false, value: '' };
+  const [action, globalScope] = definition;
+  const variableName = String(call.args[0] || '').trim();
+  const variableValue = call.args.length > 1 ? call.args.slice(1).join('::') : '';
+  return { handled: true, value: nvVariableExecute(nvVariableStore(chat, globalScope), action, variableName, variableValue) };
+}
+function nvScopedVariableMacros(source, chat, character) {
+  let output = String(source || '');
+  const pattern = /\{\{\s*(#\s*)?(setvar|addvar|setglobalvar|addglobalvar)\s+([A-Za-z](?:[A-Za-z0-9_-]*[A-Za-z0-9])?)\s*\}\}([\s\S]*?)\{\{\s*\/\s*\2\s*\}\}/gi;
+  for (let pass = 0; pass < 12; pass++) {
+    let changed = false;
+    output = output.replace(pattern, (match, preserve, macro, name, content) => {
+      changed = true;
+      let value = nvResolveMessageMacros(content, chat, character, pass + 1);
+      if (!preserve) {
+        value = value.replace(/^\s*\n/, '').replace(/\n\s*$/, '');
+        const lines = value.split('\n');
+        const indents = lines.filter(line => line.trim()).map(line => (line.match(/^\s*/) || [''])[0].length);
+        if (indents.length) { const indent = Math.min(...indents); if (indent) value = lines.map(line => line.slice(Math.min(indent, (line.match(/^\s*/) || [''])[0].length))).join('\n'); }
+        value = value.trim();
+      }
+      const result = nvVariableMacro(`${macro}::${name}::${value}`, chat);
+      return result.handled ? result.value : match;
+    });
+    if (!changed) break;
+  }
+  return output;
+}
+function nvResolveMessageMacros(source, chat, character = null, depth = 0) {
   const selectedCharacter = nvMessageMacroCharacter(chat, character);
   const persona = nvPersona(chat, selectedCharacter);
   const group = String(chat?.targetId || '').startsWith('group:')
     ? NV.data.groups.find(item => `group:${item.id}` === chat.targetId)
     : null;
-  const records = Array.isArray(history) ? history : (chat?.messages || []);
-  const lastMessage = [...records].reverse().find(message => message && !message.hidden)?.content || '';
-  return NVCore.expand(source, {
+  const values = {
     char: selectedCharacter?.name || group?.name || '',
-    user: persona.name,
-    persona: persona.description,
-    description: selectedCharacter?.description || '',
-    scenario: chat?.scenario || selectedCharacter?.scenario || '',
-    lastMessage,
-  });
+    user: persona.name || 'User',
+    date: new Date().toLocaleDateString(),
+    time: new Date().toLocaleTimeString(),
+    newline: '\n',
+  };
+  let output = String(source || '');
+  if (depth < 8) output = nvScopedVariableMacros(output, chat, selectedCharacter);
+  for (let pass = 0; pass < 96; pass++) {
+    const pattern = /\{\{([^{}]*)\}\}/g;
+    let match;
+    let replaced = false;
+    while ((match = pattern.exec(output))) {
+      const body = match[1];
+      const key = String(body || '').trim().toLowerCase();
+      let handled = false;
+      let value = match[0];
+      if (Object.prototype.hasOwnProperty.call(values, key)) { handled = true; value = values[key]; }
+      else {
+        const variable = nvVariableMacro(body, chat);
+        if (variable.handled) { handled = true; value = variable.value; }
+      }
+      if (!handled || value === match[0]) continue;
+      output = `${output.slice(0, match.index)}${value}${output.slice(match.index + match[0].length)}`;
+      replaced = true;
+      break;
+    }
+    if (!replaced) break;
+  }
+  return output;
 }
 
 async function nvRules(content, target) {

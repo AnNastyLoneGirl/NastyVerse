@@ -63,7 +63,9 @@ async function nvInit() {
   const saved = await nvStore('readonly', store => store.get('current'));
   NV.data = saved ? NVCore.normalizeWorkspace(saved) : NVCore.migrate(getCharacters(), getConversations());
   NV.ready = true;
-  if (!saved) await nvSave();
+  let greetingMacrosMigrated = false;
+  for (const chat of NV.data.sessions) greetingMacrosMigrated = nvResolveStoredGreetingMacros(chat) || greetingMacrosMigrated;
+  if (!saved || greetingMacrosMigrated) await nvSave();
   const last = NV.data.sessions.find(s => s.id === NV.data.lastSession);
   if (last?.targetId.startsWith('group:')) NV.groupId = last.targetId.slice(6);
   else if (last) { state.activeCharacterId = last.targetId; localStorage.setItem(STORAGE.activeCharacter,last.targetId); }
@@ -92,6 +94,39 @@ function nvPersona(session = nvSession(), character = null) {
   const persona = NV.data.personas.find(p => p.id === (session?.personaId || NV.data.defaultPersona));
   return NVCore.personaContext(persona, {sessionId:session?.id,characterId:character?.id || (session?.targetId?.startsWith('group:') ? null : session?.targetId)});
 }
+function nvGreetingMessage(chat, character) {
+  const greetings = [character?.firstMessage, ...(character?.alternateGreetings || [])].filter(Boolean);
+  if (!chat || !character || !greetings.length) return null;
+  // A greeting is a real assistant message: resolve its macros before it can be
+  // translated or used by the next turn. Only the selected greeting is
+  // executed now; alternate greetings are resolved lazily if the user swipes.
+  const first = nvResolveMessageMacros(greetings[0], chat, character, []);
+  return NVCore.message({
+    role: 'assistant',
+    content: first,
+    name: character.name,
+    characterId: character.id,
+    variants: [first, ...greetings.slice(1)],
+  });
+}
+function nvResolveStoredGreetingMacros(chat) {
+  if (!chat?.messages?.length || String(chat.targetId || '').startsWith('group:')) return false;
+  const message = chat.messages[0];
+  if (!message || message.role !== 'assistant') return false;
+  const character = getCharacters().find(item => item.id === (message.characterId || chat.targetId)) || null;
+  if (!character) return false;
+  const before = String(message.content || '');
+  const after = nvResolveMessageMacros(before, chat, character, []);
+  if (after === before) return false;
+  message.content = after;
+  message.variants = Array.isArray(message.variants) && message.variants.length ? message.variants : [before];
+  const selected = Math.min(Math.max(Number(message.variant) || 0, 0), message.variants.length - 1);
+  if (message.variants[selected] === before || selected === 0) message.variants[selected] = after;
+  if (typeof nvClearMessageDisplay === 'function') nvClearMessageDisplay(message);
+  else { message.displayText = ''; message.displaySource = ''; message.displayLanguage = ''; }
+  chat.updatedAt = Date.now();
+  return true;
+}
 function nvEnsureSession(character) {
   const target = NV.groupId ? `group:${NV.groupId}` : character?.id;
   if (!target) return null;
@@ -99,7 +134,10 @@ function nvEnsureSession(character) {
   if (!chat) {
     const group = NV.data.groups.find(g => g.id === NV.groupId);
     chat = NVCore.session(target, group?.name || character?.name);
-    if (character?.firstMessage && !group) chat.messages.push(NVCore.message({ role: 'assistant', content: NVCore.expand(character.firstMessage, { char: character.name, user: nvPersona(chat).name }), name: character.name, characterId: character.id, variants: [character.firstMessage, ...(character.alternateGreetings || [])].map(s => NVCore.expand(s, { char: character.name, user: nvPersona(chat).name })) }));
+    if (!group) {
+      const greeting = nvGreetingMessage(chat, character);
+      if (greeting) chat.messages.push(greeting);
+    }
     NV.data.sessions.push(chat); NV.data.active[target] = chat.id; nvSave();
   }
   NV.data.lastSession = chat.id;
@@ -1042,8 +1080,8 @@ async function nvNewChat() {
   const character = characters.find(c => c.id === draft.target);
   const chat = NVCore.session(draft.target,draft.title || character?.name || NV.data.groups.find(g => `group:${g.id}` === draft.target)?.name);
   if (character) {
-    const greetings = [character.firstMessage,...(character.alternateGreetings || [])].filter(Boolean);
-    if (greetings.length) chat.messages.push(NVCore.message({role:'assistant',name:character.name,characterId:character.id,content:NVCore.expand(greetings[0],{char:character.name,user:nvPersona(chat).name}),variants:greetings.map(s => NVCore.expand(s,{char:character.name,user:nvPersona(chat).name}))}));
+    const greeting = nvGreetingMessage(chat, character);
+    if (greeting) chat.messages.push(greeting);
   }
   NV.data.sessions.push(chat); nvSelectSession(chat);
 }
@@ -1458,7 +1496,14 @@ async function nvMessageAction(chat,m,action) {
       } else {
         return nvCreateMessageVariant(chat,m);
       }
-      m.content = m.variants[m.variant]; nvClearMessageDisplay(m);
+      const selectedRaw = m.variants[m.variant];
+      const variantCharacter = m.role === 'assistant'
+        ? (getCharacters().find(character => character.id === m.characterId) || getCharacters().find(character => character.name === m.name) || null)
+        : null;
+      const messageIndex = chat.messages.indexOf(m);
+      const selectedResolved = nvResolveMessageMacros(selectedRaw, chat, variantCharacter, chat.messages.slice(0, Math.max(0, messageIndex)));
+      m.variants[m.variant] = selectedResolved;
+      m.content = selectedResolved; nvClearMessageDisplay(m);
       if (nvChatTranslationApplies(m.role) && String(nvChatTranslationConfig().targetLanguage).toLowerCase() !== 'en') {
         const display = await nvTranslateChatText(m.content,nvChatTranslationConfig().targetLanguage,'en'); nvSetMessageDisplay(m,display,nvChatTranslationConfig().targetLanguage);
       }

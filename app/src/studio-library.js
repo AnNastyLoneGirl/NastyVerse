@@ -162,67 +162,14 @@ async function nvSummarize(chat) {
   } catch(error) { toast(friendlyNativeError(error),'error'); }
   finally { state.sending=false; NV.activeRequest=null; if(state.currentPage==='chat') renderChat(); }
 }
-function nvVariableCommandTokens(value = '') {
-  const tokens = [];
-  String(value || '').replace(/"([^"]*)"|'([^']*)'|(\S+)/g, (_, doubleQuoted, singleQuoted, bare) => {
-    tokens.push(doubleQuoted ?? singleQuoted ?? bare ?? '');
-    return '';
-  });
-  return tokens;
-}
-function nvVariableCommandArg(value = '') {
-  const tokens = nvVariableCommandTokens(value);
-  const named = {};
-  const positional = [];
-  for (const token of tokens) {
-    const match = /^(key|name|index|as)=(.*)$/i.exec(token);
-    if (match) named[match[1].toLowerCase()] = match[2];
-    else positional.push(token);
-  }
-  return { named, positional };
-}
-function nvVariableCommandValue(chat, command, value) {
-  const cmd = nvVariableMacroCommand(command);
-  const globalScope = cmd.includes('global');
-  const parsed = nvVariableCommandArg(value);
-  const isRead = cmd === 'getvar' || cmd === 'getglobalvar';
-  const isHas = cmd === 'hasvar' || cmd === 'hasglobalvar';
-  const isDelete = cmd === 'flushvar' || cmd === 'flushglobalvar';
-  const isIncDec = /^(inc|dec)(global)?var$/.test(cmd);
-  const isSet = cmd === 'setvar' || cmd === 'setglobalvar';
-  const isAdd = cmd === 'addvar' || cmd === 'addglobalvar';
-  let positional = [...parsed.positional];
-  const name = nvVariableName(parsed.named.key ?? parsed.named.name ?? positional.shift() ?? '');
-  if (!name) throw new Error(nvText('Nom de variable manquant.','Missing variable name.'));
-  const index = parsed.named.index;
-  const as = parsed.named.as || 'string';
-  const remainder = positional.join(' ');
-  if (isRead) return nvVariableOutput(nvVariableGet(chat,name,globalScope,index));
-  if (isHas) return nvVariableHas(chat,name,globalScope) ? 'true' : 'false';
-  if (isSet) return nvVariableOutput(nvVariableSet(chat,name,remainder,globalScope,index,as));
-  if (isAdd) return nvVariableOutput(nvVariableAdd(chat,name,remainder,globalScope));
-  if (isIncDec) return nvVariableOutput(nvVariableAdd(chat,name,cmd.startsWith('inc') ? 1 : -1,globalScope));
-  if (isDelete) { nvVariableDelete(chat,name,globalScope); return ''; }
-  return '';
-}
 async function nvCommand(content,chat) {
-  const [rawName,...args]=content.slice(1).split(' '); const name=nvVariableMacroCommand(String(rawName || '').toLowerCase()); const value=args.join(' ').trim();
-  if(name==='help' || !name) { nvDialog(nvText('Raccourcis','Shortcuts'),`<div class="nv-help">${[['/help',nvText('Afficher cette aide','Show help')],['/continue',nvText('Continuer la réponse','Continue reply')],['/regen',nvText('Générer une variante','Generate variant')],['/note texte',nvText('Définir la direction de scène','Set scene direction')],['/memory texte',nvText('Définir la mémoire','Set memory')],['/sys texte',nvText('Ajouter une instruction système','Add a system instruction')],['/roll 2d6',nvText('Lancer les dés','Roll dice')],['/new',nvText('Nouvelle conversation','New conversation')],['/summarize',nvText('Proposer une mémoire','Suggest memory')],['/variables',nvText('Ouvrir le gestionnaire de variables','Open variable manager')],['/setvar key=nom valeur',nvText('Définir une variable du chat','Set a chat variable')],['/setvar key=inventaire index=0 valeur',nvText('Définir une clé/index JSON','Set a JSON key/index')],['/getvar nom',nvText('Lire une variable du chat','Read a chat variable')],['/getvar index=0 inventaire',nvText('Lire une clé/index JSON','Read a JSON key/index')],['/hasvar nom',nvText('Tester si une variable existe','Check whether a variable exists')],['/addvar key=nom valeur',nvText('Ajouter à une variable du chat','Add to a chat variable')],['/incvar nom · /decvar nom',nvText('Incrémenter / décrémenter','Increment / decrement')],['/flushvar nom',nvText('Supprimer une variable du chat','Delete a chat variable')],['/setglobalvar key=nom valeur',nvText('Définir une variable globale','Set a global variable')],['/getglobalvar nom',nvText('Lire une variable globale','Read a global variable')],['/hasglobalvar nom',nvText('Tester si une globale existe','Check whether a global exists')],['/addglobalvar key=nom valeur',nvText('Ajouter à une variable globale','Add to a global variable')],['/incglobalvar nom · /decglobalvar nom',nvText('Incrémenter / décrémenter une globale','Increment / decrement a global')],['/flushglobalvar nom',nvText('Supprimer une variable globale','Delete a global variable')]].map(([c,d])=>`<p><code>${nvEscape(c)}</code> — ${nvEscape(d)}</p>`).join('')}</div>`); return true; }
-  if(name==='variables' || name==='variableviewer' || name==='listvar' || name==='listchatvar') { NV.chatView='variables'; nvRenderChat(); return true; }
-  const variableCommands = new Set(['getvar','setvar','addvar','incvar','decvar','hasvar','flushvar','getglobalvar','setglobalvar','addglobalvar','incglobalvar','decglobalvar','hasglobalvar','flushglobalvar']);
-  if (variableCommands.has(name)) {
-    const result = nvVariableCommandValue(chat,name,value);
-    const readOnly = name.startsWith('get') || name.startsWith('has');
-    if (!readOnly) await nvSave();
-    if (name.startsWith('flush')) toast(nvText('Variable supprimée.','Variable deleted.'),'success');
-    else toast(`${name}: ${result === '' ? '∅' : result}`,'success');
-    return true;
-  }
+  const [name,...args]=content.slice(1).split(' '); const value=args.join(' ').trim();
+  if(name==='help' || !name) { nvDialog(nvText('Raccourcis','Shortcuts'),`<div class="nv-help">${[['/help',nvText('Afficher cette aide','Show help')],['/continue',nvText('Continuer la réponse','Continue reply')],['/regen',nvText('Générer une variante','Generate variant')],['/note texte',nvText('Définir la direction de scène','Set scene direction')],['/memory texte',nvText('Définir la mémoire','Set memory')],['/sys texte',nvText('Ajouter une instruction système','Add a system instruction')],['/roll 2d6',nvText('Lancer les dés','Roll dice')],['/new',nvText('Nouvelle conversation','New conversation')],['/summarize',nvText('Proposer une mémoire','Suggest memory')]].map(([c,d])=>`<p><code>${nvEscape(c)}</code> — ${nvEscape(d)}</p>`).join('')}</div>`); return true; }
   if(name==='new') { await nvNewChat(); return true; }
   if(name==='continue' || name==='regen') { await nvGenerate(chat,name==='regen'?'regenerate':'continue'); return true; }
   if(name==='summarize') { await nvSummarize(chat); return true; }
   if(name==='note' || name==='memory') { nvCheckpoint(chat); chat[name]=value; return true; }
-  if(name==='sys') { const variableResult=nvVariableExecute(value,chat); nvCheckpoint(chat); if(variableResult.text.trim()) chat.messages.push(NVCore.message({role:'system',content:variableResult.text,name:'System'})); if(variableResult.changed) await nvSave(); return true; }
+  if(name==='sys') { nvCheckpoint(chat); chat.messages.push(NVCore.message({role:'system',content:value,name:'System'})); return true; }
   if(name==='roll') { const match=/^(\d{1,2})d(\d{1,5})$/.exec(value||'1d20'); if(!match || +match[1]<1 || +match[1]>30 || +match[2]<1) throw new Error(nvText('Exemple : /roll 2d6 (30 dés maximum).','Example: /roll 2d6 (maximum 30 dice).')); const dice=Array.from({length:+match[1]},()=>{const n=new Uint32Array(1);crypto.getRandomValues(n);return 1+n[0] % +match[2];}); nvCheckpoint(chat);chat.messages.push(NVCore.message({role:'system',name:'🎲',content:`${value||'1d20'} → ${dice.join(' + ')} = ${dice.reduce((a,b)=>a+b,0)}`}));return true; }
   toast(nvText('Commande inconnue. /help affiche les commandes disponibles.','Unknown command. /help lists available commands.')); return true;
 }

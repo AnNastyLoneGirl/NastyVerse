@@ -92,294 +92,6 @@ function nvPersona(session = nvSession(), character = null) {
   const persona = NV.data.personas.find(p => p.id === (session?.personaId || NV.data.defaultPersona));
   return NVCore.personaContext(persona, {sessionId:session?.id,characterId:character?.id || (session?.targetId?.startsWith('group:') ? null : session?.targetId)});
 }
-function nvVariableMap(chat = nvSession(), globalScope = false) {
-  if (globalScope) {
-    if (!NV.data.globalVariables || typeof NV.data.globalVariables !== 'object' || Array.isArray(NV.data.globalVariables)) NV.data.globalVariables = {};
-    return NV.data.globalVariables;
-  }
-  if (!chat) return {};
-  if (!chat.variables || typeof chat.variables !== 'object' || Array.isArray(chat.variables)) chat.variables = {};
-  return chat.variables;
-}
-function nvVariableName(value) { return String(value ?? '').trim(); }
-function nvVariableStoredValue(value) { return String(value ?? ''); }
-function nvVariableOutput(value) {
-  if (value == null) return '';
-  if (typeof value === 'object') {
-    try { return JSON.stringify(value); } catch { return String(value); }
-  }
-  return String(value);
-}
-function nvVariableReadValue(value) {
-  const raw = nvVariableStoredValue(value);
-  if (raw.trim() !== '' && !Number.isNaN(Number(raw))) return Number(raw);
-  return raw;
-}
-function nvVariableIndexKey(index) {
-  const raw = String(index ?? '');
-  const numeric = Number(raw);
-  return raw.trim() !== '' && !Number.isNaN(numeric) ? numeric : raw;
-}
-function nvVariableConvert(value, as = 'string') {
-  const raw = String(value ?? '');
-  switch (String(as || 'string').toLowerCase()) {
-    case 'number': { const number = Number(raw); return Number.isNaN(number) ? 0 : number; }
-    case 'boolean': return /^(true|1|yes|on)$/i.test(raw);
-    case 'array':
-    case 'list': {
-      try { const parsed = JSON.parse(raw); return Array.isArray(parsed) ? parsed : [parsed]; } catch { return raw ? [raw] : []; }
-    }
-    case 'dictionary':
-    case 'object': {
-      try { const parsed = JSON.parse(raw); return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}; } catch { return {}; }
-    }
-    case 'auto': {
-      if (raw.trim() !== '' && !Number.isNaN(Number(raw))) return Number(raw);
-      if (/^(true|false)$/i.test(raw)) return raw.toLowerCase() === 'true';
-      try { const parsed = JSON.parse(raw); if (parsed && typeof parsed === 'object') return parsed; } catch {}
-      return raw;
-    }
-    default: return raw;
-  }
-}
-function nvVariableHas(chat, name, globalScope = false) {
-  const key = nvVariableName(name);
-  if (!key) return false;
-  return Object.prototype.hasOwnProperty.call(nvVariableMap(chat, globalScope), key);
-}
-function nvVariableGet(chat, name, globalScope = false, index = undefined) {
-  const key = nvVariableName(name);
-  if (!key) return '';
-  const map = nvVariableMap(chat, globalScope);
-  if (!Object.prototype.hasOwnProperty.call(map, key)) return '';
-  let value = map[key];
-  if (index !== undefined && index !== null && String(index) !== '') {
-    try {
-      const parsed = JSON.parse(String(value ?? 'null'));
-      value = parsed?.[nvVariableIndexKey(index)];
-      if (value && typeof value === 'object') return JSON.stringify(value);
-    } catch {}
-  }
-  return nvVariableReadValue(value);
-}
-function nvVariableSet(chat, name, value, globalScope = false, index = undefined, as = 'string') {
-  const key = nvVariableName(name);
-  if (!key) return '';
-  const map = nvVariableMap(chat, globalScope);
-  if (index !== undefined && index !== null && String(index) !== '') {
-    try {
-      let container = JSON.parse(String(map[key] ?? 'null'));
-      const target = nvVariableIndexKey(index);
-      if (container === null || typeof container !== 'object') container = typeof target === 'number' ? [] : {};
-      container[target] = nvVariableConvert(value, as);
-      map[key] = JSON.stringify(container);
-      return value;
-    } catch {
-      return '';
-    }
-  }
-  map[key] = nvVariableStoredValue(value);
-  return map[key];
-}
-function nvVariableDelete(chat, name, globalScope = false) {
-  const key = nvVariableName(name);
-  if (!key) return false;
-  const map = nvVariableMap(chat, globalScope);
-  if (!Object.prototype.hasOwnProperty.call(map, key)) return false;
-  delete map[key];
-  return true;
-}
-function nvVariableAdd(chat, name, increment, globalScope = false) {
-  const key = nvVariableName(name);
-  if (!key) return '';
-  const current = nvVariableGet(chat, key, globalScope);
-  try {
-    const parsed = JSON.parse(String(current ?? ''));
-    if (Array.isArray(parsed)) {
-      parsed.push(increment);
-      nvVariableSet(chat, key, JSON.stringify(parsed), globalScope);
-      return parsed;
-    }
-  } catch {}
-  const delta = String(increment ?? '');
-  const currentNumber = Number(current || 0);
-  const incrementNumber = Number(delta);
-  if (!Number.isNaN(currentNumber) && !Number.isNaN(incrementNumber)) {
-    const next = currentNumber + incrementNumber;
-    nvVariableSet(chat, key, next, globalScope);
-    return next;
-  }
-  const next = String(current || '') + delta;
-  nvVariableSet(chat, key, next, globalScope);
-  return next;
-}
-function nvVariablePretty(value) {
-  const raw = String(value ?? '');
-  try { const parsed = JSON.parse(raw); if (parsed && typeof parsed === 'object') return JSON.stringify(parsed,null,2); } catch {}
-  return raw;
-}
-function nvVariableCompact(value) {
-  const raw = String(value ?? '');
-  try { const parsed = JSON.parse(raw); if (parsed && typeof parsed === 'object') return JSON.stringify(parsed); } catch {}
-  return raw;
-}
-function nvVariableType(value) {
-  const raw = String(value ?? '');
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return 'array';
-    if (parsed && typeof parsed === 'object') return 'object';
-    if (typeof parsed === 'number') return 'number';
-    if (typeof parsed === 'boolean') return 'boolean';
-  } catch {}
-  if (raw.trim() !== '' && !Number.isNaN(Number(raw))) return 'number';
-  return 'text';
-}
-function nvVariableMacroParts(payload, count = 2, colonSyntax = true) {
-  const source = String(payload ?? '').trim();
-  if (colonSyntax) {
-    const parts = source.split('::');
-    if (count <= 1) return [parts.join('::')];
-    return [...parts.slice(0, count - 1), parts.slice(count - 1).join('::')];
-  }
-  const parts = [];
-  let rest = source;
-  for (let i = 0; i < count - 1; i += 1) {
-    const match = /^(?:"([^"]*)"|'([^']*)'|(\S+))(?:\s+([\s\S]*))?$/.exec(rest);
-    if (!match) { parts.push(rest); rest = ''; continue; }
-    parts.push(match[1] ?? match[2] ?? match[3] ?? '');
-    rest = match[4] ?? '';
-  }
-  parts.push(rest);
-  return parts;
-}
-function nvVariableMacroCommand(command) {
-  const aliases = {
-    varexists:'hasvar', deletevar:'flushvar', setvarindex:'setvarkey', getvarindex:'getvarkey',
-    setchatvar:'setvar', getchatvar:'getvar', addchatvar:'addvar', incchatvar:'incvar', decchatvar:'decvar',
-    globalvarexists:'hasglobalvar', deleteglobalvar:'flushglobalvar',
-    setglobalvarindex:'setglobalvarkey', getglobalvarindex:'getglobalvarkey'
-  };
-  const key = String(command || '').toLowerCase();
-  return aliases[key] || key;
-}
-function nvVariableIsFalsy(value) {
-  const raw = nvVariableOutput(value).trim();
-  if (!raw) return true;
-  if (!Number.isNaN(Number(raw)) && Number(raw) === 0) return true;
-  return /^(?:false|off|no|null|undefined)$/i.test(raw);
-}
-function nvApplyVariableMacro(command, payload, chat, mutate, colonSyntax = true) {
-  const cmd = nvVariableMacroCommand(command);
-  const globalScope = cmd.includes('global');
-  const keyed = cmd.includes('varkey');
-  const isGet = cmd === 'getvar' || cmd === 'getglobalvar';
-  const isHas = cmd === 'hasvar' || cmd === 'hasglobalvar';
-  const isSet = cmd === 'setvar' || cmd === 'setglobalvar';
-  const isAdd = cmd === 'addvar' || cmd === 'addglobalvar';
-  const isInc = cmd === 'incvar' || cmd === 'incglobalvar';
-  const isDec = cmd === 'decvar' || cmd === 'decglobalvar';
-  const isDelete = cmd === 'flushvar' || cmd === 'flushglobalvar';
-  const isGetKey = cmd === 'getvarkey' || cmd === 'getglobalvarkey';
-  const isSetKey = cmd === 'setvarkey' || cmd === 'setglobalvarkey';
-  const parts = nvVariableMacroParts(payload, keyed ? (isSetKey ? 3 : 2) : (isSet || isAdd ? 2 : 1), colonSyntax);
-  const name = nvVariableName(parts[0]);
-  if (!name) return { output:'', changed:false };
-  if (isGet) return { output:nvVariableOutput(nvVariableGet(chat,name,globalScope)), changed:false };
-  if (isHas) return { output:nvVariableHas(chat,name,globalScope) ? 'true' : 'false', changed:false };
-  if (isGetKey) return { output:nvVariableOutput(nvVariableGet(chat,name,globalScope,parts[1])), changed:false };
-  if (!mutate) {
-    if (isInc || isDec) return { output:nvVariableOutput(nvVariableGet(chat,name,globalScope)), changed:false };
-    return { output:'', changed:false };
-  }
-  if (isSet) { nvVariableSet(chat,name,parts[1] ?? '',globalScope); return { output:'', changed:true }; }
-  if (isAdd) { nvVariableAdd(chat,name,parts[1] ?? '',globalScope); return { output:'', changed:true }; }
-  if (isInc) return { output:nvVariableOutput(nvVariableAdd(chat,name,1,globalScope)), changed:true };
-  if (isDec) return { output:nvVariableOutput(nvVariableAdd(chat,name,-1,globalScope)), changed:true };
-  if (isDelete) return { output:'', changed:nvVariableDelete(chat,name,globalScope) };
-  if (isSetKey) { nvVariableSet(chat,name,parts[2] ?? '',globalScope,parts[1],'auto'); return { output:'', changed:true }; }
-  return { output:'', changed:false };
-}
-const NV_VARIABLE_MACRO_COMMANDS = [
-  'setglobalvarkey','getglobalvarkey','setglobalvarindex','getglobalvarindex',
-  'setglobalvar','addglobalvar','incglobalvar','decglobalvar','getglobalvar','hasglobalvar','globalvarexists','deleteglobalvar','flushglobalvar',
-  'setvarkey','getvarkey','setvarindex','getvarindex',
-  'setvar','addvar','incvar','decvar','getvar','hasvar','varexists','deletevar','flushvar'
-];
-function nvVariableShorthandOperation(chat, globalScope, name, operator, rawValue, mutate) {
-  const current = nvVariableGet(chat,name,globalScope);
-  const resolveValue = () => nvProcessVariableMacros(String(rawValue ?? ''),chat,mutate).text;
-  if (!operator) return { output:nvVariableOutput(current), changed:false };
-  if (operator === '||') return { output:nvVariableIsFalsy(current) ? resolveValue() : nvVariableOutput(current), changed:false };
-  if (operator === '??') return { output:nvVariableHas(chat,name,globalScope) ? nvVariableOutput(current) : resolveValue(), changed:false };
-  if (operator === '==') return { output:nvVariableOutput(current) === nvVariableOutput(resolveValue()) ? 'true' : 'false', changed:false };
-  if (operator === '!=') return { output:nvVariableOutput(current) !== nvVariableOutput(resolveValue()) ? 'true' : 'false', changed:false };
-  if (['>','>=','<','<='].includes(operator)) {
-    const left = Number(current), right = Number(resolveValue());
-    if (Number.isNaN(left) || Number.isNaN(right)) return { output:'false', changed:false };
-    const ok = operator === '>' ? left > right : operator === '>=' ? left >= right : operator === '<' ? left < right : left <= right;
-    return { output:ok ? 'true' : 'false', changed:false };
-  }
-  if (!mutate) return { output:(operator === '++' || operator === '--') ? nvVariableOutput(current) : '', changed:false };
-  if (operator === '=') { nvVariableSet(chat,name,resolveValue(),globalScope); return { output:'', changed:true }; }
-  if (operator === '+=') { nvVariableAdd(chat,name,resolveValue(),globalScope); return { output:'', changed:true }; }
-  if (operator === '-=') {
-    const amount = Number(resolveValue());
-    if (!Number.isNaN(amount)) nvVariableAdd(chat,name,-amount,globalScope);
-    return { output:'', changed:!Number.isNaN(amount) };
-  }
-  if (operator === '++') return { output:nvVariableOutput(nvVariableAdd(chat,name,1,globalScope)), changed:true };
-  if (operator === '--') return { output:nvVariableOutput(nvVariableAdd(chat,name,-1,globalScope)), changed:true };
-  if (operator === '||=') {
-    if (nvVariableIsFalsy(current)) {
-      const value = resolveValue(); nvVariableSet(chat,name,value,globalScope); return { output:nvVariableOutput(value), changed:true };
-    }
-    return { output:nvVariableOutput(current), changed:false };
-  }
-  if (operator === '??=') {
-    if (!nvVariableHas(chat,name,globalScope)) {
-      const value = resolveValue(); nvVariableSet(chat,name,value,globalScope); return { output:nvVariableOutput(value), changed:true };
-    }
-    return { output:nvVariableOutput(current), changed:false };
-  }
-  return { output:'', changed:false };
-}
-function nvProcessVariableMacros(source, chat = nvSession(), mutate = true) {
-  let changed = false;
-  let text = String(source ?? '');
-  const commandPattern = NV_VARIABLE_MACRO_COMMANDS.join('|');
-  text = text.replace(new RegExp(`\\{\\{\\s*(${commandPattern})::([\\s\\S]*?)\\}\\}`,'gi'), (full, command, payload) => {
-    const result = nvApplyVariableMacro(command,payload,chat,mutate,true);
-    changed ||= result.changed;
-    return result.output;
-  });
-  text = text.replace(new RegExp(`\\{\\{\\s*(${commandPattern})\\s+([\\s\\S]*?)\\}\\}`,'gi'), (full, command, payload) => {
-    const result = nvApplyVariableMacro(command,payload,chat,mutate,false);
-    changed ||= result.changed;
-    return result.output;
-  });
-  const shorthand = /\{\{\s*([.$])([A-Za-z_][\w.-]*)(?:\s*(\?\?=|\|\|=|\+\+|--|\+=|-=|==|!=|>=|<=|=|\|\||\?\?|>|<)\s*([\s\S]*?))?\s*\}\}/g;
-  text = text.replace(shorthand, (full, scope, name, operator, value) => {
-    const result = nvVariableShorthandOperation(chat,scope === '$',name,operator || '',value,mutate);
-    changed ||= result.changed;
-    return result.output;
-  });
-  return { text, changed };
-}
-// Macro evaluation happens at explicit lifecycle points only: once when a chat
-// message enters storage, or once while a prompt field is assembled. Rendering
-// a stored message never calls this function, so stateful macros cannot replay.
-function nvVariableExpand(source, chat = nvSession()) {
-  return nvProcessVariableMacros(source, chat, true).text;
-}
-function nvVariableExecute(source, chat = nvSession()) {
-  return nvProcessVariableMacros(source, chat, true);
-}
-function nvVariableSetAndRefresh(chat, name, value, globalScope = false) {
-  const result = nvVariableSet(chat,name,value,globalScope);
-  nvSave();
-  return result;
-}
 function nvEnsureSession(character) {
   const target = NV.groupId ? `group:${NV.groupId}` : character?.id;
   if (!target) return null;
@@ -415,21 +127,15 @@ function nvPromptData(character, history = NV.promptHistory || nvContextSession(
   const books = NV.data.books.filter(b => b.global || chat?.bookIds?.includes(b.id) || b.characterId === character.id);
   if (character.characterBook?.entries) { const book = NVCore.normalizeBook(character.characterBook, character.name); book.id = `card:${character.id}`; books.push(book); }
   const lore = NVCore.lore(books, history, NV.data.lore, `${chat?.id || ''}:${history.length}`);
-  const macroContext = { char: character.name, user: persona.name, persona: persona.description, description: character.description, scenario: chat?.scenario || character.scenario, lastMessage: history.at(-1)?.content };
-  const expandBase = source => NVCore.expand(source, macroContext);
-  // SillyTavern evaluates variable macros when a prompt field is assembled.
-  // Stateful macros therefore run once per field/per generation, never during UI rendering.
-  const expand = source => nvVariableExecute(expandBase(source), chat).text;
-  // Stored chat messages have already executed their variable macros on entry.
-  const expandMessage = source => expandBase(source);
+  const expand = source => NVCore.expand(source, { char: character.name, user: persona.name, persona: persona.description, description: character.description, scenario: chat?.scenario || character.scenario, lastMessage: history.at(-1)?.content });
   const sources = NVCore.retrieve(NV.data.documents.filter(d => chat?.documentIds?.includes(d.id)), history.filter(m => m.role === 'user').slice(-2).map(m => m.content).join('\n'));
   const memory = chat?.memory ? `[${nvText('Mémoire de la conversation','Conversation memory')}]\n${chat.memory}` : '';
   const documents = sources.length ? `[${nvText('Extraits de documents de référence','Reference document excerpts')}]\n${sources.map(d => `[${d.name} #${d.index + 1}]\n${d.content}`).join('\n\n')}` : '';
-  return { persona, lore, sources, before:lore.before, after:[lore.after, memory, documents].filter(Boolean).join('\n\n'), expand, expandMessage };
+  return { persona, lore, sources, before: expand(lore.before), after: expand([lore.after, memory, documents].filter(Boolean).join('\n\n')), expand };
 }
-function nvPreparedHistory(character, history, data = nvPromptData(character, history)) {
-  const chat = nvContextSession(character);
-  let entries = history.filter(m => !m.hidden).map(m => ({ ...m, content: data.expandMessage(m.content) }));
+function nvPreparedHistory(character, history) {
+  const chat = nvContextSession(character); const data = nvPromptData(character, history);
+  let entries = history.filter(m => !m.hidden).map(m => ({ ...m, content: data.expand(m.content) }));
   if (chat?.targetId.startsWith('group:')) entries = entries.map(m => ({ ...m, content: m.role === 'assistant' && m.name && m.name !== character.name ? `${m.name}: ${m.content}` : m.content }));
   if (chat?.note && history.filter(m => m.role === 'user').length % Math.max(1, Number(chat.noteInterval) || 1) === 0) {
     entries.splice(Math.max(0, entries.length - Number(chat.noteDepth || 0)), 0, { role: 'system', content: data.expand(chat.note), injectedStory: true });
@@ -439,10 +145,9 @@ function nvPreparedHistory(character, history, data = nvPromptData(character, hi
 function nvBuildChat(character, history, params) {
   const data = nvPromptData(character, history), chat = nvContextSession(character);
   const permanent = [effectiveSystemPrompt(character), data.before, character.description, character.personality, chat?.scenario || character.scenario, data.persona.description, data.after].filter(Boolean).map(content => ({ role: 'system', content: data.expand(content) }));
-  let examples = parseSillyTavernExamples(character.exampleMessages, character, getActiveContextPreset(), false).flatMap(block => parseExampleDialogueBlock(block, character)).map(m => ({ role: m.role, content: data.expand(m.content) }));
-  let recent = nvPreparedHistory(character, history, data).map(m => ({ role: m.attachments?.some(a => a.sendToModel) ? 'user' : m.role, content: nvMultimodalContent(m) }));
-  const postHistory = effectivePostHistoryInstructions(character);
-  const tail = postHistory ? [{ role: 'system', content: data.expand(postHistory) }] : [];
+  let examples = parseSillyTavernExamples(character.exampleMessages, character, getActiveContextPreset(), false).flatMap(block => parseExampleDialogueBlock(block, character)).map(m => ({ role: m.role, content: m.content }));
+  let recent = nvPreparedHistory(character, history).map(m => ({ role: m.attachments?.some(a => a.sendToModel) ? 'user' : m.role, content: nvMultimodalContent(m) }));
+  const tail = effectivePostHistoryInstructions(character) ? [{ role: 'system', content: effectivePostHistoryInstructions(character) }] : [];
   const budget = Math.max(128, params.contextTokens - params.maxTokens);
   if (getContextFormatting().exampleMessagesBehavior === 'strip') examples = [];
   const assemble = () => [...permanent, ...examples, ...recent, ...tail];
@@ -697,7 +402,7 @@ function nvPromptInspectionRecord(character, history, chat, request, params, rec
   const persona = data.persona || {};
   const scenario = chat?.scenario || character.scenario || '';
   const documentsText = (data.sources || []).map(source => source.content || '').join('\n\n');
-  const historyText = history.filter(entry => !entry.hidden).map(entry => entry.content || '').join('\n\n');
+  const historyText = nvPreparedHistory(character, history).filter(entry => !entry.injectedStory).map(entry => entry.content || '').join('\n\n');
   const characterItems = {
     description: estimateTokens(character.description),
     personality: estimateTokens(character.personality),
@@ -764,8 +469,7 @@ function nvMessageVariantNav(message) {
 }
 function nvMessageArticle(message, index, chat, persona, fallbackCharacter, settings) {
   const layout = nvMessageLayout(message, persona, fallbackCharacter, settings);
-  const displayContent = nvMessageDisplayContent(message, chat);
-  const hiddenBySearch = NV.search && !displayContent.toLocaleLowerCase().includes(NV.search.toLocaleLowerCase());
+  const hiddenBySearch = NV.search && !nvMessageDisplayContent(message).toLocaleLowerCase().includes(NV.search.toLocaleLowerCase());
   const deleteIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6.5 7l.8 13h9.4l.8-13M10 11v5M14 11v5"/></svg>`;
   const editIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10.8-10.8a2.1 2.1 0 0 0-3-3L5 17v3ZM14.5 7.5l3 3"/></svg>`;
   const contextIcon = message.hidden
@@ -776,7 +480,7 @@ function nvMessageArticle(message, index, chat, persona, fallbackCharacter, sett
   const promptAction = message.role === 'assistant' ? `<button type="button" data-message-action="prompt" aria-label="${nvText('Voir le prompt de ce message','Inspect this message prompt')}" title="${nvText('Voir le prompt de ce message','Inspect this message prompt')}">${promptIcon}</button>` : '';
   const actions = `<div class="nv-message-actions"><button type="button" data-message-action="delete" aria-label="${nvText('Supprimer le message','Delete message')}" title="${nvText('Supprimer le message','Delete message')}">${deleteIcon}</button><button type="button" data-message-action="edit" aria-label="${nvText('Éditer le message','Edit message')}" title="${nvText('Éditer le message','Edit message')}">${editIcon}</button><button type="button" class="nv-context-toggle ${message.hidden ? 'is-hidden' : 'is-visible'}" data-message-action="hide" aria-pressed="${message.hidden ? 'true' : 'false'}" aria-label="${contextLabel}" title="${contextLabel}">${contextIcon}</button>${promptAction}</div>`;
   const variantNav = nvMessageVariantNav(message);
-  return `<article class="message message-${message.role} nv-align-${layout.align} ${message.hidden ? 'nv-excluded' : ''}" data-message="${nvEscape(message.id)}" ${hiddenBySearch ? 'hidden' : ''}>${actions}<div class="nv-message-row nv-avatar-${layout.side} nv-avatar-v-${layout.vertical}">${layout.avatar}<div class="nv-message-body"><div class="message-role">${nvEscape(nvMessageRoleName(message, persona, fallbackCharacter))}<small>${message.hidden ? nvText(' · Hors contexte',' · Excluded') : ''}</small></div><div class="message-bubble nv-markdown-surface ${variantNav ? 'nv-has-variant-nav' : ''}">${nvMarkdown(displayContent)}${nvMediaMarkup(message.attachments)}${variantNav}</div></div></div></article>`;
+  return `<article class="message message-${message.role} nv-align-${layout.align} ${message.hidden ? 'nv-excluded' : ''}" data-message="${nvEscape(message.id)}" ${hiddenBySearch ? 'hidden' : ''}>${actions}<div class="nv-message-row nv-avatar-${layout.side} nv-avatar-v-${layout.vertical}">${layout.avatar}<div class="nv-message-body"><div class="message-role">${nvEscape(nvMessageRoleName(message, persona, fallbackCharacter))}<small>${message.hidden ? nvText(' · Hors contexte',' · Excluded') : ''}</small></div><div class="message-bubble nv-markdown-surface ${variantNav ? 'nv-has-variant-nav' : ''}">${nvMarkdown(nvMessageDisplayContent(message))}${nvMediaMarkup(message.attachments)}${variantNav}</div></div></div></article>`;
 }
 function nvStreamingMessageArticle(chat, persona, fallbackCharacter, settings) {
   if (!(state.sending && NV.activeRequest?.sessionId === chat.id) || NV.activeRequest?.variantMessageId) return '';
@@ -1255,8 +959,8 @@ function nvSessionTargetLabel(session) {
   return getCharacters().find(character => character.id === session.targetId)?.name || nvText('Personnage supprimé','Deleted character');
 }
 function nvSessionPreview(session) {
-  const message = [...(session?.messages || [])].reverse().find(item => item && item.role !== 'system' && String(nvMessageDisplayContent(item, session) || '').trim());
-  return message ? String(nvMessageDisplayContent(message, session)).replace(/\s+/g,' ').trim().slice(0,220) : nvText('Cette discussion ne contient pas encore de message.','This chat does not have any messages yet.');
+  const message = [...(session?.messages || [])].reverse().find(item => item && item.role !== 'system' && String(nvMessageDisplayContent(item) || '').trim());
+  return message ? String(nvMessageDisplayContent(message)).replace(/\s+/g,' ').trim().slice(0,220) : nvText('Cette discussion ne contient pas encore de message.','This chat does not have any messages yet.');
 }
 function nvRenderChatLibrary() {
   const sessions = [...NV.data.sessions].sort((a,b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt);
@@ -1292,53 +996,6 @@ function nvRenderChatLibrary() {
   };
 }
 
-function nvVariableScript(chat, globalScope = false) {
-  const command = globalScope ? 'setglobalvar' : 'setvar';
-  return Object.entries(nvVariableMap(chat,globalScope)).sort(([a],[b]) => a.localeCompare(b)).map(([name,value]) => `/${command} key="${String(name).replaceAll('"','\\"')}" ${String(value ?? '')}`).join(' |\n');
-}
-function nvVariablePanel(chat, globalScope = false) {
-  const map = nvVariableMap(chat,globalScope);
-  const title = globalScope ? nvText('Variables globales','Global variables') : nvText('Variables du chat','Chat variables');
-  const description = globalScope ? nvText('Disponibles dans toutes les discussions.','Available in every chat.') : nvText('Enregistrées uniquement avec la discussion actuelle.','Stored only with the current chat.');
-  const rows = Object.entries(map).sort(([a],[b]) => a.localeCompare(b)).map(([name,value]) => `<article class="nv-variable-row" data-var-row data-scope="${globalScope ? 'global' : 'local'}" data-original-name="${nvEscape(name)}">
-    <div class="nv-variable-row-head"><input class="nv-variable-name" value="${nvEscape(name)}" aria-label="${nvEscape(nvText('Nom de la variable','Variable name'))}"><span class="nv-variable-type">${nvEscape(nvVariableType(value))}</span></div>
-    <textarea class="nv-variable-value" rows="${nvVariableType(value) === 'object' || nvVariableType(value) === 'array' ? 5 : 2}" spellcheck="false" aria-label="${nvEscape(nvText('Valeur','Value'))}">${nvEscape(nvVariablePretty(value))}</textarea>
-    <div class="nv-variable-row-actions"><button type="button" class="btn btn-ghost btn-small" data-var-save>${nvText('Enregistrer','Save')}</button><button type="button" class="btn btn-ghost btn-small" data-var-delete>${nvText('Supprimer','Delete')}</button></div>
-  </article>`).join('');
-  return `<section class="nv-variable-panel" data-var-panel="${globalScope ? 'global' : 'local'}">
-    <header><div><span class="nv-eyebrow">${globalScope ? 'GLOBAL' : 'CHAT'}</span><h2>${title}</h2><p>${description}</p></div><strong>${Object.keys(map).length}</strong></header>
-    <form class="nv-variable-add" data-var-add-form data-scope="${globalScope ? 'global' : 'local'}"><input name="name" placeholder="${nvText('Nom','Name')}" required><input name="value" placeholder="${nvText('Valeur','Value')}"><button class="btn btn-primary btn-small" type="submit">${nvText('Ajouter','Add')}</button></form>
-    <div class="nv-variable-panel-tools"><button type="button" class="btn btn-ghost btn-small" data-var-copy data-scope="${globalScope ? 'global' : 'local'}">${nvText('Copier les commandes','Copy commands')}</button><button type="button" class="btn btn-ghost btn-small" data-var-clear data-scope="${globalScope ? 'global' : 'local'}" ${Object.keys(map).length ? '' : 'disabled'}>${nvText('Tout supprimer','Clear all')}</button></div>
-    <div class="nv-variable-list">${rows || `<div class="nv-variable-empty">${nvText('Aucune variable.','No variables.')}</div>`}</div>
-  </section>`;
-}
-function nvRenderVariablesPage() {
-  const chat = nvSession();
-  if (!chat) { NV.chatView = 'library'; nvRenderChatLibrary(); return; }
-  pageRoot.innerHTML = `<section class="nv-variables-page">
-    <div class="nv-variables-head"><div><span class="nv-eyebrow">NASTYVERSE</span><h1>${nvText('Variables','Variables')}</h1><p>${nvText('Inspectez et modifiez les variables du chat actuel et les variables globales. Les valeurs JSON peuvent être éditées directement.','Inspect and edit current-chat and global variables. JSON values can be edited directly.')}</p></div><button type="button" class="btn btn-ghost" data-nv="variables-back">← ${nvText('Discussion','Chat')}</button></div>
-    <div class="nv-variable-help"><code>{{getvar::nom}}</code><code>{{setvar::nom::valeur}}</code><code>{{addvar::score::1}}</code><code>{{incvar::tour}}</code><code>{{hasvar::nom}}</code><code>{{setvarkey::inventaire::0::Épée}}</code><code>{{getglobalvar::monde}}</code><code>{{.score++}}</code><code>{{$monde}}</code><code>/setvar key=nom valeur</code><code>/getvar index=0 inventaire</code></div>
-    <div class="nv-variable-grid">${nvVariablePanel(chat,false)}${nvVariablePanel(chat,true)}</div>
-  </section>`;
-  nvBind(pageRoot,{ 'variables-back':()=>{NV.chatView='conversation';nvRenderChat();} });
-  pageRoot.querySelectorAll('[data-var-add-form]').forEach(form => form.addEventListener('submit',nvGuard(async event => {
-    event.preventDefault(); const data=new FormData(form); const name=nvVariableName(data.get('name')); if(!name)return;
-    const globalScope=form.dataset.scope==='global'; nvVariableSet(chat,name,nvVariableCompact(data.get('value')),globalScope); await nvSave(); nvRenderVariablesPage();
-  })));
-  pageRoot.querySelectorAll('[data-var-save]').forEach(button => button.addEventListener('click',nvGuard(async()=>{
-    const row=button.closest('[data-var-row]'); const globalScope=row.dataset.scope==='global'; const oldName=row.dataset.originalName; const name=nvVariableName(row.querySelector('.nv-variable-name').value); if(!name)return;
-    const value=nvVariableCompact(row.querySelector('.nv-variable-value').value); if(name!==oldName)nvVariableDelete(chat,oldName,globalScope); nvVariableSet(chat,name,value,globalScope); await nvSave(); nvRenderVariablesPage();
-  })));
-  pageRoot.querySelectorAll('[data-var-delete]').forEach(button => button.addEventListener('click',nvGuard(async()=>{
-    const row=button.closest('[data-var-row]'); if(!confirm(nvText('Supprimer cette variable ?','Delete this variable?')))return; nvVariableDelete(chat,row.dataset.originalName,row.dataset.scope==='global'); await nvSave(); nvRenderVariablesPage();
-  })));
-  pageRoot.querySelectorAll('[data-var-clear]').forEach(button => button.addEventListener('click',nvGuard(async()=>{
-    const globalScope=button.dataset.scope==='global'; if(!confirm(globalScope?nvText('Supprimer toutes les variables globales ?','Delete all global variables?'):nvText('Supprimer toutes les variables de cette discussion ?','Delete all variables in this chat?')))return;
-    const map=nvVariableMap(chat,globalScope); Object.keys(map).forEach(key=>delete map[key]); await nvSave(); nvRenderVariablesPage();
-  })));
-  pageRoot.querySelectorAll('[data-var-copy]').forEach(button => button.addEventListener('click',()=>navigator.clipboard.writeText(nvVariableScript(chat,button.dataset.scope==='global'))));
-}
-
 function nvRenderConversation(scrollSnapshot = null) {
   const chat = nvSession();
   if (!chat) { NV.chatView = 'library'; nvRenderChatLibrary(); return; }
@@ -1354,18 +1011,18 @@ function nvRenderConversation(scrollSnapshot = null) {
   if (typeof applyMessagePersonalization === 'function') applyMessagePersonalization(messageAppearance);
   pageRoot.innerHTML = `<div class="nv-workspace nv-workspace-conversation"><section class="nv-chat-main nv-chat-main-standalone">
     ${!TAURI ? `<div class="nv-preview-note">${nvText('Aperçu navigateur : les réponses sont simulées. Utilisez le lanceur pour votre modèle.','Browser preview: replies are simulated. Use the launcher for your model.')}</div>` : ''}
-    <div class="nv-chat-toolbar">${nvButton('timeline','Timeline')}${nvButton('variables',nvText('Variables','Variables'))}<input id="nv-message-search" type="search" value="${nvEscape(NV.search)}" placeholder="${nvText('Rechercher dans les messages…','Search messages…')}" aria-label="${nvText('Rechercher dans les messages','Search messages')}"><div class="nv-chat-top-actions">${nvChatTopbarActions()}</div></div>
+    <div class="nv-chat-toolbar">${nvButton('timeline','Timeline')}<input id="nv-message-search" type="search" value="${nvEscape(NV.search)}" placeholder="${nvText('Rechercher dans les messages…','Search messages…')}" aria-label="${nvText('Rechercher dans les messages','Search messages')}"><div class="nv-chat-top-actions">${nvChatTopbarActions()}</div></div>
     <div class="messages" id="messages" data-chat-session="${nvEscape(chat.id)}" aria-live="polite">${chat.messages.map((m,index) => nvMessageArticle(m,index,chat,persona,character,messageAppearance)).join('')}${nvStreamingMessageArticle(chat,persona,character,messageAppearance)}</div>
     <div class="nv-compose-area"><div class="nv-quick-replies">${NV.data.replies.filter(r => r.enabled !== false).map(r => `<button class="btn btn-ghost btn-small" data-reply="${nvEscape(r.id)}">${nvEscape(r.name)}</button>`).join('')}</div>${nvMediaMarkup(chat.draftImages,true)}<form class="composer nv-composer-row" id="composer"><details class="nv-composer-menu"><summary class="nv-composer-icon" aria-label="${nvText('Outils du message','Message tools')}" title="${nvText('Outils du message','Message tools')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.64 5.64l2.12 2.12M16.24 16.24l2.12 2.12M18.36 5.64l-2.12 2.12M7.76 16.24l-2.12 2.12M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/></svg></summary><div class="nv-composer-popover"><button type="button" data-nv="illustrate">${nvText('Illustrer','Illustrate')}</button></div></details><button type="button" class="nv-composer-icon" data-nv="attach" aria-label="${nvText('Joindre une image','Attach image')}" title="${nvText('Joindre une image','Attach image')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button><textarea id="composer-input" rows="1" aria-label="${nvText('Votre message','Your message')}" placeholder="${nvText('Écrivez votre message… (/ pour les commandes)','Write a message… (/ for commands)')}" ${state.sending ? 'disabled' : ''}>${nvEscape(chat.draft || '')}</textarea><button type="button" class="nv-composer-icon" data-nv="voice" aria-label="${nvText('Dicter','Dictate')}" title="${nvText('Dicter','Dictate')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/><path d="M18 11a6 6 0 0 1-12 0M12 17v4M9 21h6"/></svg></button>${state.sending ? `<button type="button" class="composer-send" data-nv="stop">${nvText('Arrêter','Stop')}</button>` : `<button type="button" class="composer-send" data-nv="continue">${nvText('Continuer','Continue')}</button>`}<button type="submit" class="composer-send" ${state.sending ? 'disabled' : ''}>${nvText('Envoyer','Send')}</button></form></div>
   </section></div>`;
   if (typeof refreshMessageAvatarFraming === 'function') requestAnimationFrame(() => refreshMessageAvatarFraming(messageAppearance, pageRoot));
-  nvBind(pageRoot, { new: nvNewChat, timeline: () => nvOpenTimeline(chat), variables: () => { NV.chatView='variables'; nvRenderChat(); }, 'chat-files': () => nvChatFilesManager(chat), 'rename-chat': () => nvRenameCurrentChat(chat), 'delete-chat': () => nvDeleteCurrentChat(chat), 'close-chat': () => nvCloseCurrentChat(chat), continue: () => nvGenerate(chat,'continue'), stop: nvStop, voice: () => nvDictate(chat) });
+  nvBind(pageRoot, { new: nvNewChat, timeline: () => nvOpenTimeline(chat), 'chat-files': () => nvChatFilesManager(chat), 'rename-chat': () => nvRenameCurrentChat(chat), 'delete-chat': () => nvDeleteCurrentChat(chat), 'close-chat': () => nvCloseCurrentChat(chat), continue: () => nvGenerate(chat,'continue'), stop: nvStop, voice: () => nvDictate(chat) });
   const input = document.getElementById('composer-input');
   nvResizeComposerInput(input);
   input.oninput = () => { chat.draft = input.value; nvResizeComposerInput(input); nvSave(); };
   input.onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); document.getElementById('composer').requestSubmit(); } };
   document.getElementById('composer').onsubmit = nvGuard(async event => { event.preventDefault(); const content = input.value.trim(); if ((!content && !chat.draftImages?.length) || state.sending) return; if (content.startsWith('/') && await nvCommand(content,chat)) { chat.draft = ''; nvChanged(chat); return; } await nvSend(chat, content); });
-  document.getElementById('nv-message-search').oninput = event => { NV.search = event.target.value; pageRoot.querySelectorAll('[data-message]').forEach(article => { const m = chat.messages.find(m => m.id === article.dataset.message); article.hidden = !nvMessageDisplayContent(m,chat).toLocaleLowerCase().includes(NV.search.toLocaleLowerCase()); }); };
+  document.getElementById('nv-message-search').oninput = event => { NV.search = event.target.value; pageRoot.querySelectorAll('[data-message]').forEach(article => { const m = chat.messages.find(m => m.id === article.dataset.message); article.hidden = !nvMessageDisplayContent(m).toLocaleLowerCase().includes(NV.search.toLocaleLowerCase()); }); };
   pageRoot.querySelectorAll('[data-message-action]').forEach(b => b.onclick = nvGuard(() => nvMessageAction(chat,chat.messages.find(m => m.id === b.closest('[data-message]').dataset.message),b.dataset.messageAction)));
   pageRoot.querySelectorAll('[data-reply]').forEach(b => b.onclick = () => { const r = NV.data.replies.find(r => r.id === b.dataset.reply); input.value = chat.draft = NVCore.expand(r.content,{char:character?.name,user:persona.name}); nvResizeComposerInput(input); nvSave(); input.focus(); });
   nvMediaBind(chat); nvAppearance(); nvRestoreChatScroll(scrollSnapshot); nvEnsureChatDisplayTranslations(chat).catch(error => console.warn('[translate] Chat display refresh failed.', error));
@@ -1374,7 +1031,6 @@ function nvRenderConversation(scrollSnapshot = null) {
 function nvRenderChat(scrollSnapshot = null) {
   if (!NV.ready) return;
   if (NV.chatView === 'conversation') nvRenderConversation(scrollSnapshot);
-  else if (NV.chatView === 'variables') nvRenderVariablesPage();
   else nvRenderChatLibrary();
 }
 async function nvNewChat() {
@@ -1407,8 +1063,6 @@ async function nvSend(chat,content) {
   NV.preparing = true;
   try {
     content = await nvRules(content,'input');
-    const variableResult = nvVariableExecute(content,chat); content = variableResult.text;
-    if (!content.trim() && variableResult.changed && !chat.draftImages?.length) { chat.draft=''; chat.updatedAt=Date.now(); await nvSave(); if(state.currentPage==='chat')renderChat(); return; }
     if(!content.trim() && chat.draftImages?.length) content = chat.draftImages.some(a=>a.sendToModel) ? nvText('Que vois-tu sur cette image ?','What do you see in this image?') : nvText('[Image conservée localement, non transmise au modèle.]','[Image stored locally, not sent to the model.]');
     if (!state.backendConfig) state.backendConfig = await invoke('load_backend_config');
     if (effectiveBackendApiMode(state.backendConfig)==='text' && chat.draftImages?.some(a=>a.sendToModel)) throw new Error(nvText('Les images nécessitent le mode Chat et un modèle avec vision. Cliquez sur l’image pour désactiver Vision si vous souhaitez seulement l’afficher.','Images require Chat mode and a vision model. Click the image to turn Vision off if you only want to display it.'));
@@ -1479,43 +1133,37 @@ async function nvGenerate(chat,mode = 'reply') {
       });
       if (run.cancelled) break;
       if (!result.content.trim()) throw new Error(nvText('Le modèle a renvoyé une réponse vide.','The model returned an empty reply.'));
-      const variableAssistant = nvVariableExecute(result.content,chat);
-      const canonicalAssistant = await nvPrepareAssistantCanonical(variableAssistant.text);
-      if (!canonicalAssistant.trim() && variableAssistant.changed) { chat.updatedAt=Date.now(); await nvSave(); run.content=''; continue; }
+      const canonicalAssistant = await nvPrepareAssistantCanonical(result.content);
       if (mode === 'impersonate') {
         try { const display = await nvPrepareAssistantTranslation(canonicalAssistant); chat.draft = display?.content || canonicalAssistant; }
-        catch (error) { console.warn('[translate] Impersonation translation failed.', error); chat.draft = canonicalAssistant; }
+        catch (error) { console.warn('[translate] Impersonation translation failed.', error); chat.draft = nvText('[Traduction indisponible]','[Translation unavailable]'); }
       } else if (mode === 'regenerate' && last?.role === 'assistant') {
         last.variants.push(canonicalAssistant); last.variant = last.variants.length - 1; last.content = canonicalAssistant;
         last.promptRecords = Array.isArray(last.promptRecords) ? last.promptRecords : [];
         while (last.promptRecords.length < last.variants.length - 1) last.promptRecords.push(null);
         last.promptRecords.push(result.promptRecord || null);
-        await nvApplyAssistantDisplay(last, chat);
+        await nvApplyAssistantDisplay(last);
       } else if (mode === 'continue' && last?.role === 'assistant') {
         last.content += '\n' + canonicalAssistant; last.variants[last.variant] = last.content;
         last.promptRecords = Array.isArray(last.promptRecords) ? last.promptRecords : [];
         while (last.promptRecords.length <= last.variant) last.promptRecords.push(null);
         last.promptRecords[last.variant] = result.promptRecord || last.promptRecords[last.variant] || null;
-        await nvApplyAssistantDisplay(last, chat);
+        await nvApplyAssistantDisplay(last);
       } else {
         const message = NVCore.message({role:'assistant',content:canonicalAssistant,name:character.name,characterId:character.id,model:result.model,duration:performance.now()-started,promptRecords:[result.promptRecord || null]});
         chat.messages.push(message);
-        await nvApplyAssistantDisplay(message, chat);
+        await nvApplyAssistantDisplay(message);
       }
       chat.updatedAt = Date.now(); await nvSave(); run.content = '';
-      if (NV.data.appearance.autoSpeak && mode !== 'impersonate') { const spokenMessage = ['regenerate','continue'].includes(mode) ? last : chat.messages.at(-1); nvSpeak(spokenMessage ? nvMessageDisplayContent(spokenMessage,chat) : result.content); }
+      if (NV.data.appearance.autoSpeak && mode !== 'impersonate') { const spokenMessage = ['regenerate','continue'].includes(mode) ? last : chat.messages.at(-1); nvSpeak(spokenMessage ? nvMessageDisplayContent(spokenMessage) : result.content); }
     }
   } catch (error) { run.failed = true; if (!run.cancelled) toast(friendlyNativeError(error),'error'); }
   finally {
     if ((run.cancelled || run.failed) && run.content.trim() && mode !== 'impersonate') {
-      const partialVariables = nvVariableExecute(run.content,chat);
-      const partialContent = await nvPrepareAssistantCanonical(partialVariables.text);
-      if (partialContent.trim()) {
-        const partial = NVCore.message({role:'assistant',content:partialContent,name:run.name,characterId:run.characterId});
-        await nvApplyAssistantDisplay(partial, chat);
-        chat.messages.push(partial);
-      }
-      if (partialContent.trim() || partialVariables.changed) await nvSave();
+      const partialContent = await nvPrepareAssistantCanonical(run.content);
+      const partial = NVCore.message({role:'assistant',content:partialContent,name:run.name,characterId:run.characterId});
+      await nvApplyAssistantDisplay(partial);
+      chat.messages.push(partial); await nvSave();
     }
     state.sending = false; NV.activeRequest = null; if (state.currentPage === 'chat') renderChat();
   }
@@ -1544,9 +1192,7 @@ async function nvCreateMessageVariant(chat, message) {
     });
     if (run.cancelled) return;
     if (!String(result.content || '').trim()) throw new Error(nvText('Le modèle a renvoyé une réponse vide.','The model returned an empty reply.'));
-    const variableAssistant = nvVariableExecute(result.content,chat);
-    const canonicalAssistant = await nvPrepareAssistantCanonical(variableAssistant.text);
-    if (!canonicalAssistant.trim() && variableAssistant.changed) { chat.updatedAt=Date.now(); await nvSave(); return; }
+    const canonicalAssistant = await nvPrepareAssistantCanonical(result.content);
     message.variants = Array.isArray(message.variants) && message.variants.length ? message.variants : [message.content || ''];
     message.variants.push(canonicalAssistant);
     message.promptRecords = Array.isArray(message.promptRecords) ? message.promptRecords : [];
@@ -1556,7 +1202,7 @@ async function nvCreateMessageVariant(chat, message) {
     message.content = canonicalAssistant;
     message.model = result.model || message.model;
     message.duration = performance.now() - started;
-    await nvApplyAssistantDisplay(message, chat);
+    await nvApplyAssistantDisplay(message);
     chat.updatedAt = Date.now();
     await nvSave();
   } catch (error) {
@@ -1571,14 +1217,14 @@ async function nvStop() { const run = NV.activeRequest; if (!run) return; run.ca
 async function nvMessageAction(chat,m,action) {
   if (!m) return;
   if (state.sending && NV.activeRequest?.sessionId === chat.id) return toast(nvText('Arrêtez la génération avant de modifier cette conversation.','Stop generation before editing this conversation.'));
-  if (action === 'copy') return navigator.clipboard.writeText(nvMessageDisplayContent(m,chat));
-  if (action === 'speak') return nvSpeak(nvMessageDisplayContent(m,chat));
+  if (action === 'copy') return navigator.clipboard.writeText(nvMessageDisplayContent(m));
+  if (action === 'speak') return nvSpeak(nvMessageDisplayContent(m));
   if (action === 'regenerate') return nvGenerate(chat,'regenerate');
   if (action === 'branch') { const branch = NVCore.branch(chat,m.id,`${chat.title} · ${nvText('bifurcation','branch')}`); NV.data.sessions.push(branch); nvSelectSession(branch); return; }
   if (action === 'prompt') return nvInspectMessagePrompt(chat,m);
   if (action === 'edit') {
-    const value = await nvForm(nvText('Modifier le message','Edit message'),[nvField('content',nvText('Texte','Text'),nvMessageDisplayContent(m,chat),'textarea',{rows:12,required:true})]);
-    if (!value) return; nvCheckpoint(chat); const variableEdit = nvVariableExecute(value.content,chat); await nvTranslateEditedMessage(m,variableEdit.text); m.variants[m.variant] = m.content;
+    const value = await nvForm(nvText('Modifier le message','Edit message'),[nvField('content',nvText('Texte','Text'),nvMessageDisplayContent(m),'textarea',{rows:12,required:true})]);
+    if (!value) return; nvCheckpoint(chat); await nvTranslateEditedMessage(m,value.content); m.variants[m.variant] = m.content;
   } else {
     nvCheckpoint(chat);
     if (action === 'bookmark') m.bookmark = !m.bookmark;

@@ -131,15 +131,11 @@ function nvChatTranslationApplies(role, config = nvChatTranslationConfig()) {
   if (role === 'assistant') return config.mode === 'responses' || config.mode === 'both';
   return false;
 }
-function nvTranslationPlaceholder(value) {
-  return /^\[(?:Traduction indisponible|Translation unavailable)\]$/i.test(String(value || '').trim());
-}
 function nvMessageDisplayContent(message) {
   const config = nvChatTranslationConfig();
-  const source = String(message?.content || '');
-  if (!nvChatTranslationApplies(message?.role, config)) return source;
-  if (String(config.targetLanguage).toLowerCase() === 'en') return source;
-  if (message?.displayText && !nvTranslationPlaceholder(message.displayText) && message.displaySource === source && message.displayLanguage === config.targetLanguage) return message.displayText;
+  if (!nvChatTranslationApplies(message?.role, config)) return String(message?.content || '');
+  if (String(config.targetLanguage).toLowerCase() === 'en') return String(message?.content || '');
+  if (message?.displayText && message.displaySource === message.content && message.displayLanguage === config.targetLanguage) return message.displayText;
   return nvText('Traduction…','Translating…');
 }
 function nvSetMessageDisplay(message, displayText, language) {
@@ -155,7 +151,8 @@ function nvClearMessageDisplay(message) {
 async function nvTranslateChatText(text, targetLanguage, sourceLanguage = null) {
   const source = String(text || '');
   if (!source || String(targetLanguage || '').toLowerCase() === String(sourceLanguage || '').toLowerCase()) return source;
-  // Keep embedded Markdown images byte-for-byte, matching SillyTavern's Translate extension.
+  // Match SillyTavern's Translate extension behavior: markdown image links are
+  // kept byte-for-byte and only surrounding text is sent to the provider.
   const regex = /!\[.*?\]\([^)]*\)/g;
   const matches = [...source.matchAll(regex)];
   const chunks = source.split(regex);
@@ -178,7 +175,9 @@ async function nvPrepareAssistantCanonical(text) {
   const source = String(text || '');
   const config = nvChatTranslationConfig();
   if (!nvChatTranslationApplies('assistant', config)) return source;
-  // The model output is normalized after generation instead of injecting a language instruction into the prompt.
+  // Keep the prompt/context free of translation instructions. The raw model
+  // response is normalized after generation instead, so the stored assistant
+  // message remains English while display translation stays UI-only.
   try { return await nvTranslateChatText(source, 'en', null); }
   catch (error) { console.warn('[translate] Assistant English normalization failed.', error); return source; }
 }
@@ -194,9 +193,12 @@ async function nvApplyAssistantDisplay(message) {
     else nvClearMessageDisplay(message);
     return display?.content || message.content;
   } catch (error) {
-    // Do not persist a fake translation into the message. SillyTavern keeps the source
-    // message intact when a provider fails; the display translation can be retried later.
     console.warn('[translate] Assistant display translation failed.', error);
+    if (nvChatTranslationApplies('assistant')) {
+      const placeholder = nvText('[Traduction indisponible]','[Translation unavailable]');
+      nvSetMessageDisplay(message, placeholder, nvChatTranslationConfig().targetLanguage);
+      return placeholder;
+    }
     nvClearMessageDisplay(message);
     return message.content;
   }
@@ -220,30 +222,19 @@ const nvTranslationRefresh = new Set();
 async function nvEnsureChatDisplayTranslations(chat) {
   const config = nvChatTranslationConfig();
   if (!chat || !config.enabled || String(config.targetLanguage).toLowerCase() === 'en' || nvTranslationRefresh.has(chat.id)) return;
-  const pending = chat.messages.filter(message => {
-    if (!nvChatTranslationApplies(message.role, config) || !message.content) return false;
-    if (nvTranslationPlaceholder(message.displayText)) return true;
-    return !message.displayText || message.displaySource !== message.content || message.displayLanguage !== config.targetLanguage;
-  });
+  const pending = chat.messages.filter(message => nvChatTranslationApplies(message.role, config) && message.content && (!message.displayText || message.displaySource !== message.content || message.displayLanguage !== config.targetLanguage));
   if (!pending.length) return;
   nvTranslationRefresh.add(chat.id);
   try {
     let changed = false;
     for (const message of pending) {
       try {
-        // Use auto-detection for stored messages, exactly like SillyTavern's provider layer.
-        // The canonical source remains message.content and is never re-run through variable macros.
         const display = await nvTranslateChatText(message.content, config.targetLanguage, null);
         if (!NV.data.sessions.includes(chat) || !chat.messages.includes(message)) continue;
         nvSetMessageDisplay(message, display, config.targetLanguage);
         changed = true;
       } catch (error) {
         console.warn('[translate] Unable to translate existing message.', error);
-        // Clear placeholders created by the broken 0.2.32/0.2.33 path so a later render can retry.
-        if (nvTranslationPlaceholder(message.displayText)) {
-          nvClearMessageDisplay(message);
-          changed = true;
-        }
       }
     }
     if (changed) {
@@ -254,7 +245,6 @@ async function nvEnsureChatDisplayTranslations(chat) {
     nvTranslationRefresh.delete(chat.id);
   }
 }
-
 async function openChatTranslationSettings() {
   let current;
   try { current = state.translationConfig || await invoke('load_translation_config'); }

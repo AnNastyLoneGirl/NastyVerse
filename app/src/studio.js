@@ -1049,12 +1049,12 @@ function nvRenderConversation(scrollSnapshot = null) {
   if (typeof applyMessagePersonalization === 'function') applyMessagePersonalization(messageAppearance);
   pageRoot.innerHTML = `<div class="nv-workspace nv-workspace-conversation"><section class="nv-chat-main nv-chat-main-standalone">
     ${!TAURI ? `<div class="nv-preview-note">${nvText('Aperçu navigateur : les réponses sont simulées. Utilisez le lanceur pour votre modèle.','Browser preview: replies are simulated. Use the launcher for your model.')}</div>` : ''}
-    <div class="nv-chat-toolbar">${nvButton('timeline','Timeline')}<input id="nv-message-search" type="search" value="${nvEscape(NV.search)}" placeholder="${nvText('Rechercher dans les messages…','Search messages…')}" aria-label="${nvText('Rechercher dans les messages','Search messages')}"><div class="nv-chat-top-actions">${nvChatTopbarActions()}</div></div>
+    <div class="nv-chat-toolbar">${nvButton('timeline','Timeline')}${nvButton('variables','Variable')}<input id="nv-message-search" type="search" value="${nvEscape(NV.search)}" placeholder="${nvText('Rechercher dans les messages…','Search messages…')}" aria-label="${nvText('Rechercher dans les messages','Search messages')}"><div class="nv-chat-top-actions">${nvChatTopbarActions()}</div></div>
     <div class="messages" id="messages" data-chat-session="${nvEscape(chat.id)}" aria-live="polite">${chat.messages.map((m,index) => nvMessageArticle(m,index,chat,persona,character,messageAppearance)).join('')}${nvStreamingMessageArticle(chat,persona,character,messageAppearance)}</div>
     <div class="nv-compose-area"><div class="nv-quick-replies">${NV.data.replies.filter(r => r.enabled !== false).map(r => `<button class="btn btn-ghost btn-small" data-reply="${nvEscape(r.id)}">${nvEscape(r.name)}</button>`).join('')}</div>${nvMediaMarkup(chat.draftImages,true)}<form class="composer nv-composer-row" id="composer"><details class="nv-composer-menu"><summary class="nv-composer-icon" aria-label="${nvText('Outils du message','Message tools')}" title="${nvText('Outils du message','Message tools')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.64 5.64l2.12 2.12M16.24 16.24l2.12 2.12M18.36 5.64l-2.12 2.12M7.76 16.24l-2.12 2.12M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/></svg></summary><div class="nv-composer-popover"><button type="button" data-nv="illustrate">${nvText('Illustrer','Illustrate')}</button></div></details><button type="button" class="nv-composer-icon" data-nv="attach" aria-label="${nvText('Joindre une image','Attach image')}" title="${nvText('Joindre une image','Attach image')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button><textarea id="composer-input" rows="1" aria-label="${nvText('Votre message','Your message')}" placeholder="${nvText('Écrivez votre message… (/ pour les commandes)','Write a message… (/ for commands)')}" ${state.sending ? 'disabled' : ''}>${nvEscape(chat.draft || '')}</textarea><button type="button" class="nv-composer-icon" data-nv="voice" aria-label="${nvText('Dicter','Dictate')}" title="${nvText('Dicter','Dictate')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/><path d="M18 11a6 6 0 0 1-12 0M12 17v4M9 21h6"/></svg></button>${state.sending ? `<button type="button" class="composer-send" data-nv="stop">${nvText('Arrêter','Stop')}</button>` : `<button type="button" class="composer-send" data-nv="continue">${nvText('Continuer','Continue')}</button>`}<button type="submit" class="composer-send" ${state.sending ? 'disabled' : ''}>${nvText('Envoyer','Send')}</button></form></div>
   </section></div>`;
   if (typeof refreshMessageAvatarFraming === 'function') requestAnimationFrame(() => refreshMessageAvatarFraming(messageAppearance, pageRoot));
-  nvBind(pageRoot, { new: nvNewChat, timeline: () => nvOpenTimeline(chat), 'chat-files': () => nvChatFilesManager(chat), 'rename-chat': () => nvRenameCurrentChat(chat), 'delete-chat': () => nvDeleteCurrentChat(chat), 'close-chat': () => nvCloseCurrentChat(chat), continue: () => nvGenerate(chat,'continue'), stop: nvStop, voice: () => nvDictate(chat) });
+  nvBind(pageRoot, { new: nvNewChat, timeline: () => nvOpenTimeline(chat), variables: () => nvOpenVariableViewer(chat), 'chat-files': () => nvChatFilesManager(chat), 'rename-chat': () => nvRenameCurrentChat(chat), 'delete-chat': () => nvDeleteCurrentChat(chat), 'close-chat': () => nvCloseCurrentChat(chat), continue: () => nvGenerate(chat,'continue'), stop: nvStop, voice: () => nvDictate(chat) });
   const input = document.getElementById('composer-input');
   nvResizeComposerInput(input);
   input.oninput = () => { chat.draft = input.value; nvResizeComposerInput(input); nvSave(); };
@@ -1149,30 +1149,203 @@ function nvVariableExecute(store, action, name, value = '') {
   if (action === 'delete') { if (exists) delete store[name]; return ''; }
   return '';
 }
+const NV_VARIABLE_EVENT = 'nastyverse:variables-changed';
+function nvVariableNotify(chat, globalScope = false, source = 'runtime') {
+  window.dispatchEvent(new CustomEvent(NV_VARIABLE_EVENT, { detail: { chatId: chat?.id || '', scope: globalScope ? 'global' : 'chat', source } }));
+}
+function nvVariableValueType(value) {
+  if (typeof value === 'number') return 'number';
+  if (typeof value === 'boolean') return 'boolean';
+  if (value === null || (value && typeof value === 'object')) return 'json';
+  return 'text';
+}
+function nvVariableEditorValue(value, type = nvVariableValueType(value)) {
+  if (type === 'json') {
+    try { return JSON.stringify(value, null, 2); } catch (_) { return String(value ?? ''); }
+  }
+  return String(value ?? '');
+}
+function nvVariableParseEditorValue(value, type) {
+  const raw = String(value ?? '');
+  if (type === 'number') {
+    const parsed = Number(raw.trim());
+    if (!raw.trim() || !Number.isFinite(parsed)) throw new Error(nvText('Entrez un nombre valide.','Enter a valid number.'));
+    return parsed;
+  }
+  if (type === 'boolean') {
+    const normalized = raw.trim().toLowerCase();
+    if (['true','1','yes','on'].includes(normalized)) return true;
+    if (['false','0','no','off'].includes(normalized)) return false;
+    throw new Error(nvText('Utilisez true ou false.','Use true or false.'));
+  }
+  if (type === 'json') {
+    try { return JSON.parse(raw); } catch (_) { throw new Error(nvText('JSON invalide.','Invalid JSON.')); }
+  }
+  return raw;
+}
+function nvVariableScopeSnapshot(chat, globalScope = false) {
+  try { return JSON.stringify(nvVariableStore(chat, globalScope)); } catch (_) { return ''; }
+}
+function nvOpenVariableViewer(chat) {
+  if (!chat) return;
+  const scopeTitle = String(chat.title || nvText('Discussion','Chat'));
+  const scopeMarkup = (scope, globalScope) => `<section class="nv-variable-scope" data-variable-scope="${scope}">
+    <div class="nv-variable-scope-head"><div><span class="nv-eyebrow">${globalScope ? 'GLOBAL' : nvText('DISCUSSION','CHAT')}</span><h3>${globalScope ? nvText('Variables globales','Global variables') : nvText('Variables du chat','Chat variables')}</h3><p>${globalScope ? nvText('Disponibles dans toutes les conversations.','Available in every conversation.') : nvText('Stockées uniquement dans cette conversation.','Stored only in this conversation.')}</p></div><div class="nv-variable-scope-actions"><span data-variable-count></span><button type="button" class="btn btn-ghost btn-small" data-variable-add>${nvText('Ajouter','Add')}</button></div></div>
+    <form class="nv-variable-create" data-variable-create hidden><input name="name" type="text" autocomplete="off" placeholder="${nvText('Nom de variable','Variable name')}" aria-label="${nvText('Nom de variable','Variable name')}" required><select name="type" aria-label="${nvText('Type','Type')}"><option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="json">JSON</option></select><input name="value" type="text" autocomplete="off" placeholder="${nvText('Valeur','Value')}" aria-label="${nvText('Valeur','Value')}"><button type="submit" class="btn btn-primary btn-small">${nvText('Créer','Create')}</button></form>
+    <div class="nv-variable-empty" data-variable-empty hidden></div><div class="nv-variable-list" data-variable-list></div>
+  </section>`;
+  const dialog = nvDialog(`${nvText('Variables','Variables')} · ${scopeTitle}`, `<div class="nv-variable-viewer">${scopeMarkup('chat',false)}${scopeMarkup('global',true)}</div>`, true);
+  dialog.classList.add('nv-variable-dialog');
+  const snapshots = { chat: '', global: '' };
+  let saveTimer = null;
+  let dirty = false;
+  const globalFor = scope => scope === 'global';
+  const scopeElement = scope => dialog.querySelector(`[data-variable-scope="${scope}"]`);
+  const persistSoon = () => {
+    dirty = true;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => { saveTimer = null; dirty = false; nvSave(); }, 180);
+  };
+  const markEditor = (row, error = '') => {
+    row.classList.toggle('is-invalid', Boolean(error));
+    const status = row.querySelector('[data-variable-status]');
+    if (status) status.textContent = error || nvText('Enregistré','Saved');
+  };
+  const renderScope = (scope, force = false) => {
+    const globalScope = globalFor(scope);
+    const root = scopeElement(scope);
+    if (!root) return;
+    const active = document.activeElement;
+    if (!force && active && root.contains(active) && active.matches('input,textarea,select')) return;
+    const store = nvVariableStore(chat, globalScope);
+    const keys = Object.keys(store).sort((a,b) => a.localeCompare(b));
+    snapshots[scope] = nvVariableScopeSnapshot(chat, globalScope);
+    root.querySelector('[data-variable-count]').textContent = `${keys.length} ${keys.length === 1 ? nvText('variable','variable') : nvText('variables','variables')}`;
+    const empty = root.querySelector('[data-variable-empty]');
+    const list = root.querySelector('[data-variable-list]');
+    empty.hidden = Boolean(keys.length);
+    empty.textContent = globalScope ? nvText('Aucune variable globale.','No global variables yet.') : nvText('Aucune variable dans cette conversation.','No variables in this chat yet.');
+    list.innerHTML = keys.map(name => {
+      const value = store[name];
+      const type = nvVariableValueType(value);
+      const macro = globalScope ? `{{getglobalvar::${name}}}` : `{{getvar::${name}}}`;
+      return `<article class="nv-variable-row" data-variable-name="${nvEscape(name)}"><div class="nv-variable-row-head"><input class="nv-variable-name" data-variable-name-input value="${nvEscape(name)}" aria-label="${nvText('Nom de variable','Variable name')}"><select data-variable-type aria-label="${nvText('Type de variable','Variable type')}"><option value="text" ${type === 'text' ? 'selected' : ''}>Text</option><option value="number" ${type === 'number' ? 'selected' : ''}>Number</option><option value="boolean" ${type === 'boolean' ? 'selected' : ''}>Boolean</option><option value="json" ${type === 'json' ? 'selected' : ''}>JSON</option></select><button type="button" class="nv-variable-delete" data-variable-delete aria-label="${nvText('Supprimer la variable','Delete variable')}" title="${nvText('Supprimer','Delete')}">×</button></div><textarea rows="${type === 'json' ? 4 : 2}" spellcheck="false" data-variable-value aria-label="${nvText('Valeur de variable','Variable value')}">${nvEscape(nvVariableEditorValue(value,type))}</textarea><div class="nv-variable-row-foot"><code>${nvEscape(macro)}</code><span data-variable-status>${nvText('Enregistré','Saved')}</span></div></article>`;
+    }).join('');
+    list.querySelectorAll('.nv-variable-row').forEach(row => {
+      const nameInput = row.querySelector('[data-variable-name-input]');
+      const valueInput = row.querySelector('[data-variable-value]');
+      const typeInput = row.querySelector('[data-variable-type]');
+      let valueTimer = null;
+      const saveValue = () => {
+        clearTimeout(valueTimer);
+        const currentStore = nvVariableStore(chat, globalScope);
+        const currentName = row.dataset.variableName;
+        if (!nvVariableHas(currentStore, currentName)) return;
+        try {
+          currentStore[currentName] = nvVariableParseEditorValue(valueInput.value, typeInput.value);
+          snapshots[scope] = nvVariableScopeSnapshot(chat, globalScope);
+          markEditor(row);
+          persistSoon();
+          nvVariableNotify(chat, globalScope, 'viewer');
+        } catch (error) { markEditor(row, String(error.message || error)); }
+      };
+      valueInput.addEventListener('input', () => { clearTimeout(valueTimer); valueTimer = setTimeout(saveValue, 220); });
+      valueInput.addEventListener('blur', saveValue);
+      typeInput.addEventListener('change', saveValue);
+      nameInput.addEventListener('change', () => {
+        const currentStore = nvVariableStore(chat, globalScope);
+        const oldName = row.dataset.variableName;
+        const nextName = String(nameInput.value || '').trim();
+        if (!nextName) { nameInput.value = oldName; return markEditor(row, nvText('Le nom est obligatoire.','Name is required.')); }
+        if (nextName !== oldName && nvVariableHas(currentStore,nextName)) { nameInput.value = oldName; return markEditor(row, nvText('Ce nom existe déjà.','That name already exists.')); }
+        if (nextName === oldName) return;
+        currentStore[nextName] = currentStore[oldName];
+        delete currentStore[oldName];
+        row.dataset.variableName = nextName;
+        snapshots[scope] = nvVariableScopeSnapshot(chat, globalScope);
+        persistSoon();
+        nvVariableNotify(chat, globalScope, 'viewer');
+        renderScope(scope, true);
+      });
+      row.querySelector('[data-variable-delete]').addEventListener('click', () => {
+        const currentName = row.dataset.variableName;
+        const currentStore = nvVariableStore(chat, globalScope);
+        if (!nvVariableHas(currentStore,currentName)) return;
+        delete currentStore[currentName];
+        persistSoon();
+        nvVariableNotify(chat, globalScope, 'viewer');
+        renderScope(scope, true);
+      });
+    });
+  };
+  dialog.querySelectorAll('[data-variable-scope]').forEach(root => {
+    const scope = root.dataset.variableScope;
+    const globalScope = globalFor(scope);
+    const form = root.querySelector('[data-variable-create]');
+    root.querySelector('[data-variable-add]').addEventListener('click', () => {
+      form.hidden = !form.hidden;
+      if (!form.hidden) form.elements.name.focus();
+    });
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      const store = nvVariableStore(chat, globalScope);
+      const name = String(form.elements.name.value || '').trim();
+      if (!name) return;
+      if (nvVariableHas(store,name)) return toast(nvText('Une variable avec ce nom existe déjà.','A variable with that name already exists.'),'error');
+      try { store[name] = nvVariableParseEditorValue(form.elements.value.value, form.elements.type.value); }
+      catch (error) { return toast(String(error.message || error),'error'); }
+      form.reset(); form.hidden = true;
+      persistSoon();
+      nvVariableNotify(chat, globalScope, 'viewer');
+      renderScope(scope, true);
+    });
+  });
+  const refresh = () => {
+    for (const scope of ['chat','global']) {
+      const current = nvVariableScopeSnapshot(chat, globalFor(scope));
+      if (current !== snapshots[scope]) renderScope(scope);
+    }
+  };
+  const onVariablesChanged = event => {
+    if (event.detail?.source === 'viewer' && (!event.detail.chatId || event.detail.chatId === chat.id)) return;
+    refresh();
+  };
+  window.addEventListener(NV_VARIABLE_EVENT, onVariablesChanged);
+  const refreshTimer = setInterval(refresh, 120);
+  dialog.addEventListener('close', () => {
+    window.removeEventListener(NV_VARIABLE_EVENT, onVariablesChanged);
+    clearInterval(refreshTimer);
+    clearTimeout(saveTimer);
+    if (dirty) nvSave();
+  }, { once: true });
+  renderScope('chat', true);
+  renderScope('global', true);
+}
 function nvVariableShorthand(body, chat) {
   const match = String(body || '').trim().match(/^([.$])\s*([A-Za-z](?:[A-Za-z0-9_-]*[A-Za-z0-9])?)\s*(?:(\|\|=|\?\?=|\+\+|--|\+=|-=|==|!=|>=|<=|\|\||\?\?|>|<|=)\s*([\s\S]*))?$/);
   if (!match) return null;
   const [, prefix, name, operator = '', rhs = ''] = match;
-  const store = nvVariableStore(chat, prefix === '$');
+  const globalScope = prefix === '$';
+  const store = nvVariableStore(chat, globalScope);
   const exists = nvVariableHas(store, name);
   const current = exists ? store[name] : undefined;
   if (!operator) return nvVariableText(current);
-  if (operator === '=') { store[name] = rhs; return ''; }
-  if (operator === '++') return nvVariableExecute(store, 'inc', name);
-  if (operator === '--') return nvVariableExecute(store, 'dec', name);
-  if (operator === '+=') return nvVariableExecute(store, 'add', name, rhs);
+  if (operator === '=') { store[name] = rhs; nvVariableNotify(chat, globalScope); return ''; }
+  if (operator === '++') { const value = nvVariableExecute(store, 'inc', name); nvVariableNotify(chat, globalScope); return value; }
+  if (operator === '--') { const value = nvVariableExecute(store, 'dec', name); nvVariableNotify(chat, globalScope); return value; }
+  if (operator === '+=') { const value = nvVariableExecute(store, 'add', name, rhs); nvVariableNotify(chat, globalScope); return value; }
   if (operator === '-=') {
-    if (nvVariableNumeric(current) && nvVariableNumeric(rhs)) store[name] = Number(current) - Number(rhs);
+    if (nvVariableNumeric(current) && nvVariableNumeric(rhs)) { store[name] = Number(current) - Number(rhs); nvVariableNotify(chat, globalScope); }
     return '';
   }
   if (operator === '||') return nvVariableFalsy(current, exists) ? rhs : nvVariableText(current);
   if (operator === '??') return (!exists || current == null) ? rhs : nvVariableText(current);
   if (operator === '||=') {
-    if (nvVariableFalsy(current, exists)) store[name] = rhs;
+    if (nvVariableFalsy(current, exists)) { store[name] = rhs; nvVariableNotify(chat, globalScope); }
     return nvVariableText(store[name]);
   }
   if (operator === '??=') {
-    if (!exists || current == null) store[name] = rhs;
+    if (!exists || current == null) { store[name] = rhs; nvVariableNotify(chat, globalScope); }
     return nvVariableText(store[name]);
   }
   if (operator === '==' || operator === '!=') {
@@ -1225,7 +1398,9 @@ function nvVariableMacro(body, chat) {
   const [action, globalScope] = definition;
   const variableName = String(call.args[0] || '').trim();
   const variableValue = call.args.length > 1 ? call.args.slice(1).join('::') : '';
-  return { handled: true, value: nvVariableExecute(nvVariableStore(chat, globalScope), action, variableName, variableValue) };
+  const value = nvVariableExecute(nvVariableStore(chat, globalScope), action, variableName, variableValue);
+  if (['set','add','inc','dec','delete'].includes(action)) nvVariableNotify(chat, globalScope);
+  return { handled: true, value };
 }
 function nvScopedVariableMacros(source, chat, character) {
   let output = String(source || '');
